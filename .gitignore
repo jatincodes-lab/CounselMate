@@ -5,6 +5,7 @@ frontend/dist/
 # Backend
 backend/bin/
 backend/obj/
+backend/publish/
 
 # Local configuration and secrets
 *.user

@@ -105,6 +105,8 @@ The project has been started and the first working foundation is in place. The p
   - Neon PostgreSQL
   - Render backend
   - Vercel frontend
+- Applied the initial migration to the Neon database.
+- Verified Neon-backed API endpoints with the demo tenant.
 
 ### Documentation
 
@@ -135,6 +137,12 @@ The project has been started and the first working foundation is in place. The p
 - Before the database conversion, leads endpoint responded successfully:
   - `http://localhost:5078/api/leads`
 - After the database conversion, backend build passes with EF Core models and migrations included.
+- After applying the Neon migration, API smoke test passed:
+  - Health status: `healthy`
+  - Database status: `connected`
+  - Tenant: `demo-academy`
+  - Lead count: `5`
+  - Pipeline stages: `7`
 
 ## Previous Local URLs
 
@@ -152,27 +160,26 @@ The project has been started and the first working foundation is in place. The p
 - The backend initially failed restore because the template OpenAPI package required NuGet access. The external package was removed for the first foundation build.
 - Current frontend uses mock data locally.
 - Current backend uses EF Core with PostgreSQL configuration and tenant-filtered queries.
-- The initial migration has not been applied to a real Neon database yet.
+- The initial migration has been applied to the Neon database.
 - Authentication, roles, database persistence, and real validations are not implemented yet.
 
 ## Next Development Steps
 
-1. Create the Neon database and apply the initial migration.
-2. Add the Render backend environment variables.
-3. Connect the React frontend to the ASP.NET Core API.
-4. Add lead create/edit forms.
-5. Add frontend and backend validation.
-6. Add authentication and role-based access control.
-7. Add real pipeline stage updates.
-8. Add follow-up create, complete, and reschedule workflows.
-9. Add payments, documents, and import/export later after core CRM workflows are stable.
+1. Add the Render backend environment variables.
+2. Connect the React frontend to the ASP.NET Core API.
+3. Add lead create/edit forms.
+4. Add frontend and backend validation.
+5. Add authentication and role-based access control.
+6. Add real pipeline stage updates.
+7. Add follow-up create, complete, and reschedule workflows.
+8. Add payments, documents, and import/export later after core CRM workflows are stable.
 
 ## Recommended Immediate Priority
 
 The next best step is:
 
-1. Create a Neon database.
-2. Set the backend connection string using `DATABASE_URL` or `ConnectionStrings__DefaultConnection`.
-3. Run `dotnet tool restore`.
-4. Run `dotnet tool run dotnet-ef database update --project backend/EducationCrm.Api.csproj --startup-project backend/EducationCrm.Api.csproj`.
-5. Start the backend and verify `/api/health`, `/api/leads`, and `/api/pipeline`.
+1. Connect the React frontend to the ASP.NET Core API.
+2. Read `VITE_API_BASE_URL` from the frontend environment.
+3. Add loading, empty, and error states for API-driven leads, dashboard, pipeline, and follow-ups.
+4. Configure Render with the Neon `DATABASE_URL`.
+5. Configure Vercel with the Render API URL after backend deployment.

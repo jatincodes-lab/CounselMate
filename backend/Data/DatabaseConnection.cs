@@ -7,16 +7,16 @@ public static class DatabaseConnection
 {
     public static string GetConnectionString(IConfiguration configuration)
     {
-        var configured = configuration.GetConnectionString("DefaultConnection");
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return Normalize(configured);
-        }
-
         var databaseUrl = configuration["DATABASE_URL"] ?? configuration["NEON_DATABASE_URL"];
         if (!string.IsNullOrWhiteSpace(databaseUrl))
         {
             return Normalize(databaseUrl);
+        }
+
+        var configured = configuration.GetConnectionString("DefaultConnection");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return Normalize(configured);
         }
 
         return "Host=localhost;Port=5432;Database=counselmate_dev;Username=postgres;Password=postgres";
@@ -36,6 +36,7 @@ public static class DatabaseConnection
         var password = WebUtility.UrlDecode(userInfo.ElementAtOrDefault(1) ?? string.Empty);
         var database = uri.AbsolutePath.TrimStart('/');
 
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
         var builder = new NpgsqlConnectionStringBuilder
         {
             Host = uri.Host,
@@ -45,6 +46,11 @@ public static class DatabaseConnection
             Password = password,
             SslMode = SslMode.Require
         };
+
+        if (query["channel_binding"] is { Length: > 0 } channelBinding)
+        {
+            builder["Channel Binding"] = channelBinding;
+        }
 
         return builder.ConnectionString;
     }

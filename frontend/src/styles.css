@@ -27,6 +27,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -487,6 +488,7 @@ h1 {
 
 .filter-bar label button,
 .form-grid input,
+.form-grid select,
 .form-grid textarea {
   height: 46px;
   border: 1px solid var(--border);
@@ -501,6 +503,71 @@ h1 {
 .form-grid textarea {
   height: 88px;
   padding-top: 12px;
+}
+
+.field-error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.form-alert {
+  border: 1px solid #ffbdad;
+  background: #ffebe6;
+  color: #bf2600;
+  padding: 12px 14px;
+  font-weight: 700;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(7, 26, 68, 0.48);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.modal {
+  width: min(880px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.modal-header {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  color: #071a44;
+}
+
+.modal-header p {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.lead-form {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
 }
 
 .table-card {

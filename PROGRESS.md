@@ -64,6 +64,13 @@ The project has been started and the first working foundation is in place. The p
   - `VITE_TENANT_SLUG`
 - Connected dashboard, leads, pipeline, and follow-up screens to backend API data.
 - Added loading, empty, and error states for API-backed views.
+- Added production-oriented Add Lead workflow:
+  - Backend lookup endpoint for courses, sources, stages, branches, and counsellors
+  - Backend POST `/api/leads`
+  - Tenant-scoped server validation
+  - Normalized phone duplicate protection
+  - Database unique index for tenant + normalized phone
+  - Frontend modal form with client validation and server error display
 
 ### Backend Foundation
 
@@ -112,6 +119,8 @@ The project has been started and the first working foundation is in place. The p
   - Vercel frontend
 - Applied the initial migration to the Neon database.
 - Verified Neon-backed API endpoints with the demo tenant.
+- Added and applied the normalized phone migration:
+  - `AddLeadNormalizedPhone`
 
 ### Documentation
 
@@ -149,8 +158,13 @@ The project has been started and the first working foundation is in place. The p
   - Lead count: `5`
   - Pipeline stages: `7`
 - Frontend build passed after API integration.
+- Frontend build passed after Add Lead workflow.
 - Local frontend responded successfully while pointed at the Neon-backed API:
   - `http://127.0.0.1:5173`
+- Add Lead API smoke test passed:
+  - Options endpoint returned `5` courses
+  - Duplicate phone returned `409`
+  - Valid lead created as `LD-1006`
 
 ## Previous Local URLs
 
@@ -169,25 +183,22 @@ The project has been started and the first working foundation is in place. The p
 - Current frontend uses API data for dashboard, leads, pipeline, and follow-ups.
 - Current backend uses EF Core with PostgreSQL configuration and tenant-filtered queries.
 - The initial migration has been applied to the Neon database.
-- Authentication, roles, database persistence, and real validations are not implemented yet.
+- Authentication and role-based access control are not implemented yet.
 
 ## Next Development Steps
 
-1. Add the Render backend environment variables.
-2. Deploy the backend to Render.
-3. Deploy the frontend to Vercel with the Render API URL.
-4. Add lead create/edit forms.
-5. Add frontend and backend validation.
-6. Add authentication and role-based access control.
-7. Add real pipeline stage updates.
-8. Add follow-up create, complete, and reschedule workflows.
-9. Add payments, documents, and import/export later after core CRM workflows are stable.
+1. Add lead edit/detail workflow.
+2. Add schedule follow-up from lead workflow.
+3. Add complete/reschedule follow-up workflow.
+4. Add authentication and role-based access control.
+5. Add real pipeline stage updates.
+6. Add payments, documents, and import/export later after core CRM workflows are stable.
 
 ## Recommended Immediate Priority
 
 The next best step is:
 
-1. Configure Render with the Neon `DATABASE_URL`.
-2. Deploy the backend to Render.
-3. Configure Vercel with `VITE_API_BASE_URL` pointing to Render.
-4. Verify the deployed frontend can load leads and pipeline data.
+1. Build lead edit/detail workflow locally.
+2. Build follow-up create/complete workflow locally.
+3. Add authentication locally before deployment.
+4. Deploy to Render/Vercel only after core workflows are complete.

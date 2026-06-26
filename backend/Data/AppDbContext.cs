@@ -133,13 +133,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasKey(item => item.Id);
             entity.HasIndex(item => item.TenantId);
             entity.HasIndex(item => new { item.TenantId, item.LeadNumber }).IsUnique();
-            entity.HasIndex(item => new { item.TenantId, item.Phone }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.NormalizedPhone }).IsUnique();
             entity.HasIndex(item => new { item.TenantId, item.CreatedAt });
             entity.Property(item => item.LeadNumber).HasMaxLength(40).IsRequired();
             entity.Property(item => item.StudentName).HasMaxLength(160).IsRequired();
             entity.Property(item => item.GuardianName).HasMaxLength(160);
             entity.Property(item => item.Email).HasMaxLength(240).IsRequired();
             entity.Property(item => item.Phone).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.NormalizedPhone).HasMaxLength(32).IsRequired();
             entity.Property(item => item.City).HasMaxLength(120);
             entity.Property(item => item.Status).HasMaxLength(80).IsRequired();
             entity.Property(item => item.Priority).HasMaxLength(40).IsRequired();
@@ -302,11 +303,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         );
 
         modelBuilder.Entity<Lead>().HasData(
-            new Lead { Id = lead1Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1001", StudentName = "Arjun Adhikari", Email = "arjun.a@email.com", Phone = "+91 98765 43210", CourseId = mbaCourseId, LeadStageId = enrolledStageId, LeadSourceId = googleSourceId, AssignedUserId = vermaId, Status = "Enrolled", Priority = "High", CreatedAt = createdAt.AddDays(-18), NextFollowUpAt = createdAt.AddHours(4) },
-            new Lead { Id = lead2Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1002", StudentName = "Priya Sharma", Email = "priya.s@outlook.com", Phone = "+91 91234 56789", CourseId = dataScienceCourseId, LeadStageId = interestedStageId, LeadSourceId = websiteSourceId, AssignedUserId = khannaId, Status = "Interested", Priority = "Medium", CreatedAt = createdAt.AddDays(-6), NextFollowUpAt = createdAt.AddDays(1).AddHours(2) },
-            new Lead { Id = lead3Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1003", StudentName = "Michael Jones", Email = "m.jones@gmail.com", Phone = "+91 99887 76655", CourseId = uiUxCourseId, LeadStageId = demoStageId, LeadSourceId = linkedInSourceId, AssignedUserId = rahulId, Status = "Follow Up", Priority = "High", CreatedAt = createdAt.AddDays(-4), NextFollowUpAt = createdAt.AddHours(3) },
-            new Lead { Id = lead4Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1004", StudentName = "Deepak Reddy", Email = "d.reddy@tcs.com", Phone = "+91 90000 11223", CourseId = fullStackCourseId, LeadStageId = droppedStageId, LeadSourceId = referralSourceId, AssignedUserId = vermaId, Status = "Dropped", Priority = "Low", CreatedAt = createdAt.AddDays(-25), NextFollowUpAt = null },
-            new Lead { Id = lead5Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1005", StudentName = "Kriti Luthra", Email = "k.luthra@gmail.com", Phone = "+91 88776 65544", CourseId = digitalMarketingCourseId, LeadStageId = newInquiryStageId, LeadSourceId = expoSourceId, AssignedUserId = rahulId, Status = "New Lead", Priority = "Medium", CreatedAt = createdAt.AddDays(-1), NextFollowUpAt = createdAt.AddHours(6) }
+            new Lead { Id = lead1Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1001", StudentName = "Arjun Adhikari", Email = "arjun.a@email.com", Phone = "+91 98765 43210", NormalizedPhone = "919876543210", CourseId = mbaCourseId, LeadStageId = enrolledStageId, LeadSourceId = googleSourceId, AssignedUserId = vermaId, Status = "Enrolled", Priority = "High", CreatedAt = createdAt.AddDays(-18), NextFollowUpAt = createdAt.AddHours(4) },
+            new Lead { Id = lead2Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1002", StudentName = "Priya Sharma", Email = "priya.s@outlook.com", Phone = "+91 91234 56789", NormalizedPhone = "919123456789", CourseId = dataScienceCourseId, LeadStageId = interestedStageId, LeadSourceId = websiteSourceId, AssignedUserId = khannaId, Status = "Interested", Priority = "Medium", CreatedAt = createdAt.AddDays(-6), NextFollowUpAt = createdAt.AddDays(1).AddHours(2) },
+            new Lead { Id = lead3Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1003", StudentName = "Michael Jones", Email = "m.jones@gmail.com", Phone = "+91 99887 76655", NormalizedPhone = "919988776655", CourseId = uiUxCourseId, LeadStageId = demoStageId, LeadSourceId = linkedInSourceId, AssignedUserId = rahulId, Status = "Follow Up", Priority = "High", CreatedAt = createdAt.AddDays(-4), NextFollowUpAt = createdAt.AddHours(3) },
+            new Lead { Id = lead4Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1004", StudentName = "Deepak Reddy", Email = "d.reddy@tcs.com", Phone = "+91 90000 11223", NormalizedPhone = "919000011223", CourseId = fullStackCourseId, LeadStageId = droppedStageId, LeadSourceId = referralSourceId, AssignedUserId = vermaId, Status = "Dropped", Priority = "Low", CreatedAt = createdAt.AddDays(-25), NextFollowUpAt = null },
+            new Lead { Id = lead5Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1005", StudentName = "Kriti Luthra", Email = "k.luthra@gmail.com", Phone = "+91 88776 65544", NormalizedPhone = "918877665544", CourseId = digitalMarketingCourseId, LeadStageId = newInquiryStageId, LeadSourceId = expoSourceId, AssignedUserId = rahulId, Status = "New Lead", Priority = "Medium", CreatedAt = createdAt.AddDays(-1), NextFollowUpAt = createdAt.AddHours(6) }
         );
 
         modelBuilder.Entity<FollowUp>().HasData(

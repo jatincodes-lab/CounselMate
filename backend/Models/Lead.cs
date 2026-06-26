@@ -14,6 +14,7 @@ public sealed class Lead
     public string? GuardianName { get; set; }
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
+    public string NormalizedPhone { get; set; } = string.Empty;
     public string? City { get; set; }
     public string Status { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;

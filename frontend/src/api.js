@@ -1,36 +1,46 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5078/api").replace(/\/$/, "");
 const TENANT_SLUG = import.meta.env.VITE_TENANT_SLUG || "demo-academy";
 
-async function request(path) {
+async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method || "GET",
     headers: {
+      "Content-Type": "application/json",
       "X-Tenant-Slug": TENANT_SLUG,
+      ...options.headers,
     },
+    body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
   if (!response.ok) {
-    const message = await readErrorMessage(response);
-    throw new Error(message || `Request failed with status ${response.status}`);
+    throw await createApiError(response);
   }
 
   return response.json();
 }
 
-async function readErrorMessage(response) {
+async function createApiError(response) {
   try {
     const body = await response.json();
-    return body.message;
+    const error = new Error(body.message || body.title || `Request failed with status ${response.status}`);
+    error.status = response.status;
+    error.errors = body.errors || {};
+    return error;
   } catch {
-    return "";
+    const error = new Error(`Request failed with status ${response.status}`);
+    error.status = response.status;
+    error.errors = {};
+    return error;
   }
 }
 
 export async function getCrmData() {
-  const [dashboard, leads, pipeline, followUps] = await Promise.all([
+  const [dashboard, leads, pipeline, followUps, leadOptions] = await Promise.all([
     request("/dashboard"),
     request("/leads"),
     request("/pipeline"),
     request("/follow-ups"),
+    request("/leads/options"),
   ]);
 
   return {
@@ -38,5 +48,13 @@ export async function getCrmData() {
     leads,
     pipeline,
     followUps,
+    leadOptions,
   };
+}
+
+export async function createLead(payload) {
+  return request("/leads", {
+    method: "POST",
+    body: payload,
+  });
 }

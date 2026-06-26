@@ -14,9 +14,10 @@ import {
   Search,
   Settings,
   Users,
+  X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getCrmData } from "./api";
+import { createLead, getCrmData } from "./api";
 import { activities, counselors, stages as fallbackStages } from "./data/mockData";
 
 const navItems = [
@@ -37,10 +38,17 @@ function App() {
     leads: [],
     pipeline: [],
     followUps: [],
+    leadOptions: emptyLeadOptions(),
   });
   const [crmStatus, setCrmStatus] = useState({
     loading: true,
     error: "",
+  });
+  const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const [createStatus, setCreateStatus] = useState({
+    saving: false,
+    error: "",
+    fieldErrors: {},
   });
   const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
 
@@ -61,6 +69,23 @@ function App() {
   useEffect(() => {
     loadCrmData();
   }, [loadCrmData]);
+
+  const handleCreateLead = async (payload) => {
+    setCreateStatus({ saving: true, error: "", fieldErrors: {} });
+    try {
+      await createLead(payload);
+      setLeadModalOpen(false);
+      setActivePage("leads");
+      await loadCrmData();
+      setCreateStatus({ saving: false, error: "", fieldErrors: {} });
+    } catch (error) {
+      setCreateStatus({
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to create lead.",
+        fieldErrors: error?.errors || {},
+      });
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -94,7 +119,7 @@ function App() {
           })}
         </nav>
 
-        <button className="sidebar-action">
+        <button className="sidebar-action" onClick={() => setLeadModalOpen(true)}>
           <Plus size={18} />
           New Lead
         </button>
@@ -133,6 +158,7 @@ function App() {
               loading={crmStatus.loading}
               error={crmStatus.error}
               onRetry={loadCrmData}
+              onNewLead={() => setLeadModalOpen(true)}
             />
           )}
           {activePage === "leads" && (
@@ -141,6 +167,7 @@ function App() {
               loading={crmStatus.loading}
               error={crmStatus.error}
               onRetry={loadCrmData}
+              onNewLead={() => setLeadModalOpen(true)}
             />
           )}
           {activePage === "pipeline" && (
@@ -149,6 +176,7 @@ function App() {
               loading={crmStatus.loading}
               error={crmStatus.error}
               onRetry={loadCrmData}
+              onNewLead={() => setLeadModalOpen(true)}
             />
           )}
           {activePage === "followups" && (
@@ -164,6 +192,22 @@ function App() {
           {activePage === "settings" && <SettingsPage stages={crmData.pipeline} />}
         </section>
       </main>
+
+      {leadModalOpen && (
+        <AddLeadModal
+          options={crmData.leadOptions}
+          saving={createStatus.saving}
+          error={createStatus.error}
+          fieldErrors={createStatus.fieldErrors}
+          onClose={() => {
+            if (!createStatus.saving) {
+              setLeadModalOpen(false);
+              setCreateStatus({ saving: false, error: "", fieldErrors: {} });
+            }
+          }}
+          onSubmit={handleCreateLead}
+        />
+      )}
     </div>
   );
 }
@@ -180,7 +224,7 @@ function PageTitle({ title, subtitle, action }) {
   );
 }
 
-function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry }) {
+function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, onNewLead }) {
   const barHeights = useMemo(() => {
     const counts = pipeline.map((stage) => stage.count);
     const max = Math.max(...counts, 1);
@@ -193,7 +237,7 @@ function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry }) 
         title="Counsellor Dashboard"
         subtitle="Overview of lead flow, admissions, follow-ups, and counsellor productivity."
         action={
-          <button className="primary-button">
+          <button className="primary-button" onClick={onNewLead}>
             <Plus size={18} />
             New Lead
           </button>
@@ -256,14 +300,14 @@ function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry }) 
   );
 }
 
-function LeadsPage({ leads, loading, error, onRetry }) {
+function LeadsPage({ leads, loading, error, onRetry, onNewLead }) {
   return (
     <>
       <PageTitle
         title="Leads Management"
         subtitle="Review and manage student admission pipelines."
         action={
-          <button className="primary-button">
+          <button className="primary-button" onClick={onNewLead}>
             <Plus size={18} />
             Add Lead
           </button>
@@ -275,14 +319,192 @@ function LeadsPage({ leads, loading, error, onRetry }) {
   );
 }
 
-function PipelinePage({ pipeline, loading, error, onRetry }) {
+function AddLeadModal({ options, saving, error, fieldErrors, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => createDefaultLeadForm(options));
+  const [clientErrors, setClientErrors] = useState({});
+  const hasRequiredOptions = options.courses.length > 0 && options.sources.length > 0 && options.stages.length > 0;
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      courseId: current.courseId || options.courses[0]?.id || "",
+      leadSourceId: current.leadSourceId || options.sources[0]?.id || "",
+      leadStageId: current.leadStageId || findOptionId(options.stages, "New Inquiry") || options.stages[0]?.id || "",
+      branchId: current.branchId || options.branches[0]?.id || "",
+      assignedUserId: current.assignedUserId || options.counselors[0]?.id || "",
+    }));
+  }, [options]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !saving) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, saving]);
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setClientErrors((current) => {
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const getFieldError = (field) => {
+    return clientErrors[field] || firstError(fieldErrors[field]);
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const validationErrors = validateLeadForm(form);
+    setClientErrors(validationErrors);
+
+    if (Object.keys(validationErrors).length > 0) {
+      return;
+    }
+
+    onSubmit({
+      studentName: form.studentName.trim(),
+      guardianName: optionalValue(form.guardianName),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      city: optionalValue(form.city),
+      courseId: form.courseId,
+      leadSourceId: form.leadSourceId,
+      leadStageId: form.leadStageId,
+      branchId: optionalValue(form.branchId),
+      assignedUserId: optionalValue(form.assignedUserId),
+      status: form.status,
+      priority: form.priority,
+      nextFollowUpAt: form.nextFollowUpAt ? new Date(form.nextFollowUpAt).toISOString() : null,
+    });
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-lead-title">
+        <header className="modal-header">
+          <div>
+            <h2 id="add-lead-title">Add Lead</h2>
+            <p>Create a tenant-scoped admission inquiry.</p>
+          </div>
+          <button className="icon-button" onClick={onClose} disabled={saving} aria-label="Close add lead form">
+            <X size={20} />
+          </button>
+        </header>
+
+        {!hasRequiredOptions && (
+          <StatePanel title="Lead setup incomplete" message="Add at least one active course, source, and stage before creating leads." />
+        )}
+
+        {hasRequiredOptions && (
+          <form className="lead-form" onSubmit={handleSubmit} noValidate>
+            {error && <div className="form-alert">{error}</div>}
+
+            <div className="form-grid">
+              <Field label="Student Name" error={getFieldError("studentName")}>
+                <input value={form.studentName} maxLength={160} onChange={(event) => updateField("studentName", event.target.value)} autoFocus />
+              </Field>
+
+              <Field label="Guardian Name" error={getFieldError("guardianName")}>
+                <input value={form.guardianName} maxLength={160} onChange={(event) => updateField("guardianName", event.target.value)} />
+              </Field>
+
+              <Field label="Email" error={getFieldError("email")}>
+                <input value={form.email} type="email" maxLength={240} onChange={(event) => updateField("email", event.target.value)} />
+              </Field>
+
+              <Field label="Phone" error={getFieldError("phone")}>
+                <input value={form.phone} maxLength={40} onChange={(event) => updateField("phone", event.target.value)} placeholder="+91 98765 43210" />
+              </Field>
+
+              <Field label="City" error={getFieldError("city")}>
+                <input value={form.city} maxLength={120} onChange={(event) => updateField("city", event.target.value)} />
+              </Field>
+
+              <Field label="Course" error={getFieldError("courseId")}>
+                <select value={form.courseId} onChange={(event) => updateField("courseId", event.target.value)}>
+                  {options.courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Source" error={getFieldError("leadSourceId")}>
+                <select value={form.leadSourceId} onChange={(event) => updateField("leadSourceId", event.target.value)}>
+                  {options.sources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Stage" error={getFieldError("leadStageId")}>
+                <select value={form.leadStageId} onChange={(event) => updateField("leadStageId", event.target.value)}>
+                  {options.stages.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Branch" error={getFieldError("branchId")}>
+                <select value={form.branchId} onChange={(event) => updateField("branchId", event.target.value)}>
+                  <option value="">No branch</option>
+                  {options.branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Counsellor" error={getFieldError("assignedUserId")}>
+                <select value={form.assignedUserId} onChange={(event) => updateField("assignedUserId", event.target.value)}>
+                  <option value="">Unassigned</option>
+                  {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Status" error={getFieldError("status")}>
+                <select value={form.status} onChange={(event) => updateField("status", event.target.value)}>
+                  {["New Lead", "Interested", "Follow Up", "Enrolled", "Dropped"].map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Priority" error={getFieldError("priority")}>
+                <select value={form.priority} onChange={(event) => updateField("priority", event.target.value)}>
+                  {["Low", "Medium", "High", "Urgent"].map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Next Follow-up" error={getFieldError("nextFollowUpAt")} className="span-2">
+                <input type="datetime-local" value={form.nextFollowUpAt} onChange={(event) => updateField("nextFollowUpAt", event.target.value)} />
+              </Field>
+            </div>
+
+            <footer className="modal-actions">
+              <button type="button" className="ghost-button" onClick={onClose} disabled={saving}>Cancel</button>
+              <button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving..." : "Create Lead"}</button>
+            </footer>
+          </form>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Field({ label, error, children, className = "" }) {
+  return (
+    <label className={className}>
+      {label}
+      {children}
+      {error && <small className="field-error">{error}</small>}
+    </label>
+  );
+}
+
+function PipelinePage({ pipeline, loading, error, onRetry, onNewLead }) {
   return (
     <>
       <PageTitle
         title="Lead Pipeline"
         subtitle="Manage and track student enrollment progress."
         action={
-          <button className="primary-button">
+          <button className="primary-button" onClick={onNewLead}>
             <Plus size={18} />
             Create New Lead
           </button>
@@ -712,6 +934,85 @@ function formatFollowUpLabel(value) {
   }
 
   return `${formatDate(value)}, ${formatTime(value)}`;
+}
+
+function emptyLeadOptions() {
+  return {
+    branches: [],
+    courses: [],
+    sources: [],
+    stages: [],
+    counselors: [],
+  };
+}
+
+function createDefaultLeadForm(options) {
+  return {
+    studentName: "",
+    guardianName: "",
+    email: "",
+    phone: "",
+    city: "",
+    courseId: options.courses[0]?.id || "",
+    leadSourceId: options.sources[0]?.id || "",
+    leadStageId: findOptionId(options.stages, "New Inquiry") || options.stages[0]?.id || "",
+    branchId: options.branches[0]?.id || "",
+    assignedUserId: options.counselors[0]?.id || "",
+    status: "New Lead",
+    priority: "Medium",
+    nextFollowUpAt: "",
+  };
+}
+
+function validateLeadForm(form) {
+  const errors = {};
+  const phoneDigits = form.phone.replace(/\D/g, "");
+
+  if (!form.studentName.trim()) {
+    errors.studentName = "Student name is required.";
+  }
+
+  if (!form.email.trim()) {
+    errors.email = "Email is required.";
+  } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) {
+    errors.email = "Enter a valid email address.";
+  }
+
+  if (!form.phone.trim()) {
+    errors.phone = "Phone is required.";
+  } else if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+    errors.phone = "Enter 10 to 15 phone digits.";
+  }
+
+  if (!form.courseId) {
+    errors.courseId = "Course is required.";
+  }
+
+  if (!form.leadSourceId) {
+    errors.leadSourceId = "Source is required.";
+  }
+
+  if (!form.leadStageId) {
+    errors.leadStageId = "Stage is required.";
+  }
+
+  if (form.nextFollowUpAt && new Date(form.nextFollowUpAt).getTime() < Date.now() - 5 * 60 * 1000) {
+    errors.nextFollowUpAt = "Next follow-up cannot be in the past.";
+  }
+
+  return errors;
+}
+
+function findOptionId(options, name) {
+  return options.find((item) => item.name === name)?.id || "";
+}
+
+function firstError(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function optionalValue(value) {
+  return value && value.trim() ? value.trim() : null;
 }
 
 export default App;

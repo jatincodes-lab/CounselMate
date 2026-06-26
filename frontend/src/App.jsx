@@ -6,7 +6,6 @@ import {
   ChevronDown,
   Download,
   FileText,
-  GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -33,6 +32,7 @@ import {
   createPlatformTenant,
   updateLead,
 } from "./api";
+import counselMateLogo from "./assets/counselmate-logo.png";
 import { activities, counselors, stages as fallbackStages } from "./data/mockData";
 
 const navItems = [
@@ -295,13 +295,7 @@ function App() {
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">
-            <GraduationCap size={24} />
-          </div>
-          <div>
-            <strong>CounselMate</strong>
-            <span>Admission CRM</span>
-          </div>
+          <img src={counselMateLogo} alt="CounselMate CRM" />
         </div>
 
         <nav className="nav-list">
@@ -473,13 +467,7 @@ function LoginScreen({ error, signingIn, onSubmit }) {
     <main className="login-shell">
       <section className="login-panel">
         <div className="brand login-brand">
-          <div className="brand-mark">
-            <GraduationCap size={24} />
-          </div>
-          <div>
-            <strong>CounselMate</strong>
-            <span>Admission CRM</span>
-          </div>
+          <img src={counselMateLogo} alt="CounselMate CRM" />
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>

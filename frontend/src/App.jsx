@@ -8,6 +8,7 @@ import {
   FileText,
   GraduationCap,
   LayoutDashboard,
+  LogOut,
   Menu,
   MoreVertical,
   Plus,
@@ -23,7 +24,11 @@ import {
   createLead,
   createLeadFollowUp,
   getCrmData,
+  getCurrentUser,
   getLeadDetail,
+  getStoredAuth,
+  login,
+  logout,
   updateLead,
 } from "./api";
 import { activities, counselors, stages as fallbackStages } from "./data/mockData";
@@ -41,6 +46,12 @@ const navItems = [
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(() => getStoredAuth().user);
+  const [authStatus, setAuthStatus] = useState({
+    loading: Boolean(getStoredAuth().token),
+    error: "",
+    signingIn: false,
+  });
   const [crmData, setCrmData] = useState({
     dashboard: null,
     leads: [],
@@ -72,22 +83,86 @@ function App() {
   const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
 
   const loadCrmData = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
+
     setCrmStatus({ loading: true, error: "" });
     try {
       const data = await getCrmData();
       setCrmData(data);
       setCrmStatus({ loading: false, error: "" });
     } catch (error) {
+      if (error?.status === 401) {
+        logout();
+        setCurrentUser(null);
+        setAuthStatus({ loading: false, error: "Your session expired. Sign in again.", signingIn: false });
+      }
+
       setCrmStatus({
         loading: false,
         error: error instanceof Error ? error.message : "Unable to load CRM data.",
       });
     }
+  }, [currentUser]);
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      const { token } = getStoredAuth();
+      if (!token) {
+        setAuthStatus({ loading: false, error: "", signingIn: false });
+        return;
+      }
+
+      try {
+        const user = await getCurrentUser();
+        setCurrentUser(user);
+        setAuthStatus({ loading: false, error: "", signingIn: false });
+      } catch {
+        logout();
+        setCurrentUser(null);
+        setAuthStatus({ loading: false, error: "Session expired. Sign in again.", signingIn: false });
+      }
+    };
+
+    restoreSession();
   }, []);
 
   useEffect(() => {
-    loadCrmData();
+    if (currentUser) {
+      loadCrmData();
+    }
   }, [loadCrmData]);
+
+  const handleLogin = async (payload) => {
+    setAuthStatus({ loading: false, error: "", signingIn: true });
+    try {
+      const response = await login(payload);
+      setCurrentUser(response.user);
+      setAuthStatus({ loading: false, error: "", signingIn: false });
+    } catch (error) {
+      setAuthStatus({
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to sign in.",
+        signingIn: false,
+      });
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setCurrentUser(null);
+    setLeadModalOpen(false);
+    setSelectedLeadId("");
+    setLeadDetail(null);
+    setCrmData({
+      dashboard: null,
+      leads: [],
+      pipeline: [],
+      followUps: [],
+      leadOptions: emptyLeadOptions(),
+    });
+  };
 
   const handleCreateLead = async (payload) => {
     setCreateStatus({ saving: true, error: "", fieldErrors: {} });
@@ -153,6 +228,16 @@ function App() {
     }
   };
 
+  if (authStatus.loading) {
+    return <StatePanel title="Checking session" message="Validating your CounselMate login..." />;
+  }
+
+  if (!currentUser) {
+    return <LoginScreen error={authStatus.error} signingIn={authStatus.signingIn} onSubmit={handleLogin} />;
+  }
+
+  const canManageLeads = ["Owner", "Admin", "BranchManager", "Counselor", "Telecaller"].includes(currentUser.role);
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
@@ -185,7 +270,7 @@ function App() {
           })}
         </nav>
 
-        <button className="sidebar-action" onClick={() => setLeadModalOpen(true)}>
+        <button className="sidebar-action" onClick={() => setLeadModalOpen(true)} disabled={!canManageLeads}>
           <Plus size={18} />
           New Lead
         </button>
@@ -207,11 +292,14 @@ function App() {
             </button>
             <div className="profile">
               <div>
-                <strong>Rahul Sharma</strong>
-                <span>Senior Counsellor</span>
+                <strong>{currentUser.fullName}</strong>
+                <span>{currentUser.role}</span>
               </div>
-              <div className="avatar">RS</div>
+              <div className="avatar">{initials(currentUser.fullName)}</div>
             </div>
+            <button className="icon-button" onClick={handleLogout} aria-label="Sign out">
+              <LogOut size={20} />
+            </button>
           </div>
         </header>
 
@@ -225,6 +313,7 @@ function App() {
               error={crmStatus.error}
               onRetry={loadCrmData}
               onNewLead={() => setLeadModalOpen(true)}
+              canManageLeads={canManageLeads}
             />
           )}
           {activePage === "leads" && (
@@ -235,6 +324,7 @@ function App() {
               onRetry={loadCrmData}
               onNewLead={() => setLeadModalOpen(true)}
               onOpenLead={openLeadDetail}
+              canManageLeads={canManageLeads}
             />
           )}
           {activePage === "pipeline" && (
@@ -245,6 +335,7 @@ function App() {
               onRetry={loadCrmData}
               onNewLead={() => setLeadModalOpen(true)}
               onOpenLead={openLeadDetail}
+              canManageLeads={canManageLeads}
             />
           )}
           {activePage === "followups" && (
@@ -261,7 +352,7 @@ function App() {
         </section>
       </main>
 
-      {leadModalOpen && (
+      {leadModalOpen && canManageLeads && (
         <AddLeadModal
           options={crmData.leadOptions}
           saving={createStatus.saving}
@@ -291,9 +382,70 @@ function App() {
           onAddActivity={(payload) => runLeadAction((leadId) => addLeadActivity(leadId, payload))}
           onCreateFollowUp={(payload) => runLeadAction((leadId) => createLeadFollowUp(leadId, payload))}
           onCompleteFollowUp={(followUpId) => runLeadAction((leadId) => completeLeadFollowUp(leadId, followUpId))}
+          canManageLeads={canManageLeads}
         />
       )}
     </div>
+  );
+}
+
+function LoginScreen({ error, signingIn, onSubmit }) {
+  const [form, setForm] = useState({
+    tenantSlug: "demo-academy",
+    email: "rahul@demo-academy.test",
+    password: "",
+  });
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    onSubmit({
+      tenantSlug: form.tenantSlug.trim(),
+      email: form.email.trim(),
+      password: form.password,
+    });
+  };
+
+  return (
+    <main className="login-shell">
+      <section className="login-panel">
+        <div className="brand login-brand">
+          <div className="brand-mark">
+            <GraduationCap size={24} />
+          </div>
+          <div>
+            <strong>CounselMate</strong>
+            <span>Admission CRM</span>
+          </div>
+        </div>
+
+        <form className="login-form" onSubmit={handleSubmit}>
+          <div>
+            <h1>Sign in</h1>
+            <p>Use your institute account to continue.</p>
+          </div>
+
+          {error && <div className="form-alert">{error}</div>}
+
+          <Field label="Tenant" required>
+            <input value={form.tenantSlug} maxLength={80} onChange={(event) => setForm((current) => ({ ...current, tenantSlug: event.target.value }))} required />
+          </Field>
+
+          <Field label="Email" required>
+            <input value={form.email} type="email" maxLength={240} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} required />
+          </Field>
+
+          <Field label="Password" required>
+            <input value={form.password} type="password" maxLength={120} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} required autoFocus />
+          </Field>
+
+          <button className="primary-button" type="submit" disabled={signingIn}>
+            {signingIn ? "Signing in..." : "Sign in"}
+          </button>
+
+          <p className="login-hint">Demo: rahul@demo-academy.test / Demo@12345</p>
+        </form>
+      </section>
+    </main>
   );
 }
 
@@ -309,7 +461,7 @@ function PageTitle({ title, subtitle, action }) {
   );
 }
 
-function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, onNewLead }) {
+function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, onNewLead, canManageLeads }) {
   const barHeights = useMemo(() => {
     const counts = pipeline.map((stage) => stage.count);
     const max = Math.max(...counts, 1);
@@ -322,7 +474,7 @@ function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, on
         title="Counsellor Dashboard"
         subtitle="Overview of lead flow, admissions, follow-ups, and counsellor productivity."
         action={
-          <button className="primary-button" onClick={onNewLead}>
+          <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
             <Plus size={18} />
             New Lead
           </button>
@@ -385,14 +537,14 @@ function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, on
   );
 }
 
-function LeadsPage({ leads, loading, error, onRetry, onNewLead, onOpenLead }) {
+function LeadsPage({ leads, loading, error, onRetry, onNewLead, onOpenLead, canManageLeads }) {
   return (
     <>
       <PageTitle
         title="Leads Management"
         subtitle="Review and manage student admission pipelines."
         action={
-          <button className="primary-button" onClick={onNewLead}>
+          <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
             <Plus size={18} />
             Add Lead
           </button>
@@ -585,6 +737,7 @@ function LeadDetailDrawer({
   onAddActivity,
   onCreateFollowUp,
   onCompleteFollowUp,
+  canManageLeads,
 }) {
   const [editForm, setEditForm] = useState(() => createLeadUpdateForm(lead));
   const [noteForm, setNoteForm] = useState({ type: "Note", description: "" });
@@ -693,7 +846,7 @@ function LeadDetailDrawer({
             <form className="drawer-section" onSubmit={handleUpdateSubmit}>
               <div className="section-heading">
                 <h3>Lead Status</h3>
-                <button type="submit" className="primary-button" disabled={!canSave || actionStatus.saving}>
+                <button type="submit" className="primary-button" disabled={!canManageLeads || !canSave || actionStatus.saving}>
                   {actionStatus.saving ? "Saving..." : "Save Changes"}
                 </button>
               </div>
@@ -728,7 +881,7 @@ function LeadDetailDrawer({
             <form className="drawer-section" onSubmit={handleNoteSubmit}>
               <div className="section-heading">
                 <h3>Add Activity</h3>
-                <button type="submit" className="primary-button" disabled={!noteForm.description.trim() || actionStatus.saving}>
+                <button type="submit" className="primary-button" disabled={!canManageLeads || !noteForm.description.trim() || actionStatus.saving}>
                   Add Note
                 </button>
               </div>
@@ -747,7 +900,7 @@ function LeadDetailDrawer({
             <form className="drawer-section" onSubmit={handleFollowUpSubmit}>
               <div className="section-heading">
                 <h3>Schedule Follow-up</h3>
-                <button type="submit" className="primary-button" disabled={!followUpForm.dueAt || actionStatus.saving}>
+                <button type="submit" className="primary-button" disabled={!canManageLeads || !followUpForm.dueAt || actionStatus.saving}>
                   Schedule
                 </button>
               </div>
@@ -789,7 +942,7 @@ function LeadDetailDrawer({
                     </div>
                     <div className="detail-list-actions">
                       <Badge label={item.status} muted={item.status !== "Completed"} />
-                      {item.status !== "Completed" && (
+                      {canManageLeads && item.status !== "Completed" && (
                         <button type="button" className="ghost-button" onClick={() => onCompleteFollowUp(item.id)} disabled={actionStatus.saving}>
                           <CheckCircle2 size={16} />
                           Complete
@@ -849,14 +1002,14 @@ function Field({ label, error, children, className = "", required = false }) {
   );
 }
 
-function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead }) {
+function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead, canManageLeads }) {
   return (
     <>
       <PageTitle
         title="Lead Pipeline"
         subtitle="Manage and track student enrollment progress."
         action={
-          <button className="primary-button" onClick={onNewLead}>
+          <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
             <Plus size={18} />
             Create New Lead
           </button>

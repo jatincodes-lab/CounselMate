@@ -1,14 +1,43 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5078/api").replace(/\/$/, "");
 const TENANT_SLUG = import.meta.env.VITE_TENANT_SLUG || "demo-academy";
+const TOKEN_STORAGE_KEY = "counselmate_access_token";
+const USER_STORAGE_KEY = "counselmate_user";
+
+export function getStoredAuth() {
+  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+  const userJson = localStorage.getItem(USER_STORAGE_KEY);
+
+  if (!token || !userJson) {
+    return { token: "", user: null };
+  }
+
+  try {
+    return { token, user: JSON.parse(userJson) };
+  } catch {
+    clearStoredAuth();
+    return { token: "", user: null };
+  }
+}
+
+export function clearStoredAuth() {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(USER_STORAGE_KEY);
+}
 
 async function request(path, options = {}) {
+  const { token } = getStoredAuth();
+  const headers = {
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Tenant-Slug": TENANT_SLUG,
-      ...options.headers,
-    },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
@@ -17,6 +46,29 @@ async function request(path, options = {}) {
   }
 
   return response.json();
+}
+
+export async function login(payload) {
+  const response = await request("/auth/login", {
+    method: "POST",
+    body: {
+      tenantSlug: payload.tenantSlug || TENANT_SLUG,
+      email: payload.email,
+      password: payload.password,
+    },
+  });
+
+  localStorage.setItem(TOKEN_STORAGE_KEY, response.token);
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
+  return response;
+}
+
+export async function getCurrentUser() {
+  return request("/auth/me");
+}
+
+export function logout() {
+  clearStoredAuth();
 }
 
 async function createApiError(response) {

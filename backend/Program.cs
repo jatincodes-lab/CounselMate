@@ -3,6 +3,9 @@ using EducationCrm.Api.Models;
 using EducationCrm.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,6 +35,55 @@ var app = builder.Build();
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
+app.Use(async (httpContext, next) =>
+{
+    if (HttpMethods.IsOptions(httpContext.Request.Method) ||
+        IsPublicEndpoint(httpContext.Request.Path))
+    {
+        await next();
+        return;
+    }
+
+    var authHeader = httpContext.Request.Headers.Authorization.FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(authHeader) ||
+        !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        await WriteAuthErrorAsync(httpContext, StatusCodes.Status401Unauthorized, "Authentication token is required.");
+        return;
+    }
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var tokenClaims = ValidateAccessToken(token, builder.Configuration);
+    if (tokenClaims is null)
+    {
+        await WriteAuthErrorAsync(httpContext, StatusCodes.Status401Unauthorized, "Authentication token is invalid or expired.");
+        return;
+    }
+
+    var db = httpContext.RequestServices.GetRequiredService<AppDbContext>();
+    var user = await db.Users
+        .AsNoTracking()
+        .Where(item => item.Id == tokenClaims.UserId && item.TenantId == tokenClaims.TenantId && item.IsActive && item.Tenant.IsActive)
+        .Select(item => new AuthenticatedUser(
+            item.Id,
+            item.TenantId,
+            item.Tenant.Name,
+            item.Tenant.Slug,
+            item.FullName,
+            item.Email,
+            item.Role.ToString()
+        ))
+        .FirstOrDefaultAsync(httpContext.RequestAborted);
+
+    if (user is null)
+    {
+        await WriteAuthErrorAsync(httpContext, StatusCodes.Status401Unauthorized, "User is inactive or no longer available.");
+        return;
+    }
+
+    httpContext.Items["CurrentUser"] = user;
+    await next();
+});
 
 var api = app.MapGroup("/api");
 
@@ -46,6 +98,62 @@ api.MapGet("/health", async (AppDbContext db, CancellationToken cancellationToke
         database = canConnect ? "connected" : "unavailable",
         checkedAt = DateTimeOffset.UtcNow
     });
+});
+
+api.MapPost("/auth/login", async (
+    LoginRequest request,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var validationErrors = ValidateLoginRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var tenantSlug = NormalizeOptionalText(request.TenantSlug) ?? configuration["DefaultTenantSlug"] ?? "demo-academy";
+    var email = NormalizeEmail(request.Email);
+    var user = await db.Users
+        .Include(item => item.Tenant)
+        .FirstOrDefaultAsync(item => item.Email == email && item.Tenant.Slug == tenantSlug, cancellationToken);
+
+    if (user is null || !user.IsActive || !user.Tenant.IsActive || !VerifyPassword(request.Password, user.PasswordHash))
+    {
+        if (user is not null)
+        {
+            user.FailedLoginAttempts += 1;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return Results.Json(new { message = "Invalid email, password, or tenant." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    user.FailedLoginAttempts = 0;
+    user.LastLoginAt = DateTimeOffset.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+
+    var currentUser = new AuthenticatedUser(
+        user.Id,
+        user.TenantId,
+        user.Tenant.Name,
+        user.Tenant.Slug,
+        user.FullName,
+        user.Email,
+        user.Role.ToString()
+    );
+    var expiresAt = DateTimeOffset.UtcNow.AddHours(GetTokenLifetimeHours(configuration));
+    var token = CreateAccessToken(currentUser, expiresAt, configuration);
+
+    return Results.Ok(new AuthResponse(token, expiresAt, currentUser));
+});
+
+api.MapGet("/auth/me", (HttpContext httpContext) =>
+{
+    var user = TenantResolver.GetCurrentUser(httpContext);
+    return user is null
+        ? Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized)
+        : Results.Ok(user);
 });
 
 api.MapGet("/tenants/current", async (
@@ -186,6 +294,11 @@ api.MapPost("/leads", async (
     if (tenant is null)
     {
         return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    {
+        return Results.Json(new { message = "You do not have permission to create leads." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var validationErrors = ValidateCreateLeadRequest(request);
@@ -348,6 +461,11 @@ api.MapGet("/leads/{id}", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
+    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    {
+        return Results.Json(new { message = "You do not have permission to update leads." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
     var lead = await db.Leads
         .AsNoTracking()
         .Where(item => item.TenantId == tenant.TenantId && item.LeadNumber == id)
@@ -415,6 +533,11 @@ api.MapPatch("/leads/{id}", async (
     if (tenant is null)
     {
         return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    {
+        return Results.Json(new { message = "You do not have permission to add lead activity." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var lead = await db.Leads
@@ -525,6 +648,11 @@ api.MapPost("/leads/{id}/activities", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
+    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    {
+        return Results.Json(new { message = "You do not have permission to schedule follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
     var lead = await db.Leads
         .AsNoTracking()
         .Where(item => item.TenantId == tenant.TenantId && item.LeadNumber == id)
@@ -568,6 +696,11 @@ api.MapPost("/leads/{id}/follow-ups", async (
     if (tenant is null)
     {
         return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    {
+        return Results.Json(new { message = "You do not have permission to complete follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var lead = await db.Leads
@@ -809,6 +942,150 @@ api.MapGet("/reports/conversion", async (
 
 app.Run();
 
+static bool IsPublicEndpoint(PathString path)
+{
+    return path.StartsWithSegments("/api/health") ||
+        path.StartsWithSegments("/api/auth/login");
+}
+
+static async Task WriteAuthErrorAsync(HttpContext httpContext, int statusCode, string message)
+{
+    httpContext.Response.StatusCode = statusCode;
+    httpContext.Response.ContentType = "application/json";
+    await httpContext.Response.WriteAsync(JsonSerializer.Serialize(new { message }));
+}
+
+static int GetTokenLifetimeHours(IConfiguration configuration)
+{
+    return int.TryParse(configuration["Jwt:AccessTokenHours"], out var hours) && hours is >= 1 and <= 24
+        ? hours
+        : 8;
+}
+
+static string GetJwtSecret(IConfiguration configuration)
+{
+    return configuration["Jwt:Secret"]
+        ?? configuration["JWT_SECRET"]
+        ?? "local-development-secret-change-before-production-minimum-32-chars";
+}
+
+static string CreateAccessToken(AuthenticatedUser user, DateTimeOffset expiresAt, IConfiguration configuration)
+{
+    var headerJson = JsonSerializer.Serialize(new { alg = "HS256", typ = "JWT" });
+    var payloadJson = JsonSerializer.Serialize(new AccessTokenPayload(
+        Sub: user.UserId.ToString(),
+        Tid: user.TenantId.ToString(),
+        TenantSlug: user.TenantSlug,
+        TenantName: user.TenantName,
+        Name: user.FullName,
+        Email: user.Email,
+        Role: user.Role,
+        Exp: expiresAt.ToUnixTimeSeconds()
+    ));
+
+    var unsignedToken = $"{Base64UrlEncode(Encoding.UTF8.GetBytes(headerJson))}.{Base64UrlEncode(Encoding.UTF8.GetBytes(payloadJson))}";
+    var signature = SignToken(unsignedToken, configuration);
+    return $"{unsignedToken}.{signature}";
+}
+
+static TokenClaims? ValidateAccessToken(string token, IConfiguration configuration)
+{
+    var parts = token.Split('.');
+    if (parts.Length != 3)
+    {
+        return null;
+    }
+
+    var unsignedToken = $"{parts[0]}.{parts[1]}";
+    var expectedSignature = SignToken(unsignedToken, configuration);
+    if (!CryptographicOperations.FixedTimeEquals(
+            Encoding.ASCII.GetBytes(expectedSignature),
+            Encoding.ASCII.GetBytes(parts[2])))
+    {
+        return null;
+    }
+
+    try
+    {
+        var payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
+        var payload = JsonSerializer.Deserialize<AccessTokenPayload>(payloadJson);
+        if (payload is null || payload.Exp <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+        {
+            return null;
+        }
+
+        if (!Guid.TryParse(payload.Sub, out var userId) || !Guid.TryParse(payload.Tid, out var tenantId))
+        {
+            return null;
+        }
+
+        return new TokenClaims(userId, tenantId);
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static string SignToken(string unsignedToken, IConfiguration configuration)
+{
+    using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(GetJwtSecret(configuration)));
+    return Base64UrlEncode(hmac.ComputeHash(Encoding.UTF8.GetBytes(unsignedToken)));
+}
+
+static string Base64UrlEncode(byte[] bytes)
+{
+    return Convert.ToBase64String(bytes)
+        .TrimEnd('=')
+        .Replace('+', '-')
+        .Replace('/', '_');
+}
+
+static byte[] Base64UrlDecode(string value)
+{
+    var padded = value.Replace('-', '+').Replace('_', '/');
+    padded = padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '=');
+    return Convert.FromBase64String(padded);
+}
+
+static bool VerifyPassword(string password, string passwordHash)
+{
+    var parts = passwordHash.Split('.');
+    if (parts.Length != 4 ||
+        parts[0] != "v1" ||
+        !int.TryParse(parts[1], out var iterations) ||
+        iterations < 100000)
+    {
+        return false;
+    }
+
+    try
+    {
+        var salt = Convert.FromBase64String(parts[2]);
+        var expectedHash = Convert.FromBase64String(parts[3]);
+        var actualHash = Rfc2898DeriveBytes.Pbkdf2(
+            Encoding.UTF8.GetBytes(password),
+            salt,
+            iterations,
+            HashAlgorithmName.SHA256,
+            expectedHash.Length);
+        return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static bool CanManageLeads(AuthenticatedUser? user)
+{
+    return user?.Role is nameof(UserRole.Owner)
+        or nameof(UserRole.Admin)
+        or nameof(UserRole.BranchManager)
+        or nameof(UserRole.Counselor)
+        or nameof(UserRole.Telecaller);
+}
+
 static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid tenantId, string leadNumber, CancellationToken cancellationToken)
 {
     return await db.Leads
@@ -906,6 +1183,21 @@ static Dictionary<string, string[]> ValidateCreateLeadRequest(CreateLeadRequest 
     if (request.NextFollowUpAt is not null && request.NextFollowUpAt.Value < DateTimeOffset.UtcNow.AddMinutes(-5))
     {
         errors["nextFollowUpAt"] = ["Next follow-up cannot be in the past."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateLoginRequest(LoginRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "email", request.Email, 240);
+    AddRequiredError(errors, "password", request.Password, 120);
+    AddOptionalLengthError(errors, "tenantSlug", request.TenantSlug, 80);
+
+    if (!errors.ContainsKey("email") && !IsValidEmail(request.Email))
+    {
+        errors["email"] = ["Enter a valid email address."];
     }
 
     return errors;
@@ -1055,6 +1347,28 @@ record DashboardSummary(
     int Enrolled,
     int PendingFollowUps,
     decimal ConversionRate);
+
+record LoginRequest(
+    string Email,
+    string Password,
+    string? TenantSlug);
+
+record AuthResponse(
+    string Token,
+    DateTimeOffset ExpiresAt,
+    AuthenticatedUser User);
+
+record TokenClaims(Guid UserId, Guid TenantId);
+
+record AccessTokenPayload(
+    string Sub,
+    string Tid,
+    string TenantSlug,
+    string TenantName,
+    string Name,
+    string Email,
+    string Role,
+    long Exp);
 
 record LeadResponse(
     string Id,

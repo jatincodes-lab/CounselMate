@@ -67,6 +67,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(item => new { item.TenantId, item.Email }).IsUnique();
             entity.Property(item => item.FullName).HasMaxLength(160).IsRequired();
             entity.Property(item => item.Email).HasMaxLength(240).IsRequired();
+            entity.Property(item => item.PasswordHash).HasMaxLength(220).IsRequired();
             entity.Property(item => item.Role).HasConversion<string>().HasMaxLength(40).IsRequired();
             entity.HasOne(item => item.Tenant)
                 .WithMany(item => item.Users)
@@ -250,6 +251,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         var lead3Id = Guid.Parse("70000000-0000-0000-0000-000000000003");
         var lead4Id = Guid.Parse("70000000-0000-0000-0000-000000000004");
         var lead5Id = Guid.Parse("70000000-0000-0000-0000-000000000005");
+        const string demoPasswordHash = "v1.100000.Mt8GC3coU3xegrVi+C2aAw==.i10uchOOE1k5pG2zdL/PW+FxQ7wZ9yM+MW/hwgowbPM=";
 
         modelBuilder.Entity<Tenant>().HasData(new Tenant
         {
@@ -271,9 +273,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         });
 
         modelBuilder.Entity<AppUser>().HasData(
-            new AppUser { Id = rahulId, TenantId = tenantId, BranchId = branchId, FullName = "Rahul Sharma", Email = "rahul@demo-academy.test", Role = UserRole.Counselor, IsActive = true, CreatedAt = createdAt },
-            new AppUser { Id = vermaId, TenantId = tenantId, BranchId = branchId, FullName = "S. Verma", Email = "verma@demo-academy.test", Role = UserRole.Counselor, IsActive = true, CreatedAt = createdAt },
-            new AppUser { Id = khannaId, TenantId = tenantId, BranchId = branchId, FullName = "R. Khanna", Email = "khanna@demo-academy.test", Role = UserRole.Counselor, IsActive = true, CreatedAt = createdAt }
+            new AppUser { Id = rahulId, TenantId = tenantId, BranchId = branchId, FullName = "Rahul Sharma", Email = "rahul@demo-academy.test", PasswordHash = demoPasswordHash, Role = UserRole.Admin, IsActive = true, CreatedAt = createdAt },
+            new AppUser { Id = vermaId, TenantId = tenantId, BranchId = branchId, FullName = "S. Verma", Email = "verma@demo-academy.test", PasswordHash = demoPasswordHash, Role = UserRole.Counselor, IsActive = true, CreatedAt = createdAt },
+            new AppUser { Id = khannaId, TenantId = tenantId, BranchId = branchId, FullName = "R. Khanna", Email = "khanna@demo-academy.test", PasswordHash = demoPasswordHash, Role = UserRole.ReadOnly, IsActive = true, CreatedAt = createdAt }
         );
 
         modelBuilder.Entity<Course>().HasData(

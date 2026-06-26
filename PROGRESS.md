@@ -80,6 +80,14 @@ The project has been started and the first working foundation is in place. The p
   - Mark follow-ups complete
 - Added required-field red markers in the Add Lead form.
 - Added CounselMate-themed scrollbars.
+- Added local authentication and role-aware access:
+  - Login endpoint with tenant slug, email, and password
+  - HMAC-SHA256 bearer token issuance and validation
+  - Password hashes stored with PBKDF2
+  - Current-user endpoint
+  - API tenant scope now resolves from authenticated user
+  - Write actions blocked for read-only users
+  - Frontend login screen, session restore, and logout
 
 ### Backend Foundation
 
@@ -130,6 +138,8 @@ The project has been started and the first working foundation is in place. The p
 - Verified Neon-backed API endpoints with the demo tenant.
 - Added and applied the normalized phone migration:
   - `AddLeadNormalizedPhone`
+- Added and applied the authentication migration:
+  - `AddUserAuthentication`
 
 ### Documentation
 
@@ -181,6 +191,11 @@ The project has been started and the first working foundation is in place. The p
   - No-op `PATCH /api/leads/LD-1004` succeeded
   - Invalid activity and follow-up requests returned `400`
   - Missing lead returned `404`
+- Auth smoke test passed:
+  - Unauthenticated dashboard request returned `401`
+  - Admin login worked for `rahul@demo-academy.test`
+  - Authenticated dashboard returned tenant CRM data
+  - Read-only write attempt returned `403`
 
 ## Previous Local URLs
 
@@ -203,16 +218,16 @@ The project has been started and the first working foundation is in place. The p
 
 ## Next Development Steps
 
-1. Add authentication and role-based access control.
-2. Add real tenant admin setup and client onboarding flow.
-3. Add follow-up reschedule/cancel actions.
+1. Add real tenant admin setup and client onboarding flow.
+2. Add follow-up reschedule/cancel actions.
+3. Add password change/reset workflow.
 4. Add payments, documents, and import/export later after core CRM workflows are stable.
 
 ## Recommended Immediate Priority
 
 The next best step is:
 
-1. Add authentication locally before deployment.
-2. Add tenant/client onboarding controls.
+1. Add tenant/client onboarding controls.
+2. Add password change/reset workflow.
 3. Add follow-up reschedule/cancel workflow.
 4. Deploy to Render/Vercel only after core workflows are complete.

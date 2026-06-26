@@ -394,6 +394,26 @@ h1 {
   padding: 24px;
 }
 
+.state-panel {
+  min-height: 140px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.state-panel strong {
+  color: #071a44;
+  font-size: 18px;
+}
+
+.state-panel p {
+  max-width: 520px;
+}
+
 .bar-chart {
   height: 220px;
   display: flex;

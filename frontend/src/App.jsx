@@ -15,8 +15,9 @@ import {
   Settings,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { activities, counselors, followUps, leads, stages } from "./data/mockData";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getCrmData } from "./api";
+import { activities, counselors, stages as fallbackStages } from "./data/mockData";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -31,7 +32,35 @@ const navItems = [
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [crmData, setCrmData] = useState({
+    dashboard: null,
+    leads: [],
+    pipeline: [],
+    followUps: [],
+  });
+  const [crmStatus, setCrmStatus] = useState({
+    loading: true,
+    error: "",
+  });
   const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
+
+  const loadCrmData = useCallback(async () => {
+    setCrmStatus({ loading: true, error: "" });
+    try {
+      const data = await getCrmData();
+      setCrmData(data);
+      setCrmStatus({ loading: false, error: "" });
+    } catch (error) {
+      setCrmStatus({
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load CRM data.",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCrmData();
+  }, [loadCrmData]);
 
   return (
     <div className="app-shell">
@@ -96,13 +125,43 @@ function App() {
         </header>
 
         <section className="content">
-          {activePage === "dashboard" && <Dashboard />}
-          {activePage === "leads" && <LeadsPage />}
-          {activePage === "pipeline" && <PipelinePage />}
-          {activePage === "followups" && <FollowUpsPage />}
+          {activePage === "dashboard" && (
+            <Dashboard
+              dashboard={crmData.dashboard}
+              followUps={crmData.followUps}
+              pipeline={crmData.pipeline}
+              loading={crmStatus.loading}
+              error={crmStatus.error}
+              onRetry={loadCrmData}
+            />
+          )}
+          {activePage === "leads" && (
+            <LeadsPage
+              leads={crmData.leads}
+              loading={crmStatus.loading}
+              error={crmStatus.error}
+              onRetry={loadCrmData}
+            />
+          )}
+          {activePage === "pipeline" && (
+            <PipelinePage
+              pipeline={crmData.pipeline}
+              loading={crmStatus.loading}
+              error={crmStatus.error}
+              onRetry={loadCrmData}
+            />
+          )}
+          {activePage === "followups" && (
+            <FollowUpsPage
+              followUps={crmData.followUps}
+              loading={crmStatus.loading}
+              error={crmStatus.error}
+              onRetry={loadCrmData}
+            />
+          )}
           {activePage === "counselors" && <CounselorsPage />}
           {activePage === "reports" && <ReportsPage />}
-          {activePage === "settings" && <SettingsPage />}
+          {activePage === "settings" && <SettingsPage stages={crmData.pipeline} />}
         </section>
       </main>
     </div>
@@ -121,7 +180,13 @@ function PageTitle({ title, subtitle, action }) {
   );
 }
 
-function Dashboard() {
+function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry }) {
+  const barHeights = useMemo(() => {
+    const counts = pipeline.map((stage) => stage.count);
+    const max = Math.max(...counts, 1);
+    return counts.length ? counts.map((count) => Math.max(8, Math.round((count / max) * 100))) : [8, 8, 8, 8, 8];
+  }, [pipeline]);
+
   return (
     <>
       <PageTitle
@@ -136,27 +201,36 @@ function Dashboard() {
       />
 
       <div className="metric-grid">
-        <Metric title="Total Leads" value="1,284" trend="+12%" />
-        <Metric title="New Leads" value="42" trend="+4%" warning />
-        <Metric title="Contacted" value="856" trend="+18%" />
-        <Metric title="Enrolled" value="219" trend="+7%" />
+        <Metric title="Total Leads" value={formatNumber(dashboard?.totalLeads)} />
+        <Metric title="New Leads" value={formatNumber(dashboard?.newLeadsToday)} warning />
+        <Metric title="Contacted" value={formatNumber(dashboard?.contacted)} />
+        <Metric title="Enrolled" value={formatNumber(dashboard?.enrolled)} />
       </div>
 
       <div className="dashboard-grid">
         <Card title="Conversion Pipeline" className="wide-card">
-          <div className="bar-chart">
-            {[34, 51, 72, 59, 80, 42].map((height, index) => (
-              <span key={index} style={{ height: `${height}%` }} />
-            ))}
-          </div>
+          {loading && <StatePanel title="Loading pipeline" message="Fetching live stage counts..." />}
+          {error && <StatePanel title="Could not load pipeline" message={error} action={onRetry} />}
+          {!loading && !error && (
+            <div className="bar-chart">
+              {barHeights.map((height, index) => (
+                <span key={pipeline[index]?.name || index} style={{ height: `${height}%` }} />
+              ))}
+            </div>
+          )}
         </Card>
 
-        <Card title="Today's Schedule" badge="5 Pending">
-          <div className="schedule-list">
-            {followUps.map((item) => (
-              <FollowUpRow key={item.student} item={item} compact />
-            ))}
-          </div>
+        <Card title="Today's Schedule" badge={`${followUps.length} Pending`}>
+          {loading && <StatePanel title="Loading follow-ups" message="Fetching the live queue..." />}
+          {error && <StatePanel title="Could not load follow-ups" message={error} action={onRetry} />}
+          {!loading && !error && followUps.length === 0 && <StatePanel title="No follow-ups" message="There are no scheduled follow-ups for this tenant." />}
+          {!loading && !error && followUps.length > 0 && (
+            <div className="schedule-list">
+              {followUps.slice(0, 3).map((item) => (
+                <FollowUpRow key={item.id} item={item} compact />
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card title="Recent Activity" className="wide-card">
@@ -182,7 +256,7 @@ function Dashboard() {
   );
 }
 
-function LeadsPage() {
+function LeadsPage({ leads, loading, error, onRetry }) {
   return (
     <>
       <PageTitle
@@ -196,21 +270,12 @@ function LeadsPage() {
         }
       />
       <FilterBar />
-      <LeadsTable />
+      <LeadsTable leads={leads} loading={loading} error={error} onRetry={onRetry} />
     </>
   );
 }
 
-function PipelinePage() {
-  const grouped = useMemo(
-    () =>
-      stages.map((stage) => ({
-        ...stage,
-        leads: leads.filter((lead) => lead.stage === stage.name || (stage.name === "Contacted" && lead.status === "Follow Up")),
-      })),
-    []
-  );
-
+function PipelinePage({ pipeline, loading, error, onRetry }) {
   return (
     <>
       <PageTitle
@@ -229,52 +294,60 @@ function PipelinePage() {
         <button className="soft-button">High Priority</button>
         <button className="soft-button">Due Today</button>
       </div>
-      <div className="kanban">
-        {grouped.map((stage) => (
-          <section className="kanban-column" key={stage.name}>
-            <header>
-              <h3>{stage.name}</h3>
-              <span>{stage.count}</span>
-            </header>
-            {stage.leads.map((lead) => (
-              <article className="lead-card" key={lead.id}>
-                <div className="lead-card-top">
-                  <Badge label={lead.course.split(" ")[0]} />
-                  <MoreVertical size={18} />
-                </div>
-                <h4>{lead.name}</h4>
-                <p>{lead.course}</p>
-                <footer>
-                  <span className={lead.priority === "High" ? "danger-text" : ""}>{lead.nextFollowUp}</span>
-                  <span className="mini-avatar">{initials(lead.name)}</span>
-                </footer>
-              </article>
-            ))}
-            <button className="add-card">
-              <Plus size={18} />
-              Add Card
-            </button>
-          </section>
-        ))}
-      </div>
+      {loading && <StatePanel title="Loading pipeline" message="Fetching live stages from CounselMate API..." />}
+      {error && <StatePanel title="Could not load pipeline" message={error} action={onRetry} />}
+      {!loading && !error && pipeline.length === 0 && <StatePanel title="No pipeline stages" message="No lead stages are configured for this tenant." />}
+      {!loading && !error && pipeline.length > 0 && (
+        <div className="kanban">
+          {pipeline.map((stage) => (
+            <section className="kanban-column" key={stage.name}>
+              <header>
+                <h3>{stage.name}</h3>
+                <span>{stage.count}</span>
+              </header>
+              {stage.leads.map((lead) => (
+                <article className="lead-card" key={lead.id}>
+                  <div className="lead-card-top">
+                    <Badge label={(lead.course || "Course").split(" ")[0]} />
+                    <MoreVertical size={18} />
+                  </div>
+                  <h4>{lead.studentName}</h4>
+                  <p>{lead.course}</p>
+                  <footer>
+                    <span className={lead.priority === "High" ? "danger-text" : ""}>{formatFollowUpLabel(lead.nextFollowUpAt)}</span>
+                    <span className="mini-avatar">{initials(lead.studentName)}</span>
+                  </footer>
+                </article>
+              ))}
+              <button className="add-card">
+                <Plus size={18} />
+                Add Card
+              </button>
+            </section>
+          ))}
+        </div>
+      )}
     </>
   );
 }
 
-function FollowUpsPage() {
+function FollowUpsPage({ followUps, loading, error, onRetry }) {
   return (
     <>
       <PageTitle title="Follow-ups" subtitle="Manage your daily student engagement pipeline." />
       <div className="two-column">
         <div>
           <div className="tabs">
-            <button className="active">Today <span>8</span></button>
+            <button className="active">Today <span>{followUps.length}</span></button>
             <button>Upcoming</button>
             <button>Overdue</button>
           </div>
           <div className="followup-list">
-            {followUps.map((item) => (
-              <FollowUpRow key={item.student} item={item} />
+            {loading && <StatePanel title="Loading follow-ups" message="Fetching live scheduled tasks..." />}
+            {error && <StatePanel title="Could not load follow-ups" message={error} action={onRetry} />}
+            {!loading && !error && followUps.length === 0 && <StatePanel title="No follow-ups" message="No scheduled follow-ups were found." />}
+            {!loading && !error && followUps.map((item) => (
+              <FollowUpRow key={item.id} item={item} />
             ))}
             <button className="empty-dropzone">
               <Plus size={22} />
@@ -373,7 +446,9 @@ function ReportsPage() {
   );
 }
 
-function SettingsPage() {
+function SettingsPage({ stages }) {
+  const visibleStages = stages.length ? stages : fallbackStages;
+
   return (
     <>
       <PageTitle
@@ -411,7 +486,7 @@ function SettingsPage() {
           </Card>
           <Card title="Lead Stages">
             <div className="stage-list">
-              {stages.map((stage) => (
+              {visibleStages.map((stage) => (
                 <div key={stage.name}>
                   <MoreVertical size={18} />
                   {stage.name}
@@ -467,9 +542,13 @@ function FilterBar() {
   );
 }
 
-function LeadsTable() {
+function LeadsTable({ leads, loading, error, onRetry }) {
   return (
     <div className="table-card">
+      {loading && <StatePanel title="Loading leads" message="Fetching live leads from CounselMate API..." />}
+      {error && <StatePanel title="Could not load leads" message={error} action={onRetry} />}
+      {!loading && !error && leads.length === 0 && <StatePanel title="No leads" message="No leads were found for this tenant." />}
+      {!loading && !error && leads.length > 0 && (
       <table>
         <thead>
           <tr>
@@ -489,9 +568,9 @@ function LeadsTable() {
               <td><input type="checkbox" /></td>
               <td>
                 <div className="student-cell">
-                  <span>{initials(lead.name)}</span>
+                  <span>{initials(lead.studentName)}</span>
                   <div>
-                    <strong>{lead.name}</strong>
+                    <strong>{lead.studentName}</strong>
                     <small>{lead.email}</small>
                   </div>
                 </div>
@@ -506,8 +585,9 @@ function LeadsTable() {
           ))}
         </tbody>
       </table>
+      )}
       <footer className="table-footer">
-        <span>Showing 5 of 124 leads</span>
+        <span>Showing {loading || error ? 0 : leads.length} of {loading || error ? 0 : leads.length} leads</span>
         <div>
           <button className="pager active">1</button>
           <button className="pager">2</button>
@@ -523,14 +603,14 @@ function FollowUpRow({ item, compact = false }) {
     <article className={`followup-row ${compact ? "compact" : ""}`}>
       <div className="channel-icon">{item.type[0]}</div>
       <div>
-        <h3>{item.student}</h3>
+        <h3>{item.studentName}</h3>
         <Badge label={`${item.priority} Priority`} danger={item.priority === "High"} warning={item.priority === "Medium"} />
-        <p>{item.course}</p>
+        <p>{item.assignedTo}</p>
       </div>
       <div>
-        <small>Scheduled</small>
-        <strong>{item.time}</strong>
-        <p>{item.due}</p>
+        <small>{item.status}</small>
+        <strong>{formatTime(item.dueAt)}</strong>
+        <p>{formatDate(item.dueAt)}</p>
       </div>
       {!compact && <button className="primary-button"><CheckCircle2 size={18} />Complete</button>}
     </article>
@@ -586,7 +666,52 @@ function Status({ status }) {
 }
 
 function initials(name) {
-  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  return (name || "?").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+}
+
+function StatePanel({ title, message, action }) {
+  return (
+    <div className="state-panel">
+      <strong>{title}</strong>
+      <p>{message}</p>
+      {action && <button className="soft-button" onClick={action}>Retry</button>}
+    </div>
+  );
+}
+
+function formatNumber(value) {
+  return typeof value === "number" ? new Intl.NumberFormat("en-IN").format(value) : "-";
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "No date";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatTime(value) {
+  if (!value) {
+    return "No time";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatFollowUpLabel(value) {
+  if (!value) {
+    return "No follow-up";
+  }
+
+  return `${formatDate(value)}, ${formatTime(value)}`;
 }
 
 export default App;

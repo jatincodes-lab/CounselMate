@@ -29,6 +29,7 @@ Frontend:
 ```bash
 cd frontend
 npm install
+copy .env.example .env
 npm run dev
 ```
 
@@ -43,6 +44,11 @@ dotnet run
 ```
 
 For Neon or Render, set `DATABASE_URL` or `ConnectionStrings__DefaultConnection` to the PostgreSQL connection string.
+
+The frontend reads:
+
+- `VITE_API_BASE_URL`
+- `VITE_TENANT_SLUG`
 
 Initial API endpoints:
 

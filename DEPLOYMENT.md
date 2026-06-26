@@ -42,5 +42,6 @@ Recommended settings:
 - Build command: `npm run build`
 - Output directory: `dist`
 - Environment variable: `VITE_API_BASE_URL=https://your-render-service.onrender.com/api`
+- Environment variable: `VITE_TENANT_SLUG=demo-academy`
 
-The frontend still uses local mock data. The next development step is to add an API client that reads `VITE_API_BASE_URL`.
+The dashboard, leads, pipeline, and follow-up screens read from the backend API.

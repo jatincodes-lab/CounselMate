@@ -266,6 +266,152 @@ api.MapPost("/platform/tenants", async (
     ));
 });
 
+api.MapGet("/users", async (
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (currentUser is null)
+    {
+        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var users = await db.Users
+        .AsNoTracking()
+        .Where(user => user.TenantId == currentUser.TenantId)
+        .OrderBy(user => user.FullName)
+        .Select(user => new UserResponse(
+            user.Id,
+            user.FullName,
+            user.Email,
+            user.Role.ToString(),
+            user.BranchId,
+            user.Branch == null ? null : user.Branch.Name,
+            user.IsActive,
+            user.CreatedAt,
+            user.LastLoginAt
+        ))
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(users);
+});
+
+api.MapPost("/users", async (
+    CreateUserRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser))
+    {
+        return Results.Json(new { message = "Only admins can create users." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var validationErrors = ValidateCreateUserRequest(request, currentUser);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var email = NormalizeEmail(request.Email);
+    var duplicateUser = await db.Users.AnyAsync(
+        user => user.TenantId == currentUser!.TenantId && user.Email == email,
+        cancellationToken);
+    if (duplicateUser)
+    {
+        return Results.Conflict(new { message = "A user already exists with this email in this tenant." });
+    }
+
+    if (request.BranchId is not null)
+    {
+        var branchExists = await db.Branches.AnyAsync(
+            branch => branch.TenantId == currentUser!.TenantId && branch.IsActive && branch.Id == request.BranchId,
+            cancellationToken);
+        if (!branchExists)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["branchId"] = ["Select a valid active branch."]
+            });
+        }
+    }
+
+    var user = new AppUser
+    {
+        Id = Guid.NewGuid(),
+        TenantId = currentUser!.TenantId,
+        BranchId = request.BranchId,
+        FullName = NormalizeName(request.FullName),
+        Email = email,
+        PasswordHash = HashPassword(request.Password),
+        Role = Enum.Parse<UserRole>(request.Role),
+        IsActive = true,
+        CreatedAt = DateTimeOffset.UtcNow
+    };
+
+    db.Users.Add(user);
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Created($"/api/users/{user.Id}", await GetUserResponseAsync(db, currentUser.TenantId, user.Id, cancellationToken));
+});
+
+api.MapPatch("/users/{id:guid}", async (
+    Guid id,
+    UpdateUserRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser))
+    {
+        return Results.Json(new { message = "Only admins can update users." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var user = await db.Users
+        .FirstOrDefaultAsync(item => item.TenantId == currentUser!.TenantId && item.Id == id, cancellationToken);
+    if (user is null)
+    {
+        return Results.NotFound(new { message = "User not found." });
+    }
+
+    var validationErrors = ValidateUpdateUserRequest(request, currentUser, user);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    if (request.BranchId is not null)
+    {
+        var branchExists = await db.Branches.AnyAsync(
+            branch => branch.TenantId == currentUser!.TenantId && branch.IsActive && branch.Id == request.BranchId,
+            cancellationToken);
+        if (!branchExists)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["branchId"] = ["Select a valid active branch."]
+            });
+        }
+    }
+
+    user.FullName = NormalizeName(request.FullName);
+    user.BranchId = request.BranchId;
+    user.Role = Enum.Parse<UserRole>(request.Role);
+    user.IsActive = request.IsActive;
+
+    if (!string.IsNullOrWhiteSpace(request.Password))
+    {
+        user.PasswordHash = HashPassword(request.Password);
+        user.FailedLoginAttempts = 0;
+    }
+
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Ok(await GetUserResponseAsync(db, currentUser!.TenantId, user.Id, cancellationToken));
+});
+
 api.MapGet("/tenants/current", async (
     HttpContext httpContext,
     AppDbContext db,
@@ -1215,6 +1361,31 @@ static bool CanManagePlatform(AuthenticatedUser? user)
     return user?.Role == nameof(UserRole.Owner);
 }
 
+static bool CanManageUsers(AuthenticatedUser? user)
+{
+    return user?.Role is nameof(UserRole.Owner) or nameof(UserRole.Admin);
+}
+
+static bool IsAllowedManagedRole(string? role, AuthenticatedUser? currentUser)
+{
+    if (string.IsNullOrWhiteSpace(role) || !Enum.TryParse<UserRole>(role, ignoreCase: false, out var parsedRole))
+    {
+        return false;
+    }
+
+    if (parsedRole == UserRole.Owner)
+    {
+        return currentUser?.Role == nameof(UserRole.Owner);
+    }
+
+    return parsedRole is UserRole.Admin
+        or UserRole.BranchManager
+        or UserRole.Counselor
+        or UserRole.Telecaller
+        or UserRole.Accountant
+        or UserRole.ReadOnly;
+}
+
 static void AddDefaultTenantSetup(AppDbContext db, Guid tenantId, DateTimeOffset createdAt)
 {
     db.LeadStages.AddRange(
@@ -1290,6 +1461,25 @@ static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid t
                     activity.CreatedAt
                 ))
                 .ToArray()
+        ))
+        .FirstAsync(cancellationToken);
+}
+
+static async Task<UserResponse> GetUserResponseAsync(AppDbContext db, Guid tenantId, Guid userId, CancellationToken cancellationToken)
+{
+    return await db.Users
+        .AsNoTracking()
+        .Where(user => user.TenantId == tenantId && user.Id == userId)
+        .Select(user => new UserResponse(
+            user.Id,
+            user.FullName,
+            user.Email,
+            user.Role.ToString(),
+            user.BranchId,
+            user.Branch == null ? null : user.Branch.Name,
+            user.IsActive,
+            user.CreatedAt,
+            user.LastLoginAt
         ))
         .FirstAsync(cancellationToken);
 }
@@ -1382,6 +1572,64 @@ static Dictionary<string, string[]> ValidateCreateTenantRequest(CreateTenantRequ
     if (!errors.ContainsKey("adminPassword") && request.AdminPassword.Length < 8)
     {
         errors["adminPassword"] = ["Password must be at least 8 characters."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateCreateUserRequest(CreateUserRequest request, AuthenticatedUser? currentUser)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "fullName", request.FullName, 160);
+    AddRequiredError(errors, "email", request.Email, 240);
+    AddRequiredError(errors, "role", request.Role, 40);
+    AddRequiredError(errors, "password", request.Password, 120);
+
+    if (!errors.ContainsKey("email") && !IsValidEmail(request.Email))
+    {
+        errors["email"] = ["Enter a valid email address."];
+    }
+
+    if (!errors.ContainsKey("role") && !IsAllowedManagedRole(request.Role, currentUser))
+    {
+        errors["role"] = ["Select a valid role for your permission level."];
+    }
+
+    if (!errors.ContainsKey("password") && request.Password.Length < 8)
+    {
+        errors["password"] = ["Password must be at least 8 characters."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateUpdateUserRequest(UpdateUserRequest request, AuthenticatedUser? currentUser, AppUser targetUser)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "fullName", request.FullName, 160);
+    AddRequiredError(errors, "role", request.Role, 40);
+
+    if (!errors.ContainsKey("role") && !IsAllowedManagedRole(request.Role, currentUser))
+    {
+        errors["role"] = ["Select a valid role for your permission level."];
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.Password) && request.Password.Length < 8)
+    {
+        errors["password"] = ["Password must be at least 8 characters."];
+    }
+
+    if (currentUser?.UserId == targetUser.Id)
+    {
+        if (!request.IsActive)
+        {
+            errors["isActive"] = ["You cannot deactivate your own account."];
+        }
+
+        if (!string.Equals(request.Role, currentUser.Role, StringComparison.Ordinal))
+        {
+            errors["role"] = ["You cannot change your own role."];
+        }
     }
 
     return errors;
@@ -1570,6 +1818,31 @@ record TenantCreatedResponse(
     string Name,
     string Slug,
     string AdminEmail);
+
+record UserResponse(
+    Guid Id,
+    string FullName,
+    string Email,
+    string Role,
+    Guid? BranchId,
+    string? Branch,
+    bool IsActive,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? LastLoginAt);
+
+record CreateUserRequest(
+    string FullName,
+    string Email,
+    string Role,
+    Guid? BranchId,
+    string Password);
+
+record UpdateUserRequest(
+    string FullName,
+    string Role,
+    Guid? BranchId,
+    bool IsActive,
+    string? Password);
 
 record TokenClaims(Guid UserId, Guid TenantId);
 

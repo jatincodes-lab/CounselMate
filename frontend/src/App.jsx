@@ -27,9 +27,12 @@ import {
   getLeadDetail,
   getPlatformTenants,
   getStoredAuth,
+  getUsers,
   login,
   logout,
+  createUser,
   createPlatformTenant,
+  updateUser,
   updateLead,
 } from "./api";
 import counselMateLogo from "./assets/counselmate-logo.png";
@@ -85,6 +88,13 @@ function App() {
   });
   const [platformTenants, setPlatformTenants] = useState([]);
   const [platformStatus, setPlatformStatus] = useState({
+    loading: false,
+    error: "",
+    saving: false,
+    fieldErrors: {},
+  });
+  const [tenantUsers, setTenantUsers] = useState([]);
+  const [usersStatus, setUsersStatus] = useState({
     loading: false,
     error: "",
     saving: false,
@@ -217,6 +227,57 @@ function App() {
     }
   };
 
+  const loadTenantUsers = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
+
+    setUsersStatus((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const users = await getUsers();
+      setTenantUsers(users);
+      setUsersStatus((current) => ({ ...current, loading: false, error: "" }));
+    } catch (error) {
+      setUsersStatus((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load users.",
+      }));
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (activePage === "counselors") {
+      loadTenantUsers();
+    }
+  }, [activePage, loadTenantUsers]);
+
+  const runUserAction = async (action) => {
+    setUsersStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {} }));
+    try {
+      await action();
+      await loadTenantUsers();
+      setUsersStatus((current) => ({ ...current, saving: false, error: "", fieldErrors: {} }));
+      return true;
+    } catch (error) {
+      setUsersStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to save user.",
+        fieldErrors: error?.errors || {},
+      }));
+      return false;
+    }
+  };
+
+  const handleCreateUser = (payload) => {
+    return runUserAction(() => createUser(payload));
+  };
+
+  const handleUpdateUser = (userId, payload) => {
+    return runUserAction(() => updateUser(userId, payload));
+  };
+
   const handleCreateLead = async (payload) => {
     setCreateStatus({ saving: true, error: "", fieldErrors: {} });
     try {
@@ -290,6 +351,7 @@ function App() {
   }
 
   const canManageLeads = ["Owner", "Admin", "BranchManager", "Counselor", "Telecaller"].includes(currentUser.role);
+  const canManageUsers = ["Owner", "Admin"].includes(currentUser.role);
 
   return (
     <div className="app-shell">
@@ -404,7 +466,21 @@ function App() {
               onRetry={loadCrmData}
             />
           )}
-          {activePage === "counselors" && <CounselorsPage />}
+          {activePage === "counselors" && (
+            <CounselorsPage
+              users={tenantUsers}
+              branches={crmData.leadOptions.branches}
+              currentUser={currentUser}
+              loading={usersStatus.loading}
+              error={usersStatus.error}
+              saving={usersStatus.saving}
+              fieldErrors={usersStatus.fieldErrors}
+              canManageUsers={canManageUsers}
+              onRetry={loadTenantUsers}
+              onCreateUser={handleCreateUser}
+              onUpdateUser={handleUpdateUser}
+            />
+          )}
           {activePage === "reports" && <ReportsPage />}
           {activePage === "settings" && <SettingsPage stages={crmData.pipeline} />}
         </section>
@@ -1294,27 +1370,205 @@ function FollowUpsPage({ followUps, loading, error, onRetry }) {
   );
 }
 
-function CounselorsPage() {
+function CounselorsPage({
+  users,
+  branches,
+  currentUser,
+  loading,
+  error,
+  saving,
+  fieldErrors,
+  canManageUsers,
+  onRetry,
+  onCreateUser,
+  onUpdateUser,
+}) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+
   return (
     <>
-      <PageTitle title="Counsellors" subtitle="Monitor team workload, ownership, and conversion performance." />
-      <Card title="Team Performance">
-        <div className="team-list">
-          {counselors.map((person) => (
-            <div className="team-row" key={person.name}>
-              <div className="avatar">{initials(person.name)}</div>
-              <div>
-                <strong>{person.name}</strong>
-                <p>{person.role}</p>
-              </div>
-              <span>{person.leads} Leads</span>
-              <span>{person.conversion}</span>
-              <button className="ghost-button">View</button>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <PageTitle
+        title="Team Management"
+        subtitle="Manage tenant admins, counsellors, callers, accountants, and read-only users."
+        action={
+          <button className="primary-button" onClick={() => setCreateOpen(true)} disabled={!canManageUsers}>
+            <Plus size={18} />
+            Add User
+          </button>
+        }
+      />
+
+      {createOpen && (
+        <UserFormPanel
+          title="Add User"
+          branches={branches}
+          currentUser={currentUser}
+          saving={saving}
+          error={error}
+          fieldErrors={fieldErrors}
+          submitLabel="Create User"
+          onCancel={() => setCreateOpen(false)}
+          onSubmit={async (payload) => {
+            const created = await onCreateUser(payload);
+            if (created) {
+              setCreateOpen(false);
+            }
+          }}
+        />
+      )}
+
+      {editingUser && (
+        <UserFormPanel
+          title={`Edit ${editingUser.fullName}`}
+          user={editingUser}
+          branches={branches}
+          currentUser={currentUser}
+          saving={saving}
+          error={error}
+          fieldErrors={fieldErrors}
+          submitLabel="Save User"
+          onCancel={() => setEditingUser(null)}
+          onSubmit={async (payload) => {
+            const updated = await onUpdateUser(editingUser.id, payload);
+            if (updated) {
+              setEditingUser(null);
+            }
+          }}
+        />
+      )}
+
+      <div className="table-card">
+        {loading && <StatePanel title="Loading users" message="Fetching tenant team members..." />}
+        {error && !createOpen && !editingUser && <StatePanel title="Could not load users" message={error} action={onRetry} />}
+        {!loading && !error && users.length === 0 && <StatePanel title="No users" message="No users were found for this tenant." />}
+        {!loading && users.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Branch</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id}>
+                  <td>
+                    <div className="student-cell">
+                      <span>{initials(user.fullName)}</span>
+                      <div>
+                        <strong>{user.fullName}</strong>
+                        <small>{user.email}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td><Badge label={formatRole(user.role)} muted={user.role === "ReadOnly"} /></td>
+                  <td>{user.branch || "No branch"}</td>
+                  <td><Badge label={user.isActive ? "Active" : "Inactive"} muted={!user.isActive} /></td>
+                  <td>{user.lastLoginAt ? `${formatDate(user.lastLoginAt)}, ${formatTime(user.lastLoginAt)}` : "Never"}</td>
+                  <td>
+                    <button className="ghost-button" onClick={() => setEditingUser(user)} disabled={!canManageUsers}>
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </>
+  );
+}
+
+function UserFormPanel({ title, user, branches, currentUser, saving, error, fieldErrors, submitLabel, onCancel, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    fullName: user?.fullName || "",
+    email: user?.email || "",
+    role: user?.role || "Counselor",
+    branchId: user?.branchId || "",
+    isActive: user?.isActive ?? true,
+    password: "",
+  }));
+  const isEditing = Boolean(user);
+
+  useEffect(() => {
+    setForm({
+      fullName: user?.fullName || "",
+      email: user?.email || "",
+      role: user?.role || "Counselor",
+      branchId: user?.branchId || "",
+      isActive: user?.isActive ?? true,
+      password: "",
+    });
+  }, [user]);
+
+  const roleOptions = getManagedRoleOptions(currentUser);
+  const getFieldError = (field) => firstError(fieldErrors[field]);
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const payload = {
+      fullName: form.fullName.trim(),
+      role: form.role,
+      branchId: optionalValue(form.branchId),
+      password: form.password,
+    };
+
+    if (isEditing) {
+      payload.isActive = form.isActive;
+    } else {
+      payload.email = form.email.trim();
+    }
+
+    onSubmit(payload);
+  };
+
+  return (
+    <form className="tenant-create-panel" onSubmit={handleSubmit}>
+      <div className="section-heading">
+        <h3>{title}</h3>
+        <button type="button" className="ghost-button" onClick={onCancel} disabled={saving}>Cancel</button>
+      </div>
+      {error && <div className="form-alert">{error}</div>}
+      <div className="form-grid">
+        <Field label="Full Name" error={getFieldError("fullName")} required>
+          <input value={form.fullName} maxLength={160} onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} required autoFocus />
+        </Field>
+        <Field label="Email" error={getFieldError("email")} required>
+          <input value={form.email} type="email" maxLength={240} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} disabled={isEditing} required />
+        </Field>
+        <Field label="Role" error={getFieldError("role")} required>
+          <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))} required>
+            {roleOptions.map((item) => <option key={item} value={item}>{formatRole(item)}</option>)}
+          </select>
+        </Field>
+        <Field label="Branch" error={getFieldError("branchId")}>
+          <select value={form.branchId} onChange={(event) => setForm((current) => ({ ...current, branchId: event.target.value }))}>
+            <option value="">No branch</option>
+            {branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        {isEditing && (
+          <Field label="Status" error={getFieldError("isActive")}>
+            <select value={form.isActive ? "active" : "inactive"} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.value === "active" }))}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </Field>
+        )}
+        <Field label={isEditing ? "Reset Password" : "Initial Password"} error={getFieldError("password")} className={isEditing ? "" : "span-2"} required={!isEditing}>
+          <input value={form.password} type="password" maxLength={120} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} required={!isEditing} placeholder={isEditing ? "Leave blank to keep current password" : ""} />
+        </Field>
+      </div>
+      <footer className="modal-actions">
+        <button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving..." : submitLabel}</button>
+      </footer>
+    </form>
   );
 }
 
@@ -1720,6 +1974,15 @@ function validateLeadForm(form) {
 
 function findOptionId(options, name) {
   return options.find((item) => item.name === name)?.id || "";
+}
+
+function getManagedRoleOptions(currentUser) {
+  const roles = ["Admin", "BranchManager", "Counselor", "Telecaller", "Accountant", "ReadOnly"];
+  return currentUser?.role === "Owner" ? ["Owner", ...roles] : roles;
+}
+
+function formatRole(role) {
+  return role === "ReadOnly" ? "Read Only" : role.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
 function firstError(value) {

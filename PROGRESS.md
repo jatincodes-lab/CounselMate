@@ -94,6 +94,14 @@ The project has been started and the first working foundation is in place. The p
   - Creates tenant, main branch, tenant admin, default lead stages, default lead sources, and starter courses
   - Frontend owner-only Platform page
   - Frontend create client institute form
+- Added tenant user management:
+  - Tenant-scoped user list endpoint
+  - Admin/owner-only create user endpoint
+  - Admin/owner-only update user endpoint
+  - Duplicate tenant email protection
+  - Role validation and escalation checks
+  - Self-deactivation/self-role-change protection
+  - Frontend Team Management page under Counsellors
 
 ### Backend Foundation
 
@@ -211,6 +219,13 @@ The project has been started and the first working foundation is in place. The p
   - New tenant admin login worked
   - New tenant dashboard returned tenant-scoped empty CRM data
   - Read-only user platform access returned `403`
+- Tenant user management smoke test passed:
+  - Owner/admin user list loaded
+  - Tenant user creation succeeded
+  - Tenant user update succeeded
+  - Read-only user create attempt returned `403`
+  - Duplicate email returned `409`
+  - Self-deactivation returned `400`
 
 ## Previous Local URLs
 
@@ -229,20 +244,20 @@ The project has been started and the first working foundation is in place. The p
 - Current frontend uses API data for dashboard, leads, pipeline, and follow-ups.
 - Current backend uses EF Core with PostgreSQL configuration and tenant-filtered queries.
 - The initial migration has been applied to the Neon database.
-- Authentication and role-based access control are not implemented yet.
+- Authentication and role-based access control are implemented for local CRM workflows.
 
 ## Next Development Steps
 
-1. Add tenant user management from Settings.
-2. Add follow-up reschedule/cancel actions.
-3. Add password change/reset workflow.
+1. Add follow-up reschedule/cancel actions.
+2. Add password change/reset workflow.
+3. Add tenant profile/settings persistence.
 4. Add payments, documents, and import/export later after core CRM workflows are stable.
 
 ## Recommended Immediate Priority
 
 The next best step is:
 
-1. Add tenant user management from Settings.
-2. Add password change/reset workflow.
-3. Add follow-up reschedule/cancel workflow.
+1. Add password change/reset workflow.
+2. Add follow-up reschedule/cancel workflow.
+3. Add tenant profile/settings persistence.
 4. Deploy to Render/Vercel only after core workflows are complete.

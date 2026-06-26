@@ -115,6 +115,24 @@ export async function createPlatformTenant(payload) {
   });
 }
 
+export async function getUsers() {
+  return request("/users");
+}
+
+export async function createUser(payload) {
+  return request("/users", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateUser(userId, payload) {
+  return request(`/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
 export async function createLead(payload) {
   return request("/leads", {
     method: "POST",

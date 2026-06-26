@@ -15,7 +15,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getCrmData } from "./api";
 import { activities, counselors, stages as fallbackStages } from "./data/mockData";
 

@@ -17,7 +17,15 @@ import {
   X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { createLead, getCrmData } from "./api";
+import {
+  addLeadActivity,
+  completeLeadFollowUp,
+  createLead,
+  createLeadFollowUp,
+  getCrmData,
+  getLeadDetail,
+  updateLead,
+} from "./api";
 import { activities, counselors, stages as fallbackStages } from "./data/mockData";
 
 const navItems = [
@@ -46,6 +54,17 @@ function App() {
   });
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [createStatus, setCreateStatus] = useState({
+    saving: false,
+    error: "",
+    fieldErrors: {},
+  });
+  const [selectedLeadId, setSelectedLeadId] = useState("");
+  const [leadDetail, setLeadDetail] = useState(null);
+  const [leadDetailStatus, setLeadDetailStatus] = useState({
+    loading: false,
+    error: "",
+  });
+  const [leadActionStatus, setLeadActionStatus] = useState({
     saving: false,
     error: "",
     fieldErrors: {},
@@ -82,6 +101,53 @@ function App() {
       setCreateStatus({
         saving: false,
         error: error instanceof Error ? error.message : "Unable to create lead.",
+        fieldErrors: error?.errors || {},
+      });
+    }
+  };
+
+  const openLeadDetail = async (leadId) => {
+    setSelectedLeadId(leadId);
+    setLeadDetail(null);
+    setLeadDetailStatus({ loading: true, error: "" });
+    setLeadActionStatus({ saving: false, error: "", fieldErrors: {} });
+
+    try {
+      const detail = await getLeadDetail(leadId);
+      setLeadDetail(detail);
+      setLeadDetailStatus({ loading: false, error: "" });
+    } catch (error) {
+      setLeadDetailStatus({
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load lead details.",
+      });
+    }
+  };
+
+  const closeLeadDetail = () => {
+    if (!leadActionStatus.saving) {
+      setSelectedLeadId("");
+      setLeadDetail(null);
+      setLeadDetailStatus({ loading: false, error: "" });
+      setLeadActionStatus({ saving: false, error: "", fieldErrors: {} });
+    }
+  };
+
+  const runLeadAction = async (action) => {
+    if (!selectedLeadId) {
+      return;
+    }
+
+    setLeadActionStatus({ saving: true, error: "", fieldErrors: {} });
+    try {
+      const detail = await action(selectedLeadId);
+      setLeadDetail(detail);
+      await loadCrmData();
+      setLeadActionStatus({ saving: false, error: "", fieldErrors: {} });
+    } catch (error) {
+      setLeadActionStatus({
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to update lead.",
         fieldErrors: error?.errors || {},
       });
     }
@@ -168,6 +234,7 @@ function App() {
               error={crmStatus.error}
               onRetry={loadCrmData}
               onNewLead={() => setLeadModalOpen(true)}
+              onOpenLead={openLeadDetail}
             />
           )}
           {activePage === "pipeline" && (
@@ -177,6 +244,7 @@ function App() {
               error={crmStatus.error}
               onRetry={loadCrmData}
               onNewLead={() => setLeadModalOpen(true)}
+              onOpenLead={openLeadDetail}
             />
           )}
           {activePage === "followups" && (
@@ -206,6 +274,23 @@ function App() {
             }
           }}
           onSubmit={handleCreateLead}
+        />
+      )}
+
+      {selectedLeadId && (
+        <LeadDetailDrawer
+          leadId={selectedLeadId}
+          lead={leadDetail}
+          options={crmData.leadOptions}
+          loading={leadDetailStatus.loading}
+          error={leadDetailStatus.error}
+          actionStatus={leadActionStatus}
+          onClose={closeLeadDetail}
+          onRetry={() => openLeadDetail(selectedLeadId)}
+          onUpdate={(payload) => runLeadAction((leadId) => updateLead(leadId, payload))}
+          onAddActivity={(payload) => runLeadAction((leadId) => addLeadActivity(leadId, payload))}
+          onCreateFollowUp={(payload) => runLeadAction((leadId) => createLeadFollowUp(leadId, payload))}
+          onCompleteFollowUp={(followUpId) => runLeadAction((leadId) => completeLeadFollowUp(leadId, followUpId))}
         />
       )}
     </div>
@@ -300,7 +385,7 @@ function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, on
   );
 }
 
-function LeadsPage({ leads, loading, error, onRetry, onNewLead }) {
+function LeadsPage({ leads, loading, error, onRetry, onNewLead, onOpenLead }) {
   return (
     <>
       <PageTitle
@@ -314,7 +399,7 @@ function LeadsPage({ leads, loading, error, onRetry, onNewLead }) {
         }
       />
       <FilterBar />
-      <LeadsTable leads={leads} loading={loading} error={error} onRetry={onRetry} />
+      <LeadsTable leads={leads} loading={loading} error={error} onRetry={onRetry} onOpenLead={onOpenLead} />
     </>
   );
 }
@@ -407,40 +492,40 @@ function AddLeadModal({ options, saving, error, fieldErrors, onClose, onSubmit }
             {error && <div className="form-alert">{error}</div>}
 
             <div className="form-grid">
-              <Field label="Student Name" error={getFieldError("studentName")}>
-                <input value={form.studentName} maxLength={160} onChange={(event) => updateField("studentName", event.target.value)} autoFocus />
+              <Field label="Student Name" error={getFieldError("studentName")} required>
+                <input value={form.studentName} maxLength={160} onChange={(event) => updateField("studentName", event.target.value)} autoFocus required />
               </Field>
 
               <Field label="Guardian Name" error={getFieldError("guardianName")}>
                 <input value={form.guardianName} maxLength={160} onChange={(event) => updateField("guardianName", event.target.value)} />
               </Field>
 
-              <Field label="Email" error={getFieldError("email")}>
-                <input value={form.email} type="email" maxLength={240} onChange={(event) => updateField("email", event.target.value)} />
+              <Field label="Email" error={getFieldError("email")} required>
+                <input value={form.email} type="email" maxLength={240} onChange={(event) => updateField("email", event.target.value)} required />
               </Field>
 
-              <Field label="Phone" error={getFieldError("phone")}>
-                <input value={form.phone} maxLength={40} onChange={(event) => updateField("phone", event.target.value)} placeholder="+91 98765 43210" />
+              <Field label="Phone" error={getFieldError("phone")} required>
+                <input value={form.phone} maxLength={40} onChange={(event) => updateField("phone", event.target.value)} placeholder="+91 98765 43210" required />
               </Field>
 
               <Field label="City" error={getFieldError("city")}>
                 <input value={form.city} maxLength={120} onChange={(event) => updateField("city", event.target.value)} />
               </Field>
 
-              <Field label="Course" error={getFieldError("courseId")}>
-                <select value={form.courseId} onChange={(event) => updateField("courseId", event.target.value)}>
+              <Field label="Course" error={getFieldError("courseId")} required>
+                <select value={form.courseId} onChange={(event) => updateField("courseId", event.target.value)} required>
                   {options.courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
               </Field>
 
-              <Field label="Source" error={getFieldError("leadSourceId")}>
-                <select value={form.leadSourceId} onChange={(event) => updateField("leadSourceId", event.target.value)}>
+              <Field label="Source" error={getFieldError("leadSourceId")} required>
+                <select value={form.leadSourceId} onChange={(event) => updateField("leadSourceId", event.target.value)} required>
                   {options.sources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
               </Field>
 
-              <Field label="Stage" error={getFieldError("leadStageId")}>
-                <select value={form.leadStageId} onChange={(event) => updateField("leadStageId", event.target.value)}>
+              <Field label="Stage" error={getFieldError("leadStageId")} required>
+                <select value={form.leadStageId} onChange={(event) => updateField("leadStageId", event.target.value)} required>
                   {options.stages.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
               </Field>
@@ -487,17 +572,284 @@ function AddLeadModal({ options, saving, error, fieldErrors, onClose, onSubmit }
   );
 }
 
-function Field({ label, error, children, className = "" }) {
+function LeadDetailDrawer({
+  leadId,
+  lead,
+  options,
+  loading,
+  error,
+  actionStatus,
+  onClose,
+  onRetry,
+  onUpdate,
+  onAddActivity,
+  onCreateFollowUp,
+  onCompleteFollowUp,
+}) {
+  const [editForm, setEditForm] = useState(() => createLeadUpdateForm(lead));
+  const [noteForm, setNoteForm] = useState({ type: "Note", description: "" });
+  const [followUpForm, setFollowUpForm] = useState(() => createDefaultFollowUpForm(lead));
+
+  useEffect(() => {
+    setEditForm(createLeadUpdateForm(lead));
+    setFollowUpForm(createDefaultFollowUpForm(lead));
+  }, [lead]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !actionStatus.saving) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [actionStatus.saving, onClose]);
+
+  const getFieldError = (field) => firstError(actionStatus.fieldErrors[field]);
+  const canSave = Boolean(lead && editForm.leadStageId);
+
+  const handleUpdateSubmit = async (event) => {
+    event.preventDefault();
+    if (!canSave) {
+      return;
+    }
+
+    await onUpdate({
+      leadStageId: editForm.leadStageId,
+      assignedUserId: optionalValue(editForm.assignedUserId),
+      status: editForm.status,
+      priority: editForm.priority,
+      nextFollowUpAt: editForm.nextFollowUpAt ? new Date(editForm.nextFollowUpAt).toISOString() : null,
+    });
+  };
+
+  const handleNoteSubmit = async (event) => {
+    event.preventDefault();
+    if (!noteForm.description.trim()) {
+      return;
+    }
+
+    await onAddActivity({
+      type: noteForm.type,
+      description: noteForm.description.trim(),
+    });
+    setNoteForm({ type: "Note", description: "" });
+  };
+
+  const handleFollowUpSubmit = async (event) => {
+    event.preventDefault();
+    if (!followUpForm.dueAt) {
+      return;
+    }
+
+    await onCreateFollowUp({
+      type: followUpForm.type,
+      priority: followUpForm.priority,
+      assignedUserId: optionalValue(followUpForm.assignedUserId),
+      dueAt: new Date(followUpForm.dueAt).toISOString(),
+    });
+    setFollowUpForm(createDefaultFollowUpForm(lead));
+  };
+
+  return (
+    <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !actionStatus.saving && onClose()}>
+      <aside className="lead-drawer" role="dialog" aria-modal="true" aria-labelledby="lead-detail-title">
+        <header className="drawer-header">
+          <div>
+            <span className="eyebrow">{lead?.id || leadId}</span>
+            <h2 id="lead-detail-title">{lead?.studentName || "Lead Details"}</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} disabled={actionStatus.saving} aria-label="Close lead details">
+            <X size={20} />
+          </button>
+        </header>
+
+        {loading && <StatePanel title="Loading lead" message="Fetching the latest lead profile..." />}
+        {error && <StatePanel title="Could not load lead" message={error} action={onRetry} />}
+
+        {!loading && !error && lead && (
+          <div className="drawer-body">
+            {actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}
+
+            <section className="lead-summary">
+              <div className="lead-avatar">{initials(lead.studentName)}</div>
+              <div>
+                <h3>{lead.studentName}</h3>
+                <p>{lead.course} · {lead.source}</p>
+              </div>
+              <Status status={lead.status} />
+            </section>
+
+            <div className="detail-grid">
+              <InfoItem label="Phone" value={lead.phone} />
+              <InfoItem label="Email" value={lead.email} />
+              <InfoItem label="Guardian" value={lead.guardianName || "Not added"} />
+              <InfoItem label="City" value={lead.city || "Not added"} />
+              <InfoItem label="Branch" value={lead.branch || "No branch"} />
+              <InfoItem label="Created" value={formatDate(lead.createdAt)} />
+            </div>
+
+            <form className="drawer-section" onSubmit={handleUpdateSubmit}>
+              <div className="section-heading">
+                <h3>Lead Status</h3>
+                <button type="submit" className="primary-button" disabled={!canSave || actionStatus.saving}>
+                  {actionStatus.saving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+              <div className="form-grid compact">
+                <Field label="Stage" error={getFieldError("leadStageId")} required>
+                  <select value={editForm.leadStageId} onChange={(event) => setEditForm((current) => ({ ...current, leadStageId: event.target.value }))} required>
+                    {options.stages.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Status" error={getFieldError("status")}>
+                  <select value={editForm.status} onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}>
+                    {["New Lead", "Interested", "Follow Up", "Enrolled", "Dropped"].map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Priority" error={getFieldError("priority")}>
+                  <select value={editForm.priority} onChange={(event) => setEditForm((current) => ({ ...current, priority: event.target.value }))}>
+                    {["Low", "Medium", "High", "Urgent"].map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Counsellor" error={getFieldError("assignedUserId")}>
+                  <select value={editForm.assignedUserId} onChange={(event) => setEditForm((current) => ({ ...current, assignedUserId: event.target.value }))}>
+                    <option value="">Unassigned</option>
+                    {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Next Follow-up" error={getFieldError("nextFollowUpAt")} className="span-2">
+                  <input type="datetime-local" value={editForm.nextFollowUpAt} onChange={(event) => setEditForm((current) => ({ ...current, nextFollowUpAt: event.target.value }))} />
+                </Field>
+              </div>
+            </form>
+
+            <form className="drawer-section" onSubmit={handleNoteSubmit}>
+              <div className="section-heading">
+                <h3>Add Activity</h3>
+                <button type="submit" className="primary-button" disabled={!noteForm.description.trim() || actionStatus.saving}>
+                  Add Note
+                </button>
+              </div>
+              <div className="form-grid compact">
+                <Field label="Type" error={getFieldError("type")}>
+                  <select value={noteForm.type} onChange={(event) => setNoteForm((current) => ({ ...current, type: event.target.value }))}>
+                    {["Note", "Call", "WhatsApp", "Email", "Meeting"].map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Description" error={getFieldError("description")} className="span-2" required>
+                  <textarea value={noteForm.description} maxLength={500} onChange={(event) => setNoteForm((current) => ({ ...current, description: event.target.value }))} required />
+                </Field>
+              </div>
+            </form>
+
+            <form className="drawer-section" onSubmit={handleFollowUpSubmit}>
+              <div className="section-heading">
+                <h3>Schedule Follow-up</h3>
+                <button type="submit" className="primary-button" disabled={!followUpForm.dueAt || actionStatus.saving}>
+                  Schedule
+                </button>
+              </div>
+              <div className="form-grid compact">
+                <Field label="Type" error={getFieldError("type")}>
+                  <select value={followUpForm.type} onChange={(event) => setFollowUpForm((current) => ({ ...current, type: event.target.value }))}>
+                    {["Call", "WhatsApp", "Email", "Walk-in"].map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Priority" error={getFieldError("priority")}>
+                  <select value={followUpForm.priority} onChange={(event) => setFollowUpForm((current) => ({ ...current, priority: event.target.value }))}>
+                    {["Low", "Medium", "High", "Urgent"].map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Counsellor" error={getFieldError("assignedUserId")}>
+                  <select value={followUpForm.assignedUserId} onChange={(event) => setFollowUpForm((current) => ({ ...current, assignedUserId: event.target.value }))}>
+                    <option value="">Current owner</option>
+                    {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Due At" error={getFieldError("dueAt")} required>
+                  <input type="datetime-local" value={followUpForm.dueAt} onChange={(event) => setFollowUpForm((current) => ({ ...current, dueAt: event.target.value }))} required />
+                </Field>
+              </div>
+            </form>
+
+            <section className="drawer-section">
+              <div className="section-heading">
+                <h3>Follow-ups</h3>
+                <span>{lead.followUps.length}</span>
+              </div>
+              <div className="detail-list">
+                {lead.followUps.length === 0 && <p className="muted-text">No follow-ups scheduled.</p>}
+                {lead.followUps.map((item) => (
+                  <div className="detail-list-item" key={item.id}>
+                    <div>
+                      <strong>{item.type} · {formatDate(item.dueAt)}</strong>
+                      <p>{formatTime(item.dueAt)} · {item.assignedTo}</p>
+                    </div>
+                    <div className="detail-list-actions">
+                      <Badge label={item.status} muted={item.status !== "Completed"} />
+                      {item.status !== "Completed" && (
+                        <button type="button" className="ghost-button" onClick={() => onCompleteFollowUp(item.id)} disabled={actionStatus.saving}>
+                          <CheckCircle2 size={16} />
+                          Complete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="drawer-section">
+              <div className="section-heading">
+                <h3>Activity Timeline</h3>
+                <span>{lead.activities.length}</span>
+              </div>
+              <div className="timeline">
+                {lead.activities.length === 0 && <p className="muted-text">No activity has been recorded yet.</p>}
+                {lead.activities.map((activity) => (
+                  <div className="timeline-item" key={activity.id}>
+                    <span />
+                    <div>
+                      <strong>{activity.type}</strong>
+                      <p>{activity.description}</p>
+                      <small>{formatDate(activity.createdAt)}, {formatTime(activity.createdAt)} · {activity.createdBy}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function InfoItem({ label, value }) {
+  return (
+    <div className="info-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function Field({ label, error, children, className = "", required = false }) {
   return (
     <label className={className}>
-      {label}
+      <span className="field-label-text">
+        {label}
+        {required && <span className="required-mark" aria-label="required">*</span>}
+      </span>
       {children}
       {error && <small className="field-error">{error}</small>}
     </label>
   );
 }
 
-function PipelinePage({ pipeline, loading, error, onRetry, onNewLead }) {
+function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead }) {
   return (
     <>
       <PageTitle
@@ -528,7 +880,7 @@ function PipelinePage({ pipeline, loading, error, onRetry, onNewLead }) {
                 <span>{stage.count}</span>
               </header>
               {stage.leads.map((lead) => (
-                <article className="lead-card" key={lead.id}>
+                <article className="lead-card" key={lead.id} onClick={() => onOpenLead(lead.id)} role="button" tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpenLead(lead.id)}>
                   <div className="lead-card-top">
                     <Badge label={(lead.course || "Course").split(" ")[0]} />
                     <MoreVertical size={18} />
@@ -764,7 +1116,7 @@ function FilterBar() {
   );
 }
 
-function LeadsTable({ leads, loading, error, onRetry }) {
+function LeadsTable({ leads, loading, error, onRetry, onOpenLead }) {
   return (
     <div className="table-card">
       {loading && <StatePanel title="Loading leads" message="Fetching live leads from CounselMate API..." />}
@@ -786,8 +1138,8 @@ function LeadsTable({ leads, loading, error, onRetry }) {
         </thead>
         <tbody>
           {leads.map((lead) => (
-            <tr key={lead.id}>
-              <td><input type="checkbox" /></td>
+            <tr key={lead.id} className="clickable-row" onClick={() => onOpenLead(lead.id)}>
+              <td><input type="checkbox" onClick={(event) => event.stopPropagation()} /></td>
               <td>
                 <div className="student-cell">
                   <span>{initials(lead.studentName)}</span>
@@ -964,6 +1316,25 @@ function createDefaultLeadForm(options) {
   };
 }
 
+function createLeadUpdateForm(lead) {
+  return {
+    leadStageId: lead?.leadStageId || "",
+    assignedUserId: lead?.assignedUserId || "",
+    status: lead?.status || "New Lead",
+    priority: lead?.priority || "Medium",
+    nextFollowUpAt: toDateTimeLocalValue(lead?.nextFollowUpAt),
+  };
+}
+
+function createDefaultFollowUpForm(lead) {
+  return {
+    type: "Call",
+    priority: lead?.priority || "Medium",
+    assignedUserId: lead?.assignedUserId || "",
+    dueAt: "",
+  };
+}
+
 function validateLeadForm(form) {
   const errors = {};
   const phoneDigits = form.phone.replace(/\D/g, "");
@@ -1013,6 +1384,20 @@ function firstError(value) {
 
 function optionalValue(value) {
   return value && value.trim() ? value.trim() : null;
+}
+
+function toDateTimeLocalValue(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
 }
 
 export default App;

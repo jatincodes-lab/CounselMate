@@ -351,25 +351,337 @@ api.MapGet("/leads/{id}", async (
     var lead = await db.Leads
         .AsNoTracking()
         .Where(item => item.TenantId == tenant.TenantId && item.LeadNumber == id)
-        .Select(item => new LeadResponse(
+        .Select(item => new LeadDetailResponse(
             item.LeadNumber,
             item.StudentName,
+            item.GuardianName,
             item.Email,
             item.Phone,
-            item.LeadSource.Name,
+            item.City,
+            item.BranchId,
+            item.Branch == null ? null : item.Branch.Name,
+            item.CourseId,
             item.Course.Name,
+            item.LeadSourceId,
+            item.LeadSource.Name,
+            item.LeadStageId,
+            item.LeadStage.Name,
+            item.AssignedUserId,
             item.AssignedUser == null ? "Unassigned" : item.AssignedUser.FullName,
             item.Status,
             item.Priority,
-            item.LeadStage.Name,
             item.CreatedAt,
-            item.NextFollowUpAt
+            item.NextFollowUpAt,
+            item.FollowUps
+                .OrderByDescending(followUp => followUp.DueAt)
+                .Select(followUp => new FollowUpResponse(
+                    followUp.Id.ToString(),
+                    item.LeadNumber,
+                    item.StudentName,
+                    followUp.Type,
+                    followUp.Priority,
+                    followUp.Status,
+                    followUp.DueAt,
+                    followUp.AssignedUser == null ? "Unassigned" : followUp.AssignedUser.FullName
+                ))
+                .ToArray(),
+            item.Activities
+                .OrderByDescending(activity => activity.CreatedAt)
+                .Select(activity => new ActivityResponse(
+                    activity.Id.ToString(),
+                    activity.Type,
+                    activity.Description,
+                    activity.CreatedByUser == null ? "System" : activity.CreatedByUser.FullName,
+                    activity.CreatedAt
+                ))
+                .ToArray()
         ))
         .FirstOrDefaultAsync(cancellationToken);
 
     return lead is null
         ? Results.NotFound(new { message = "Lead not found." })
         : Results.Ok(lead);
+});
+
+api.MapPatch("/leads/{id}", async (
+    string id,
+    UpdateLeadRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null)
+    {
+        return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    var lead = await db.Leads
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == id, cancellationToken);
+    if (lead is null)
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+
+    var validationErrors = ValidateUpdateLeadRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var stage = await db.LeadStages
+        .AsNoTracking()
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.Id == request.LeadStageId, cancellationToken);
+    if (stage is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["leadStageId"] = ["Select a valid lead stage."]
+        });
+    }
+
+    if (request.AssignedUserId is not null)
+    {
+        var userExists = await db.Users.AnyAsync(
+            item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.AssignedUserId,
+            cancellationToken);
+        if (!userExists)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["assignedUserId"] = ["Select a valid active counsellor."]
+            });
+        }
+    }
+
+    var previousStageId = lead.LeadStageId;
+    var previousStatus = lead.Status;
+    var previousPriority = lead.Priority;
+    var previousAssignedUserId = lead.AssignedUserId;
+    var previousFollowUpAt = lead.NextFollowUpAt;
+
+    lead.LeadStageId = request.LeadStageId;
+    lead.AssignedUserId = request.AssignedUserId;
+    lead.Status = NormalizeOptionalText(request.Status) ?? lead.Status;
+    lead.Priority = NormalizePriority(request.Priority);
+    lead.NextFollowUpAt = request.NextFollowUpAt?.ToUniversalTime();
+
+    var changes = new List<string>();
+    if (previousStageId != lead.LeadStageId)
+    {
+        changes.Add($"stage changed to {stage.Name}");
+    }
+
+    if (!string.Equals(previousStatus, lead.Status, StringComparison.Ordinal))
+    {
+        changes.Add($"status changed to {lead.Status}");
+    }
+
+    if (!string.Equals(previousPriority, lead.Priority, StringComparison.Ordinal))
+    {
+        changes.Add($"priority changed to {lead.Priority}");
+    }
+
+    if (previousAssignedUserId != lead.AssignedUserId)
+    {
+        changes.Add("counsellor assignment updated");
+    }
+
+    if (previousFollowUpAt != lead.NextFollowUpAt)
+    {
+        changes.Add(lead.NextFollowUpAt is null ? "next follow-up cleared" : "next follow-up updated");
+    }
+
+    if (changes.Count > 0)
+    {
+        db.Activities.Add(new EducationCrm.Api.Models.Activity
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            CreatedByUserId = lead.AssignedUserId,
+            Type = "LeadUpdated",
+            Description = $"Lead {lead.LeadNumber} {string.Join(", ", changes)}.",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+    }
+
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPost("/leads/{id}/activities", async (
+    string id,
+    AddLeadActivityRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null)
+    {
+        return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    var lead = await db.Leads
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenant.TenantId && item.LeadNumber == id)
+        .Select(item => new { item.Id, item.LeadNumber, item.AssignedUserId })
+        .FirstOrDefaultAsync(cancellationToken);
+    if (lead is null)
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+
+    var validationErrors = ValidateAddLeadActivityRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    db.Activities.Add(new EducationCrm.Api.Models.Activity
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = lead.Id,
+        CreatedByUserId = lead.AssignedUserId,
+        Type = NormalizeActivityType(request.Type),
+        Description = NormalizeName(request.Description),
+        CreatedAt = DateTimeOffset.UtcNow
+    });
+
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Created($"/api/leads/{lead.LeadNumber}", await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPost("/leads/{id}/follow-ups", async (
+    string id,
+    CreateFollowUpRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null)
+    {
+        return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    var lead = await db.Leads
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == id, cancellationToken);
+    if (lead is null)
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+
+    var validationErrors = ValidateCreateFollowUpRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var assignedUserId = request.AssignedUserId ?? lead.AssignedUserId;
+    if (assignedUserId is not null)
+    {
+        var userExists = await db.Users.AnyAsync(
+            item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == assignedUserId,
+            cancellationToken);
+        if (!userExists)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["assignedUserId"] = ["Select a valid active counsellor."]
+            });
+        }
+    }
+
+    var dueAt = request.DueAt.ToUniversalTime();
+    var followUp = new FollowUp
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = lead.Id,
+        AssignedUserId = assignedUserId,
+        Type = NormalizeFollowUpType(request.Type),
+        Priority = NormalizePriority(request.Priority),
+        Status = "Scheduled",
+        DueAt = dueAt,
+        CreatedAt = DateTimeOffset.UtcNow
+    };
+
+    lead.NextFollowUpAt = dueAt;
+    db.FollowUps.Add(followUp);
+    db.Activities.Add(new EducationCrm.Api.Models.Activity
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = lead.Id,
+        CreatedByUserId = assignedUserId,
+        Type = "FollowUpScheduled",
+        Description = $"{followUp.Type} follow-up scheduled for lead {lead.LeadNumber}.",
+        CreatedAt = DateTimeOffset.UtcNow
+    });
+
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Created($"/api/leads/{lead.LeadNumber}", await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
+    string leadId,
+    Guid followUpId,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null)
+    {
+        return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    var lead = await db.Leads
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == leadId, cancellationToken);
+    if (lead is null)
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+
+    var followUp = await db.FollowUps
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadId == lead.Id && item.Id == followUpId, cancellationToken);
+    if (followUp is null)
+    {
+        return Results.NotFound(new { message = "Follow-up not found." });
+    }
+
+    if (followUp.Status != "Completed")
+    {
+        followUp.Status = "Completed";
+        db.Activities.Add(new EducationCrm.Api.Models.Activity
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            CreatedByUserId = followUp.AssignedUserId,
+            Type = "FollowUpCompleted",
+            Description = $"{followUp.Type} follow-up completed for lead {lead.LeadNumber}.",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+    }
+
+    var nextScheduled = await db.FollowUps
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenant.TenantId && item.LeadId == lead.Id && item.Id != followUp.Id && item.Status == "Scheduled")
+        .OrderBy(item => item.DueAt)
+        .Select(item => (DateTimeOffset?)item.DueAt)
+        .FirstOrDefaultAsync(cancellationToken);
+    lead.NextFollowUpAt = nextScheduled;
+
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
 });
 
 api.MapGet("/pipeline", async (
@@ -497,6 +809,59 @@ api.MapGet("/reports/conversion", async (
 
 app.Run();
 
+static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid tenantId, string leadNumber, CancellationToken cancellationToken)
+{
+    return await db.Leads
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenantId && item.LeadNumber == leadNumber)
+        .Select(item => new LeadDetailResponse(
+            item.LeadNumber,
+            item.StudentName,
+            item.GuardianName,
+            item.Email,
+            item.Phone,
+            item.City,
+            item.BranchId,
+            item.Branch == null ? null : item.Branch.Name,
+            item.CourseId,
+            item.Course.Name,
+            item.LeadSourceId,
+            item.LeadSource.Name,
+            item.LeadStageId,
+            item.LeadStage.Name,
+            item.AssignedUserId,
+            item.AssignedUser == null ? "Unassigned" : item.AssignedUser.FullName,
+            item.Status,
+            item.Priority,
+            item.CreatedAt,
+            item.NextFollowUpAt,
+            item.FollowUps
+                .OrderByDescending(followUp => followUp.DueAt)
+                .Select(followUp => new FollowUpResponse(
+                    followUp.Id.ToString(),
+                    item.LeadNumber,
+                    item.StudentName,
+                    followUp.Type,
+                    followUp.Priority,
+                    followUp.Status,
+                    followUp.DueAt,
+                    followUp.AssignedUser == null ? "Unassigned" : followUp.AssignedUser.FullName
+                ))
+                .ToArray(),
+            item.Activities
+                .OrderByDescending(activity => activity.CreatedAt)
+                .Select(activity => new ActivityResponse(
+                    activity.Id.ToString(),
+                    activity.Type,
+                    activity.Description,
+                    activity.CreatedByUser == null ? "System" : activity.CreatedByUser.FullName,
+                    activity.CreatedAt
+                ))
+                .ToArray()
+        ))
+        .FirstAsync(cancellationToken);
+}
+
 static Dictionary<string, string[]> ValidateCreateLeadRequest(CreateLeadRequest request)
 {
     var errors = new Dictionary<string, string[]>();
@@ -541,6 +906,53 @@ static Dictionary<string, string[]> ValidateCreateLeadRequest(CreateLeadRequest 
     if (request.NextFollowUpAt is not null && request.NextFollowUpAt.Value < DateTimeOffset.UtcNow.AddMinutes(-5))
     {
         errors["nextFollowUpAt"] = ["Next follow-up cannot be in the past."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateUpdateLeadRequest(UpdateLeadRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+
+    if (request.LeadStageId == Guid.Empty)
+    {
+        errors["leadStageId"] = ["Lead stage is required."];
+    }
+
+    AddOptionalLengthError(errors, "status", request.Status, 80);
+    AddOptionalLengthError(errors, "priority", request.Priority, 40);
+
+    if (request.NextFollowUpAt is not null && request.NextFollowUpAt.Value < DateTimeOffset.UtcNow.AddMinutes(-5))
+    {
+        errors["nextFollowUpAt"] = ["Next follow-up cannot be in the past."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateAddLeadActivityRequest(AddLeadActivityRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "description", request.Description, 500);
+    AddOptionalLengthError(errors, "type", request.Type, 40);
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateCreateFollowUpRequest(CreateFollowUpRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+
+    AddOptionalLengthError(errors, "type", request.Type, 40);
+    AddOptionalLengthError(errors, "priority", request.Priority, 40);
+
+    if (request.DueAt == default)
+    {
+        errors["dueAt"] = ["Due date is required."];
+    }
+    else if (request.DueAt < DateTimeOffset.UtcNow.AddMinutes(-5))
+    {
+        errors["dueAt"] = ["Follow-up due date cannot be in the past."];
     }
 
     return errors;
@@ -604,6 +1016,18 @@ static string NormalizePriority(string? value)
     return priority is "Low" or "Medium" or "High" or "Urgent" ? priority : "Medium";
 }
 
+static string NormalizeFollowUpType(string? value)
+{
+    var type = NormalizeOptionalText(value) ?? "Call";
+    return type is "Call" or "WhatsApp" or "Email" or "Walk-in" ? type : "Call";
+}
+
+static string NormalizeActivityType(string? value)
+{
+    var type = NormalizeOptionalText(value) ?? "Note";
+    return type is "Note" or "Call" or "WhatsApp" or "Email" or "Meeting" ? type : "Note";
+}
+
 static async Task<string> GenerateLeadNumberAsync(AppDbContext db, Guid tenantId, CancellationToken cancellationToken)
 {
     var latestLeadNumber = await db.Leads
@@ -646,6 +1070,30 @@ record LeadResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? NextFollowUpAt);
 
+record LeadDetailResponse(
+    string Id,
+    string StudentName,
+    string? GuardianName,
+    string Email,
+    string Phone,
+    string? City,
+    Guid? BranchId,
+    string? Branch,
+    Guid CourseId,
+    string Course,
+    Guid LeadSourceId,
+    string Source,
+    Guid LeadStageId,
+    string Stage,
+    Guid? AssignedUserId,
+    string Counselor,
+    string Status,
+    string Priority,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? NextFollowUpAt,
+    IReadOnlyCollection<FollowUpResponse> FollowUps,
+    IReadOnlyCollection<ActivityResponse> Activities);
+
 record FollowUpResponse(
     string Id,
     string LeadId,
@@ -655,6 +1103,13 @@ record FollowUpResponse(
     string Status,
     DateTimeOffset DueAt,
     string AssignedTo);
+
+record ActivityResponse(
+    string Id,
+    string Type,
+    string Description,
+    string CreatedBy,
+    DateTimeOffset CreatedAt);
 
 record PipelineStageResponse(string Name, int Count, IReadOnlyCollection<LeadResponse> Leads);
 
@@ -683,3 +1138,20 @@ record CreateLeadRequest(
     string? Status,
     string? Priority,
     DateTimeOffset? NextFollowUpAt);
+
+record UpdateLeadRequest(
+    Guid LeadStageId,
+    Guid? AssignedUserId,
+    string? Status,
+    string? Priority,
+    DateTimeOffset? NextFollowUpAt);
+
+record AddLeadActivityRequest(
+    string Description,
+    string? Type);
+
+record CreateFollowUpRequest(
+    string? Type,
+    string? Priority,
+    Guid? AssignedUserId,
+    DateTimeOffset DueAt);

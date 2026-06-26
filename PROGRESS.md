@@ -71,6 +71,15 @@ The project has been started and the first working foundation is in place. The p
   - Normalized phone duplicate protection
   - Database unique index for tenant + normalized phone
   - Frontend modal form with client validation and server error display
+- Added lead detail workflow:
+  - Click lead from table or pipeline
+  - View full profile, timeline, and follow-ups in a side drawer
+  - Update stage, status, priority, assigned counsellor, and next follow-up
+  - Add activity notes
+  - Schedule follow-ups
+  - Mark follow-ups complete
+- Added required-field red markers in the Add Lead form.
+- Added CounselMate-themed scrollbars.
 
 ### Backend Foundation
 
@@ -159,12 +168,19 @@ The project has been started and the first working foundation is in place. The p
   - Pipeline stages: `7`
 - Frontend build passed after API integration.
 - Frontend build passed after Add Lead workflow.
+- Frontend build passed after lead detail workflow.
 - Local frontend responded successfully while pointed at the Neon-backed API:
   - `http://127.0.0.1:5173`
 - Add Lead API smoke test passed:
   - Options endpoint returned `5` courses
   - Duplicate phone returned `409`
   - Valid lead created as `LD-1006`
+- Lead detail API smoke test passed:
+  - Health endpoint returned `healthy`
+  - `GET /api/leads/LD-1001` returned lead detail
+  - No-op `PATCH /api/leads/LD-1004` succeeded
+  - Invalid activity and follow-up requests returned `400`
+  - Missing lead returned `404`
 
 ## Previous Local URLs
 
@@ -187,18 +203,16 @@ The project has been started and the first working foundation is in place. The p
 
 ## Next Development Steps
 
-1. Add lead edit/detail workflow.
-2. Add schedule follow-up from lead workflow.
-3. Add complete/reschedule follow-up workflow.
-4. Add authentication and role-based access control.
-5. Add real pipeline stage updates.
-6. Add payments, documents, and import/export later after core CRM workflows are stable.
+1. Add authentication and role-based access control.
+2. Add real tenant admin setup and client onboarding flow.
+3. Add follow-up reschedule/cancel actions.
+4. Add payments, documents, and import/export later after core CRM workflows are stable.
 
 ## Recommended Immediate Priority
 
 The next best step is:
 
-1. Build lead edit/detail workflow locally.
-2. Build follow-up create/complete workflow locally.
-3. Add authentication locally before deployment.
+1. Add authentication locally before deployment.
+2. Add tenant/client onboarding controls.
+3. Add follow-up reschedule/cancel workflow.
 4. Deploy to Render/Vercel only after core workflows are complete.

@@ -58,3 +58,34 @@ export async function createLead(payload) {
     body: payload,
   });
 }
+
+export async function getLeadDetail(leadId) {
+  return request(`/leads/${encodeURIComponent(leadId)}`);
+}
+
+export async function updateLead(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function addLeadActivity(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/activities`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function createLeadFollowUp(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/follow-ups`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function completeLeadFollowUp(leadId, followUpId) {
+  return request(`/leads/${encodeURIComponent(leadId)}/follow-ups/${encodeURIComponent(followUpId)}/complete`, {
+    method: "POST",
+  });
+}

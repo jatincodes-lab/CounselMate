@@ -273,7 +273,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         });
 
         modelBuilder.Entity<AppUser>().HasData(
-            new AppUser { Id = rahulId, TenantId = tenantId, BranchId = branchId, FullName = "Rahul Sharma", Email = "rahul@demo-academy.test", PasswordHash = demoPasswordHash, Role = UserRole.Admin, IsActive = true, CreatedAt = createdAt },
+            new AppUser { Id = rahulId, TenantId = tenantId, BranchId = branchId, FullName = "Rahul Sharma", Email = "rahul@demo-academy.test", PasswordHash = demoPasswordHash, Role = UserRole.Owner, IsActive = true, CreatedAt = createdAt },
             new AppUser { Id = vermaId, TenantId = tenantId, BranchId = branchId, FullName = "S. Verma", Email = "verma@demo-academy.test", PasswordHash = demoPasswordHash, Role = UserRole.Counselor, IsActive = true, CreatedAt = createdAt },
             new AppUser { Id = khannaId, TenantId = tenantId, BranchId = branchId, FullName = "R. Khanna", Email = "khanna@demo-academy.test", PasswordHash = demoPasswordHash, Role = UserRole.ReadOnly, IsActive = true, CreatedAt = createdAt }
         );

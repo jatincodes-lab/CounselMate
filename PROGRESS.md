@@ -88,6 +88,12 @@ The project has been started and the first working foundation is in place. The p
   - API tenant scope now resolves from authenticated user
   - Write actions blocked for read-only users
   - Frontend login screen, session restore, and logout
+- Added platform tenant onboarding:
+  - Owner-only tenant list endpoint
+  - Owner-only create tenant endpoint
+  - Creates tenant, main branch, tenant admin, default lead stages, default lead sources, and starter courses
+  - Frontend owner-only Platform page
+  - Frontend create client institute form
 
 ### Backend Foundation
 
@@ -140,6 +146,8 @@ The project has been started and the first working foundation is in place. The p
   - `AddLeadNormalizedPhone`
 - Added and applied the authentication migration:
   - `AddUserAuthentication`
+- Added and applied the owner seed migration:
+  - `SeedPlatformOwnerRole`
 
 ### Documentation
 
@@ -196,6 +204,13 @@ The project has been started and the first working foundation is in place. The p
   - Admin login worked for `rahul@demo-academy.test`
   - Authenticated dashboard returned tenant CRM data
   - Read-only write attempt returned `403`
+- Platform onboarding smoke test passed:
+  - Owner login worked for `rahul@demo-academy.test`
+  - Owner tenant list loaded
+  - New test tenant was created in Neon
+  - New tenant admin login worked
+  - New tenant dashboard returned tenant-scoped empty CRM data
+  - Read-only user platform access returned `403`
 
 ## Previous Local URLs
 
@@ -218,7 +233,7 @@ The project has been started and the first working foundation is in place. The p
 
 ## Next Development Steps
 
-1. Add real tenant admin setup and client onboarding flow.
+1. Add tenant user management from Settings.
 2. Add follow-up reschedule/cancel actions.
 3. Add password change/reset workflow.
 4. Add payments, documents, and import/export later after core CRM workflows are stable.
@@ -227,7 +242,7 @@ The project has been started and the first working foundation is in place. The p
 
 The next best step is:
 
-1. Add tenant/client onboarding controls.
+1. Add tenant user management from Settings.
 2. Add password change/reset workflow.
 3. Add follow-up reschedule/cancel workflow.
 4. Deploy to Render/Vercel only after core workflows are complete.

@@ -776,6 +776,15 @@ h1 {
   gap: 16px;
 }
 
+.tenant-create-panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 18px;
+  margin-bottom: 24px;
+  padding: 20px;
+}
+
 .section-heading {
   min-height: 42px;
   display: flex;

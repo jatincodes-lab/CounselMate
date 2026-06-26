@@ -156,6 +156,116 @@ api.MapGet("/auth/me", (HttpContext httpContext) =>
         : Results.Ok(user);
 });
 
+api.MapGet("/platform/tenants", async (
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    if (!CanManagePlatform(TenantResolver.GetCurrentUser(httpContext)))
+    {
+        return Results.Json(new { message = "Only platform owners can manage tenants." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var tenants = await db.Tenants
+        .AsNoTracking()
+        .OrderBy(tenant => tenant.Name)
+        .Select(tenant => new TenantListItemResponse(
+            tenant.Id,
+            tenant.Name,
+            tenant.Slug,
+            tenant.IsActive,
+            tenant.CreatedAt,
+            tenant.Users.Count(user => user.IsActive),
+            tenant.Leads.Count()
+        ))
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(tenants);
+});
+
+api.MapPost("/platform/tenants", async (
+    CreateTenantRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    if (!CanManagePlatform(TenantResolver.GetCurrentUser(httpContext)))
+    {
+        return Results.Json(new { message = "Only platform owners can create tenants." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var validationErrors = ValidateCreateTenantRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var slug = NormalizeSlug(request.Slug);
+    var adminEmail = NormalizeEmail(request.AdminEmail);
+    var duplicateTenant = await db.Tenants.AnyAsync(tenant => tenant.Slug == slug, cancellationToken);
+    if (duplicateTenant)
+    {
+        return Results.Conflict(new { message = "A tenant already exists with this slug." });
+    }
+
+    var duplicateAdmin = await db.Users.AnyAsync(user => user.Email == adminEmail && user.Tenant.Slug == slug, cancellationToken);
+    if (duplicateAdmin)
+    {
+        return Results.Conflict(new { message = "A user already exists with this email for this tenant." });
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var tenantId = Guid.NewGuid();
+    var branchId = Guid.NewGuid();
+    var adminUserId = Guid.NewGuid();
+
+    var tenant = new Tenant
+    {
+        Id = tenantId,
+        Name = NormalizeName(request.Name),
+        Slug = slug,
+        IsActive = true,
+        CreatedAt = now
+    };
+
+    var branch = new Branch
+    {
+        Id = branchId,
+        TenantId = tenantId,
+        Name = NormalizeName(request.BranchName),
+        City = NormalizeName(request.City),
+        IsActive = true,
+        CreatedAt = now
+    };
+
+    var adminUser = new AppUser
+    {
+        Id = adminUserId,
+        TenantId = tenantId,
+        BranchId = branchId,
+        FullName = NormalizeName(request.AdminFullName),
+        Email = adminEmail,
+        PasswordHash = HashPassword(request.AdminPassword),
+        Role = UserRole.Admin,
+        IsActive = true,
+        CreatedAt = now
+    };
+
+    db.Tenants.Add(tenant);
+    db.Branches.Add(branch);
+    db.Users.Add(adminUser);
+    AddDefaultTenantSetup(db, tenantId, now);
+
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Created($"/api/platform/tenants/{tenant.Slug}", new TenantCreatedResponse(
+        tenant.Id,
+        tenant.Name,
+        tenant.Slug,
+        adminUser.Email
+    ));
+});
+
 api.MapGet("/tenants/current", async (
     HttpContext httpContext,
     AppDbContext db,
@@ -1077,6 +1187,20 @@ static bool VerifyPassword(string password, string passwordHash)
     }
 }
 
+static string HashPassword(string password)
+{
+    var salt = RandomNumberGenerator.GetBytes(16);
+    const int iterations = 100000;
+    var hash = Rfc2898DeriveBytes.Pbkdf2(
+        Encoding.UTF8.GetBytes(password),
+        salt,
+        iterations,
+        HashAlgorithmName.SHA256,
+        32);
+
+    return $"v1.{iterations}.{Convert.ToBase64String(salt)}.{Convert.ToBase64String(hash)}";
+}
+
 static bool CanManageLeads(AuthenticatedUser? user)
 {
     return user?.Role is nameof(UserRole.Owner)
@@ -1084,6 +1208,37 @@ static bool CanManageLeads(AuthenticatedUser? user)
         or nameof(UserRole.BranchManager)
         or nameof(UserRole.Counselor)
         or nameof(UserRole.Telecaller);
+}
+
+static bool CanManagePlatform(AuthenticatedUser? user)
+{
+    return user?.Role == nameof(UserRole.Owner);
+}
+
+static void AddDefaultTenantSetup(AppDbContext db, Guid tenantId, DateTimeOffset createdAt)
+{
+    db.LeadStages.AddRange(
+        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "New Inquiry", SortOrder = 10, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
+        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Contacted", SortOrder = 20, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
+        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Interested", SortOrder = 30, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
+        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Demo Scheduled", SortOrder = 40, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
+        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Application Started", SortOrder = 50, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
+        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Enrolled", SortOrder = 60, IsWonStage = true, IsLostStage = false, CreatedAt = createdAt },
+        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Dropped", SortOrder = 70, IsWonStage = false, IsLostStage = true, CreatedAt = createdAt }
+    );
+
+    db.LeadSources.AddRange(
+        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Website", IsActive = true, CreatedAt = createdAt },
+        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Google Ads", IsActive = true, CreatedAt = createdAt },
+        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Referral", IsActive = true, CreatedAt = createdAt },
+        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Walk-in", IsActive = true, CreatedAt = createdAt },
+        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Social Media", IsActive = true, CreatedAt = createdAt }
+    );
+
+    db.Courses.AddRange(
+        new Course { Id = Guid.NewGuid(), TenantId = tenantId, Name = "General Admission", IsActive = true, CreatedAt = createdAt },
+        new Course { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Counselling Session", IsActive = true, CreatedAt = createdAt }
+    );
 }
 
 static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid tenantId, string leadNumber, CancellationToken cancellationToken)
@@ -1203,6 +1358,35 @@ static Dictionary<string, string[]> ValidateLoginRequest(LoginRequest request)
     return errors;
 }
 
+static Dictionary<string, string[]> ValidateCreateTenantRequest(CreateTenantRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "name", request.Name, 160);
+    AddRequiredError(errors, "slug", request.Slug, 80);
+    AddRequiredError(errors, "branchName", request.BranchName, 160);
+    AddRequiredError(errors, "city", request.City, 120);
+    AddRequiredError(errors, "adminFullName", request.AdminFullName, 160);
+    AddRequiredError(errors, "adminEmail", request.AdminEmail, 240);
+    AddRequiredError(errors, "adminPassword", request.AdminPassword, 120);
+
+    if (!errors.ContainsKey("slug") && !Regex.IsMatch(NormalizeSlug(request.Slug), "^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$"))
+    {
+        errors["slug"] = ["Use 3 to 80 lowercase letters, numbers, or hyphens. Start and end with a letter or number."];
+    }
+
+    if (!errors.ContainsKey("adminEmail") && !IsValidEmail(request.AdminEmail))
+    {
+        errors["adminEmail"] = ["Enter a valid admin email address."];
+    }
+
+    if (!errors.ContainsKey("adminPassword") && request.AdminPassword.Length < 8)
+    {
+        errors["adminPassword"] = ["Password must be at least 8 characters."];
+    }
+
+    return errors;
+}
+
 static Dictionary<string, string[]> ValidateUpdateLeadRequest(UpdateLeadRequest request)
 {
     var errors = new Dictionary<string, string[]>();
@@ -1287,6 +1471,11 @@ static string NormalizeEmail(string value)
     return value.Trim().ToLowerInvariant();
 }
 
+static string NormalizeSlug(string value)
+{
+    return Regex.Replace(value.Trim().ToLowerInvariant(), @"[^a-z0-9-]", "-").Trim('-');
+}
+
 static string? NormalizeOptionalText(string? value)
 {
     return string.IsNullOrWhiteSpace(value) ? null : Regex.Replace(value.Trim(), @"\s+", " ");
@@ -1357,6 +1546,30 @@ record AuthResponse(
     string Token,
     DateTimeOffset ExpiresAt,
     AuthenticatedUser User);
+
+record CreateTenantRequest(
+    string Name,
+    string Slug,
+    string BranchName,
+    string City,
+    string AdminFullName,
+    string AdminEmail,
+    string AdminPassword);
+
+record TenantListItemResponse(
+    Guid Id,
+    string Name,
+    string Slug,
+    bool IsActive,
+    DateTimeOffset CreatedAt,
+    int ActiveUsers,
+    int Leads);
+
+record TenantCreatedResponse(
+    Guid Id,
+    string Name,
+    string Slug,
+    string AdminEmail);
 
 record TokenClaims(Guid UserId, Guid TenantId);
 

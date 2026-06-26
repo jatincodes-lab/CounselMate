@@ -104,6 +104,17 @@ export async function getCrmData() {
   };
 }
 
+export async function getPlatformTenants() {
+  return request("/platform/tenants");
+}
+
+export async function createPlatformTenant(payload) {
+  return request("/platform/tenants", {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export async function createLead(payload) {
   return request("/leads", {
     method: "POST",

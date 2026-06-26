@@ -26,14 +26,17 @@ import {
   getCrmData,
   getCurrentUser,
   getLeadDetail,
+  getPlatformTenants,
   getStoredAuth,
   login,
   logout,
+  createPlatformTenant,
   updateLead,
 } from "./api";
 import { activities, counselors, stages as fallbackStages } from "./data/mockData";
 
 const navItems = [
+  { id: "platform", label: "Platform", icon: Users, ownerOnly: true },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "leads", label: "Leads", icon: Search },
   { id: "pipeline", label: "Pipeline", icon: BarChart3 },
@@ -78,6 +81,13 @@ function App() {
   const [leadActionStatus, setLeadActionStatus] = useState({
     saving: false,
     error: "",
+    fieldErrors: {},
+  });
+  const [platformTenants, setPlatformTenants] = useState([]);
+  const [platformStatus, setPlatformStatus] = useState({
+    loading: false,
+    error: "",
+    saving: false,
     fieldErrors: {},
   });
   const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
@@ -162,6 +172,49 @@ function App() {
       followUps: [],
       leadOptions: emptyLeadOptions(),
     });
+  };
+
+  const loadPlatformTenants = useCallback(async () => {
+    if (!currentUser || currentUser.role !== "Owner") {
+      return;
+    }
+
+    setPlatformStatus((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const tenants = await getPlatformTenants();
+      setPlatformTenants(tenants);
+      setPlatformStatus((current) => ({ ...current, loading: false, error: "" }));
+    } catch (error) {
+      setPlatformStatus((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load tenants.",
+      }));
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (activePage === "platform") {
+      loadPlatformTenants();
+    }
+  }, [activePage, loadPlatformTenants]);
+
+  const handleCreateTenant = async (payload) => {
+    setPlatformStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {} }));
+    try {
+      await createPlatformTenant(payload);
+      await loadPlatformTenants();
+      setPlatformStatus((current) => ({ ...current, saving: false, error: "", fieldErrors: {} }));
+      return true;
+    } catch (error) {
+      setPlatformStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to create tenant.",
+        fieldErrors: error?.errors || {},
+      }));
+      return false;
+    }
   };
 
   const handleCreateLead = async (payload) => {
@@ -252,7 +305,7 @@ function App() {
         </div>
 
         <nav className="nav-list">
-          {navItems.map((item) => {
+          {navItems.filter((item) => !item.ownerOnly || currentUser.role === "Owner").map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -304,6 +357,17 @@ function App() {
         </header>
 
         <section className="content">
+          {activePage === "platform" && currentUser.role === "Owner" && (
+            <PlatformPage
+              tenants={platformTenants}
+              loading={platformStatus.loading}
+              error={platformStatus.error}
+              saving={platformStatus.saving}
+              fieldErrors={platformStatus.fieldErrors}
+              onRetry={loadPlatformTenants}
+              onCreateTenant={handleCreateTenant}
+            />
+          )}
           {activePage === "dashboard" && (
             <Dashboard
               dashboard={crmData.dashboard}
@@ -446,6 +510,145 @@ function LoginScreen({ error, signingIn, onSubmit }) {
         </form>
       </section>
     </main>
+  );
+}
+
+function PlatformPage({ tenants, loading, error, saving, fieldErrors, onRetry, onCreateTenant }) {
+  const [formOpen, setFormOpen] = useState(false);
+
+  return (
+    <>
+      <PageTitle
+        title="Platform Tenants"
+        subtitle="Create and monitor client institutes on CounselMate."
+        action={
+          <button className="primary-button" onClick={() => setFormOpen(true)}>
+            <Plus size={18} />
+            New Client
+          </button>
+        }
+      />
+
+      {formOpen && (
+        <CreateTenantPanel
+          saving={saving}
+          error={error}
+          fieldErrors={fieldErrors}
+          onCancel={() => setFormOpen(false)}
+          onSubmit={async (payload) => {
+            const created = await onCreateTenant(payload);
+            if (created) {
+              setFormOpen(false);
+            }
+          }}
+        />
+      )}
+
+      <div className="table-card">
+        {loading && <StatePanel title="Loading tenants" message="Fetching client institutes..." />}
+        {error && !formOpen && <StatePanel title="Could not load tenants" message={error} action={onRetry} />}
+        {!loading && !error && tenants.length === 0 && <StatePanel title="No tenants" message="Create the first client institute." />}
+        {!loading && tenants.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Institute</th>
+                <th>Slug</th>
+                <th>Status</th>
+                <th>Users</th>
+                <th>Leads</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tenants.map((tenant) => (
+                <tr key={tenant.id}>
+                  <td><strong>{tenant.name}</strong></td>
+                  <td>{tenant.slug}</td>
+                  <td><Badge label={tenant.isActive ? "Active" : "Inactive"} muted={!tenant.isActive} /></td>
+                  <td>{tenant.activeUsers}</td>
+                  <td>{tenant.leads}</td>
+                  <td>{formatDate(tenant.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+function CreateTenantPanel({ saving, error, fieldErrors, onCancel, onSubmit }) {
+  const [form, setForm] = useState({
+    name: "",
+    slug: "",
+    branchName: "Main Branch",
+    city: "",
+    adminFullName: "",
+    adminEmail: "",
+    adminPassword: "Demo@12345",
+  });
+
+  const updateField = (field, value) => {
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "name" && !current.slug) {
+        next.slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      }
+      return next;
+    });
+  };
+
+  const getFieldError = (field) => firstError(fieldErrors[field]);
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    onSubmit({
+      name: form.name.trim(),
+      slug: form.slug.trim(),
+      branchName: form.branchName.trim(),
+      city: form.city.trim(),
+      adminFullName: form.adminFullName.trim(),
+      adminEmail: form.adminEmail.trim(),
+      adminPassword: form.adminPassword,
+    });
+  };
+
+  return (
+    <form className="tenant-create-panel" onSubmit={handleSubmit}>
+      <div className="section-heading">
+        <h3>Create Client Institute</h3>
+        <button type="button" className="ghost-button" onClick={onCancel} disabled={saving}>Cancel</button>
+      </div>
+      {error && <div className="form-alert">{error}</div>}
+      <div className="form-grid">
+        <Field label="Institute Name" error={getFieldError("name")} required>
+          <input value={form.name} maxLength={160} onChange={(event) => updateField("name", event.target.value)} required autoFocus />
+        </Field>
+        <Field label="Tenant Slug" error={getFieldError("slug")} required>
+          <input value={form.slug} maxLength={80} onChange={(event) => updateField("slug", event.target.value)} required />
+        </Field>
+        <Field label="Branch Name" error={getFieldError("branchName")} required>
+          <input value={form.branchName} maxLength={160} onChange={(event) => updateField("branchName", event.target.value)} required />
+        </Field>
+        <Field label="City" error={getFieldError("city")} required>
+          <input value={form.city} maxLength={120} onChange={(event) => updateField("city", event.target.value)} required />
+        </Field>
+        <Field label="Admin Full Name" error={getFieldError("adminFullName")} required>
+          <input value={form.adminFullName} maxLength={160} onChange={(event) => updateField("adminFullName", event.target.value)} required />
+        </Field>
+        <Field label="Admin Email" error={getFieldError("adminEmail")} required>
+          <input value={form.adminEmail} type="email" maxLength={240} onChange={(event) => updateField("adminEmail", event.target.value)} required />
+        </Field>
+        <Field label="Initial Password" error={getFieldError("adminPassword")} className="span-2" required>
+          <input value={form.adminPassword} type="password" maxLength={120} onChange={(event) => updateField("adminPassword", event.target.value)} required />
+        </Field>
+      </div>
+      <footer className="modal-actions">
+        <button type="submit" className="primary-button" disabled={saving}>{saving ? "Creating..." : "Create Client"}</button>
+      </footer>
+    </form>
   );
 }
 

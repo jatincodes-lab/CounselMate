@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Settings - AdmitPro CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-tertiary-fixed": "#101c2b",
+                    "on-surface-variant": "#434654",
+                    "status-danger": "#FF5630",
+                    "tertiary-fixed": "#d6e3f7",
+                    "on-primary-container": "#c4d2ff",
+                    "inverse-on-surface": "#f0f1f3",
+                    "on-tertiary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed-dim": "#bbc7db",
+                    "surface-container-high": "#e7e8ea",
+                    "on-secondary-fixed": "#001946",
+                    "on-primary": "#ffffff",
+                    "on-surface": "#191c1e",
+                    "status-success": "#36B37E",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed": "#001848",
+                    "surface-container-highest": "#e1e2e4",
+                    "surface-tint": "#0c56d0",
+                    "status-warning": "#FFAB00",
+                    "on-secondary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "text-muted": "#6B778C",
+                    "surface-variant": "#e1e2e4",
+                    "border-subtle": "#DFE1E6",
+                    "inverse-primary": "#b2c5ff",
+                    "on-secondary-fixed-variant": "#00419d",
+                    "secondary-container": "#709bfe",
+                    "tertiary-container": "#4f5c6c",
+                    "surface-card": "#FFFFFF",
+                    "outline-variant": "#c3c6d6",
+                    "primary-fixed-dim": "#b2c5ff",
+                    "surface-dim": "#d9dadc",
+                    "primary": "#003d9b",
+                    "on-tertiary-fixed-variant": "#3b4858",
+                    "sidebar-bg": "#0747A6",
+                    "on-tertiary-container": "#c7d4e8",
+                    "on-secondary-container": "#003179",
+                    "background": "#f8f9fb",
+                    "outline": "#737685",
+                    "inverse-surface": "#2e3132",
+                    "primary-fixed": "#dae2ff",
+                    "surface-container-low": "#f3f4f6",
+                    "on-background": "#191c1e",
+                    "surface-bright": "#f8f9fb",
+                    "surface": "#f8f9fb",
+                    "on-primary-fixed-variant": "#0040a2",
+                    "on-error": "#ffffff",
+                    "primary-container": "#0052cc",
+                    "on-error-container": "#93000a",
+                    "secondary-fixed": "#d9e2ff",
+                    "surface-container": "#edeef0",
+                    "tertiary": "#384454",
+                    "text-main": "#172B4D",
+                    "secondary-fixed-dim": "#b1c6ff",
+                    "secondary": "#285ab9"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "header-height": "64px",
+                    "card-padding": "1.25rem",
+                    "stack-gap-sm": "0.5rem",
+                    "container-max-width": "1440px",
+                    "gutter": "1.5rem",
+                    "sidebar-width": "260px",
+                    "table-cell-padding": "0.75rem 1rem",
+                    "stack-gap-md": "1rem"
+            },
+          }
+        },
+      }
+    </script>
+<style>
+        body { background-color: #f8f9fb; font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .sidebar-active {
+            color: #ffffff;
+            font-weight: 700;
+            border-left-width: 4px;
+            border-color: #b2c5ff;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .custom-toggle:checked + .toggle-dot {
+            transform: translateX(100%);
+            background-color: #ffffff;
+        }
+        .custom-toggle:checked + .toggle-bg {
+            background-color: #0052cc;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #DFE1E6; border-radius: 10px; }
+    </style>
+</head>
+<body class="text-on-surface">
+<!-- Side Navigation Shell -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-sidebar-bg flex flex-col py-6">
+<div class="px-6 mb-8">
+<h1 class="font-headline-md text-headline-md font-bold text-white tracking-tight">AdmitPro</h1>
+<p class="text-white/60 font-label-sm text-label-sm uppercase tracking-wider">Admission CRM</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center px-6 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors duration-150" href="#">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors duration-150" href="#">
+<span class="material-symbols-outlined mr-3">person_search</span>
+<span class="font-label-md text-label-md">Leads</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors duration-150" href="#">
+<span class="material-symbols-outlined mr-3">account_tree</span>
+<span class="font-label-md text-label-md">Pipeline</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors duration-150" href="#">
+<span class="material-symbols-outlined mr-3">event_repeat</span>
+<span class="font-label-md text-label-md">Follow-ups</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors duration-150" href="#">
+<span class="material-symbols-outlined mr-3">groups</span>
+<span class="font-label-md text-label-md">Counsellors</span>
+</a>
+<a class="flex items-center px-6 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors duration-150" href="#">
+<span class="material-symbols-outlined mr-3">assessment</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+<a class="sidebar-active flex items-center px-6 py-3 transition-colors duration-150" href="#">
+<span class="material-symbols-outlined mr-3">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full py-2.5 bg-primary-container text-white font-label-md text-label-md rounded-lg flex items-center justify-center gap-2 hover:bg-primary transition-all active:scale-95 duration-150">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                New Lead
+            </button>
+</div>
+</aside>
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface border-b border-border-subtle flex justify-between items-center px-gutter z-10">
+<div class="flex items-center bg-surface-container-low px-3 py-1.5 rounded border border-border-subtle w-96 focus-within:ring-2 focus-within:ring-primary transition-all">
+<span class="material-symbols-outlined text-on-surface-variant mr-2">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-md w-full placeholder:text-on-surface-variant/50" placeholder="Search settings, leads, or tasks..." type="text"/>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-status-danger rounded-full"></span>
+</button>
+<button class="flex items-center gap-2 text-on-surface-variant hover:bg-surface-container-low px-3 py-1.5 rounded transition-colors">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-body-md text-body-md">Support</span>
+</button>
+<div class="h-8 w-px bg-border-subtle"></div>
+<div class="flex items-center gap-3">
+<div class="text-right">
+<p class="font-label-md text-label-md text-text-main leading-none">Sarah Jenkins</p>
+<p class="font-label-sm text-label-sm text-text-muted mt-1">Admin Account</p>
+</div>
+<img class="w-10 h-10 rounded-full border border-border-subtle object-cover" data-alt="A professional headshot of a middle-aged woman in business attire, looking confident and approachable. The background is a soft, out-of-focus modern office environment with blue-toned glass partitions, maintaining the AdmitPro monochromatic branding and high-end professional aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgzbdSBCg6T8rPzT_tONtLN1a6ivj8ZX0v6P4mEekqteXQIstujJZ2bou2lw8oocGf4L0EBuAc2lypkLlyjD1D1pvNnB5VDwjMT86J9PXka_8RWt3hQ7T77_yIY6NizbYGfEovT2u0ZN2ZXtw7IVzCAtwKxPz_6rjwdhttrYt0RUQKwdjQ3gV7HMuS6EZVpmQrry6HaVHsPLmPP16aBuTRoRHk4oX8BBV4Y-wzVY_cQGr6xSLRS6ZebRnhB7Jsp2xVR0lE4MRHhebP"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] pt-16 min-h-screen">
+<div class="max-w-[1440px] mx-auto p-gutter">
+<!-- Page Header -->
+<div class="flex justify-between items-end mb-8">
+<div>
+<h2 class="font-headline-md text-headline-md text-text-main">System Settings</h2>
+<p class="text-text-muted font-body-md text-body-md mt-1">Manage your institution details, team access, and CRM automation.</p>
+</div>
+<div class="flex gap-3">
+<button class="px-5 py-2 border border-border-subtle bg-white text-text-main font-label-md text-label-md rounded hover:bg-surface-container-low transition-colors">Discard Changes</button>
+<button class="px-6 py-2 bg-primary-container text-white font-label-md text-label-md rounded hover:bg-primary transition-all active:scale-95">Save Preferences</button>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Category Navigation (Sticky) -->
+<div class="col-span-12 lg:col-span-3">
+<div class="bg-white rounded-lg border border-border-subtle p-2 sticky top-24">
+<a class="flex items-center gap-3 px-4 py-3 bg-surface-container-low text-primary font-bold rounded mb-1" href="#institute">
+<span class="material-symbols-outlined">account_balance</span>
+<span class="font-label-md text-label-md">Institute Profile</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded mb-1" href="#team">
+<span class="material-symbols-outlined">badge</span>
+<span class="font-label-md text-label-md">Team Management</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded mb-1" href="#workflow">
+<span class="material-symbols-outlined">settings_suggest</span>
+<span class="font-label-md text-label-md">Workflow Configuration</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded mb-1" href="#notifications">
+<span class="material-symbols-outlined">notifications_active</span>
+<span class="font-label-md text-label-md">Alerts &amp; Notifications</span>
+</a>
+<div class="my-2 border-t border-border-subtle"></div>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="#api">
+<span class="material-symbols-outlined">api</span>
+<span class="font-label-md text-label-md">Integrations &amp; API</span>
+</a>
+</div>
+</div>
+<!-- Settings Forms Area -->
+<div class="col-span-12 lg:col-span-9 space-y-6">
+<!-- Institute Profile Section -->
+<section class="bg-white rounded-lg border border-border-subtle overflow-hidden" id="institute">
+<div class="px-card-padding py-4 border-b border-border-subtle bg-surface-container-lowest">
+<h3 class="font-title-lg text-title-lg text-text-main">Institute Profile</h3>
+</div>
+<div class="p-card-padding grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="md:col-span-2 flex items-center gap-6">
+<div class="w-24 h-24 rounded border-2 border-dashed border-outline-variant flex flex-col items-center justify-center bg-surface transition-hover hover:border-primary cursor-pointer">
+<span class="material-symbols-outlined text-outline text-3xl">add_photo_alternate</span>
+<span class="font-label-sm text-label-sm text-outline mt-1">Upload Logo</span>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-label-md text-text-main">Institutional Branding</p>
+<p class="text-label-sm text-text-muted mt-1">Square image (min 512x512px). Supports JPG, PNG, or SVG.</p>
+<button class="mt-2 text-primary font-label-md text-label-md hover:underline">Remove logo</button>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="font-label-md text-label-md text-text-main">Institute Legal Name</label>
+<input class="w-full h-9 border-border-subtle rounded text-body-md focus:ring-2 focus:ring-primary focus:border-primary" type="text" value="Global Heights University"/>
+</div>
+<div class="space-y-1.5">
+<label class="font-label-md text-label-md text-text-main">Primary Contact Email</label>
+<input class="w-full h-9 border-border-subtle rounded text-body-md focus:ring-2 focus:ring-primary focus:border-primary" type="email" value="admissions@ghu.edu"/>
+</div>
+<div class="md:col-span-2 space-y-1.5">
+<label class="font-label-md text-label-md text-text-main">Registered Office Address</label>
+<textarea class="w-full border-border-subtle rounded text-body-md focus:ring-2 focus:ring-primary focus:border-primary" rows="3">124 Education Plaza, Academic District, Boston, MA 02115</textarea>
+</div>
+</div>
+</section>
+<!-- Team Management Section -->
+<section class="bg-white rounded-lg border border-border-subtle overflow-hidden" id="team">
+<div class="px-card-padding py-4 border-b border-border-subtle bg-surface-container-lowest flex justify-between items-center">
+<h3 class="font-title-lg text-title-lg text-text-main">Team Management</h3>
+<button class="text-primary font-label-md text-label-md flex items-center gap-1 hover:underline">
+<span class="material-symbols-outlined text-lg">person_add</span>
+                                Invite User
+                            </button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container-low">
+<tr>
+<th class="p-table-cell-padding font-label-md text-label-md text-text-muted">USER</th>
+<th class="p-table-cell-padding font-label-md text-label-md text-text-muted">ROLE</th>
+<th class="p-table-cell-padding font-label-md text-label-md text-text-muted">STATUS</th>
+<th class="p-table-cell-padding font-label-md text-label-md text-text-muted text-right">ACTIONS</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-subtle">
+<tr>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary-fixed-dim text-primary flex items-center justify-center font-bold text-xs">SJ</div>
+<div>
+<p class="font-label-md text-label-md text-text-main leading-tight">Sarah Jenkins</p>
+<p class="text-[11px] text-text-muted">sarah@ghu.edu</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded bg-primary-fixed text-primary text-[11px] font-bold uppercase tracking-wider">Super Admin</span>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-status-success"></span>
+<span class="text-body-md font-medium text-text-main">Active</span>
+</div>
+</td>
+<td class="p-table-cell-padding text-right">
+<button class="text-text-muted hover:text-primary"><span class="material-symbols-outlined">edit</span></button>
+</td>
+</tr>
+<tr>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-tertiary-fixed-dim text-tertiary flex items-center justify-center font-bold text-xs">MK</div>
+<div>
+<p class="font-label-md text-label-md text-text-main leading-tight">Markus Klee</p>
+<p class="text-[11px] text-text-muted">markus@ghu.edu</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Counsellor</span>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-status-success"></span>
+<span class="text-body-md font-medium text-text-main">Active</span>
+</div>
+</td>
+<td class="p-table-cell-padding text-right">
+<button class="text-text-muted hover:text-primary"><span class="material-symbols-outlined">edit</span></button>
+</td>
+</tr>
+<tr>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed-dim text-secondary flex items-center justify-center font-bold text-xs">EL</div>
+<div>
+<p class="font-label-md text-label-md text-text-main leading-tight">Elena Low</p>
+<p class="text-[11px] text-text-muted">elena@ghu.edu</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">View Only</span>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-status-warning"></span>
+<span class="text-body-md font-medium text-text-main">Pending</span>
+</div>
+</td>
+<td class="p-table-cell-padding text-right">
+<button class="text-text-muted hover:text-primary"><span class="material-symbols-outlined">edit</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-3 bg-surface-container-low text-center">
+<button class="text-primary font-label-md text-label-md hover:underline">View all 14 team members</button>
+</div>
+</section>
+<!-- Workflow Configuration Section -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-6" id="workflow">
+<!-- Lead Stages Card -->
+<div class="bg-white rounded-lg border border-border-subtle flex flex-col">
+<div class="px-card-padding py-4 border-b border-border-subtle bg-surface-container-lowest">
+<h3 class="font-title-lg text-title-lg text-text-main">Lead Stages</h3>
+</div>
+<div class="p-card-padding space-y-3 flex-1">
+<div class="flex items-center justify-between p-2.5 bg-surface border border-border-subtle rounded group">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline cursor-grab">drag_indicator</span>
+<span class="font-label-md text-label-md text-text-main">New Inquiry</span>
+</div>
+<span class="w-3 h-3 rounded-full bg-blue-400"></span>
+</div>
+<div class="flex items-center justify-between p-2.5 bg-surface border border-border-subtle rounded group">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline cursor-grab">drag_indicator</span>
+<span class="font-label-md text-label-md text-text-main">Document Review</span>
+</div>
+<span class="w-3 h-3 rounded-full bg-primary-container"></span>
+</div>
+<div class="flex items-center justify-between p-2.5 bg-surface border border-border-subtle rounded group">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline cursor-grab">drag_indicator</span>
+<span class="font-label-md text-label-md text-text-main">Interview Scheduled</span>
+</div>
+<span class="w-3 h-3 rounded-full bg-status-warning"></span>
+</div>
+<div class="flex items-center justify-between p-2.5 bg-surface border border-border-subtle rounded group opacity-50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline cursor-grab">drag_indicator</span>
+<span class="font-label-md text-label-md text-text-main">Enrolled</span>
+</div>
+<span class="w-3 h-3 rounded-full bg-status-success"></span>
+</div>
+<button class="w-full py-2 border-2 border-dashed border-border-subtle rounded text-text-muted font-label-md hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2 mt-4">
+<span class="material-symbols-outlined">add</span>
+                                    Add Stage
+                                </button>
+</div>
+</div>
+<!-- CRM Controls -->
+<div class="bg-white rounded-lg border border-border-subtle">
+<div class="px-card-padding py-4 border-b border-border-subtle bg-surface-container-lowest">
+<h3 class="font-title-lg text-title-lg text-text-main">Automation Toggles</h3>
+</div>
+<div class="p-card-padding space-y-6">
+<div class="flex items-start justify-between">
+<div class="pr-6">
+<p class="font-label-md text-label-md text-text-main">Auto-Assign Leads</p>
+<p class="text-label-sm text-text-muted">Round-robin assignment of new leads to active counsellors.</p>
+</div>
+<div class="relative inline-block w-10 h-5 mt-1">
+<input checked="" class="custom-toggle absolute opacity-0 w-0 h-0" type="checkbox"/>
+<span class="toggle-bg absolute cursor-pointer top-0 left-0 right-0 bottom-0 bg-surface-variant transition-colors duration-200 rounded-full"></span>
+<span class="toggle-dot absolute cursor-pointer left-0.5 top-0.5 bg-white w-4 h-4 transition-transform duration-200 rounded-full"></span>
+</div>
+</div>
+<div class="flex items-start justify-between">
+<div class="pr-6">
+<p class="font-label-md text-label-md text-text-main">Email Confirmation</p>
+<p class="text-label-sm text-text-muted">Send automated welcome email upon lead creation.</p>
+</div>
+<div class="relative inline-block w-10 h-5 mt-1">
+<input checked="" class="custom-toggle absolute opacity-0 w-0 h-0" type="checkbox"/>
+<span class="toggle-bg absolute cursor-pointer top-0 left-0 right-0 bottom-0 bg-surface-variant transition-colors duration-200 rounded-full"></span>
+<span class="toggle-dot absolute cursor-pointer left-0.5 top-0.5 bg-white w-4 h-4 transition-transform duration-200 rounded-full"></span>
+</div>
+</div>
+<div class="flex items-start justify-between">
+<div class="pr-6">
+<p class="font-label-md text-label-md text-text-main">Duplicate Prevention</p>
+<p class="text-label-sm text-text-muted">Block leads with identical email or phone number.</p>
+</div>
+<div class="relative inline-block w-10 h-5 mt-1">
+<input class="custom-toggle absolute opacity-0 w-0 h-0" type="checkbox"/>
+<span class="toggle-bg absolute cursor-pointer top-0 left-0 right-0 bottom-0 bg-surface-variant transition-colors duration-200 rounded-full"></span>
+<span class="toggle-dot absolute cursor-pointer left-0.5 top-0.5 bg-white w-4 h-4 transition-transform duration-200 rounded-full"></span>
+</div>
+</div>
+<div class="space-y-1.5 pt-2">
+<label class="font-label-md text-label-md text-text-main">Inactive Lead Timeout (Days)</label>
+<div class="flex items-center gap-3">
+<input class="w-20 h-9 border-border-subtle rounded text-body-md focus:ring-2 focus:ring-primary" type="number" value="15"/>
+<span class="text-label-sm text-text-muted">Mark as "Stale" after no activity</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Advanced Config / API -->
+<section class="bg-white rounded-lg border border-border-subtle p-card-padding" id="api">
+<div class="flex items-start gap-4">
+<div class="w-12 h-12 rounded bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-2xl">key</span>
+</div>
+<div class="flex-1">
+<h3 class="font-title-lg text-title-lg text-text-main">API Access &amp; Integrations</h3>
+<p class="text-body-md text-text-muted mt-1">Connect AdmitPro to your website forms or marketing automation tools using private API keys.</p>
+<div class="mt-4 p-4 bg-surface rounded border border-border-subtle font-code-sm text-code-sm flex justify-between items-center text-text-main">
+<code>sk_live_51MvR8JAdmitProX92kL...</code>
+<button class="text-primary hover:text-primary-container flex items-center gap-1 font-label-md">
+<span class="material-symbols-outlined text-sm">content_copy</span>
+                                        Copy
+                                    </button>
+</div>
+<p class="mt-2 text-[11px] text-status-danger font-medium">Keep this key secret. If compromised, regenerate it immediately.</p>
+</div>
+</div>
+</section>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Micro-interaction for Toggles
+        document.querySelectorAll('.custom-toggle').forEach(toggle => {
+            toggle.addEventListener('change', function() {
+                const bg = this.nextElementSibling;
+                const dot = bg.nextElementSibling;
+                if(this.checked) {
+                    bg.classList.add('bg-primary-container');
+                    dot.classList.add('translate-x-[20px]');
+                } else {
+                    bg.classList.remove('bg-primary-container');
+                    dot.classList.remove('translate-x-[20px]');
+                }
+            });
+            // Initial state set
+            if(toggle.checked) {
+                toggle.nextElementSibling.classList.add('bg-primary-container');
+                toggle.nextElementSibling.nextElementSibling.classList.add('translate-x-[20px]');
+            }
+        });
+
+        // Smooth scroll for internal links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    window.scrollTo({
+                        top: target.offsetTop - 80,
+                        behavior: 'smooth'
+                    });
+                    
+                    // Update active nav styling
+                    document.querySelectorAll('aside nav a, .lg\\:col-span-3 a').forEach(a => {
+                        a.classList.remove('bg-surface-container-low', 'text-primary', 'font-bold');
+                        if(!a.classList.contains('sidebar-active')) {
+                            a.classList.add('text-on-surface-variant');
+                        }
+                    });
+                    this.classList.add('bg-surface-container-low', 'text-primary', 'font-bold');
+                }
+            });
+        });
+    </script>
+</body></html>

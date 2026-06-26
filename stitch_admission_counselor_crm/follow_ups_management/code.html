@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AdmitPro | Follow-ups Management</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-tertiary-fixed": "#101c2b",
+                    "on-surface-variant": "#434654",
+                    "status-danger": "#FF5630",
+                    "tertiary-fixed": "#d6e3f7",
+                    "on-primary-container": "#c4d2ff",
+                    "inverse-on-surface": "#f0f1f3",
+                    "on-tertiary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed-dim": "#bbc7db",
+                    "surface-container-high": "#e7e8ea",
+                    "on-secondary-fixed": "#001946",
+                    "on-primary": "#ffffff",
+                    "on-surface": "#191c1e",
+                    "status-success": "#36B37E",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-fixed": "#001848",
+                    "surface-container-highest": "#e1e2e4",
+                    "surface-tint": "#0c56d0",
+                    "status-warning": "#FFAB00",
+                    "on-secondary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "text-muted": "#6B778C",
+                    "surface-variant": "#e1e2e4",
+                    "border-subtle": "#DFE1E6",
+                    "inverse-primary": "#b2c5ff",
+                    "on-secondary-fixed-variant": "#00419d",
+                    "secondary-container": "#709bfe",
+                    "tertiary-container": "#4f5c6c",
+                    "surface-card": "#FFFFFF",
+                    "outline-variant": "#c3c6d6",
+                    "primary-fixed-dim": "#b2c5ff",
+                    "surface-dim": "#d9dadc",
+                    "primary": "#003d9b",
+                    "on-tertiary-fixed-variant": "#3b4858",
+                    "sidebar-bg": "#0747A6",
+                    "on-tertiary-container": "#c7d4e8",
+                    "on-secondary-container": "#003179",
+                    "background": "#f8f9fb",
+                    "outline": "#737685",
+                    "inverse-surface": "#2e3132",
+                    "primary-fixed": "#dae2ff",
+                    "surface-container-low": "#f3f4f6",
+                    "on-background": "#191c1e",
+                    "surface-bright": "#f8f9fb",
+                    "surface": "#f8f9fb",
+                    "on-primary-fixed-variant": "#0040a2",
+                    "on-error": "#ffffff",
+                    "primary-container": "#0052cc",
+                    "on-error-container": "#93000a",
+                    "secondary-fixed": "#d9e2ff",
+                    "surface-container": "#edeef0",
+                    "tertiary": "#384454",
+                    "text-main": "#172B4D",
+                    "secondary-fixed-dim": "#b1c6ff",
+                    "secondary": "#285ab9"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "header-height": "64px",
+                    "card-padding": "1.25rem",
+                    "stack-gap-sm": "0.5rem",
+                    "container-max-width": "1440px",
+                    "gutter": "1.5rem",
+                    "sidebar-width": "260px",
+                    "table-cell-padding": "0.75rem 1rem",
+                    "stack-gap-md": "1rem"
+            },
+            "fontFamily": {
+                    "headline-sm": ["Inter"],
+                    "code-sm": ["JetBrains Mono"],
+                    "label-md": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "display-lg": ["Inter"],
+                    "title-lg": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "body-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "code-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                    "label-md": ["13px", {"lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .active-tab-indicator {
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: theme('colors.primary-container');
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: theme('colors.surface-container-low');
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: theme('colors.outline-variant');
+            border-radius: 10px;
+        }
+        .calendar-day-active {
+            background-color: theme('colors.primary-container');
+            color: white;
+            border-radius: 0.125rem;
+        }
+    </style>
+</head>
+<body class="bg-background font-body-md text-on-surface antialiased">
+<!-- Side Navigation -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-sidebar-bg flex flex-col py-6">
+<div class="px-6 mb-8">
+<h1 class="font-headline-md text-headline-md font-bold text-white tracking-tight">AdmitPro</h1>
+<p class="text-on-primary-container/70 font-label-sm text-label-sm uppercase tracking-wider">Admission CRM</p>
+</div>
+<nav class="flex-1 px-3 space-y-1">
+<a class="flex items-center px-4 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors active:scale-95 duration-150 rounded-lg group" href="#">
+<span class="material-symbols-outlined mr-3 group-hover:scale-110 transition-transform">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors active:scale-95 duration-150 rounded-lg group" href="#">
+<span class="material-symbols-outlined mr-3 group-hover:scale-110 transition-transform">person_search</span>
+<span class="font-label-md text-label-md">Leads</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors active:scale-95 duration-150 rounded-lg group" href="#">
+<span class="material-symbols-outlined mr-3 group-hover:scale-110 transition-transform">account_tree</span>
+<span class="font-label-md text-label-md">Pipeline</span>
+</a>
+<a class="flex items-center px-4 py-3 text-white font-bold border-l-4 border-primary-fixed-dim bg-white/10 active:scale-95 duration-150 rounded-r-lg group" href="#">
+<span class="material-symbols-outlined mr-3" style="font-variation-settings: 'FILL' 1;">event_repeat</span>
+<span class="font-label-md text-label-md">Follow-ups</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors active:scale-95 duration-150 rounded-lg group" href="#">
+<span class="material-symbols-outlined mr-3 group-hover:scale-110 transition-transform">groups</span>
+<span class="font-label-md text-label-md">Counsellors</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors active:scale-95 duration-150 rounded-lg group" href="#">
+<span class="material-symbols-outlined mr-3 group-hover:scale-110 transition-transform">assessment</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors active:scale-95 duration-150 rounded-lg group" href="#">
+<span class="material-symbols-outlined mr-3 group-hover:scale-110 transition-transform">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="mt-auto px-6">
+<button class="w-full bg-primary-fixed-dim text-primary py-2.5 rounded font-label-md text-label-md font-bold flex items-center justify-center gap-2 hover:bg-white transition-colors">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Lead
+            </button>
+</div>
+</aside>
+<!-- Top Navigation -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-header-height bg-surface border-b border-border-subtle flex justify-between items-center px-gutter z-10">
+<div class="flex items-center flex-1 max-w-xl">
+<div class="relative w-full group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px] transition-colors group-focus-within:text-primary">search</span>
+<input class="w-full bg-surface-container-low border-none rounded h-9 pl-10 pr-4 text-body-md focus:ring-2 focus:ring-primary transition-all" placeholder="Search tasks, students, or notes..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-status-danger rounded-full border-2 border-surface"></span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+<div class="h-6 w-[1px] bg-border-subtle mx-2"></div>
+<div class="flex items-center gap-3 pl-2">
+<div class="text-right">
+<p class="font-label-md text-label-md text-text-main">Rahul Sharma</p>
+<p class="text-[11px] text-text-muted leading-tight">Senior Counselor</p>
+</div>
+<img class="w-9 h-9 rounded-full border border-border-subtle object-cover" data-alt="A professional headshot of a young male counselor wearing a formal blue shirt, set against a blurred modern office background with soft lighting. The image style is clean, corporate, and high-resolution to match the professional CRM dashboard aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAJwRpfEOH2CmLNlolTcyTFeeT6FFCNFtdLyvq29KBP_KxCupcqT5Mvra9eSOu6f2WhwQ0woJ4V92wk9RbZPjLLTVqo0fel5zeyy48TA55vJJAveBODAyX1DEe5ubbjqjkGuTcKiAJlbQivsOYwCM_niaBzjN3-dFvH-F0zz5XX-fms-yor0Q0_f5YJnTHXG7h1tqyMKtC6h9SZ11K7KnPfgWlJ6ikPEcIvTwNSyt0y9HXP06uFQ_wXQKAz1Bqr3UOIbYI0L4f-BdLU"/>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-[260px] mt-header-height p-gutter flex gap-6 min-h-[calc(100vh-64px)]">
+<!-- Left Section: Follow-up Lists -->
+<section class="flex-1 space-y-6">
+<div class="flex items-end justify-between">
+<div>
+<h2 class="font-headline-md text-headline-md text-text-main mb-1">Follow-ups</h2>
+<p class="text-text-muted font-body-md">Manage your daily student engagement pipeline.</p>
+</div>
+<div class="flex bg-surface-container-low p-1 rounded-lg border border-border-subtle">
+<button class="px-6 py-1.5 font-label-md text-label-md rounded relative text-primary bg-white shadow-sm" onclick="switchTab('today')">
+                        Today
+                        <span class="absolute -top-1 -right-1 flex h-4 w-4">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-danger opacity-75"></span>
+<span class="relative inline-flex rounded-full h-4 w-4 bg-status-danger text-[10px] text-white items-center justify-center">8</span>
+</span>
+</button>
+<button class="px-6 py-1.5 font-label-md text-label-md rounded text-on-surface-variant hover:bg-surface-container-high transition-colors" onclick="switchTab('upcoming')">Upcoming</button>
+<button class="px-6 py-1.5 font-label-md text-label-md rounded text-on-surface-variant hover:bg-surface-container-high transition-colors" onclick="switchTab('overdue')">Overdue</button>
+</div>
+</div>
+<!-- Follow-up Card List -->
+<div class="space-y-3">
+<!-- Item 1: High Priority -->
+<div class="bg-white border border-border-subtle rounded-lg p-4 flex items-center gap-4 group hover:border-primary/30 transition-all hover:shadow-sm">
+<div class="flex-shrink-0 w-12 h-12 bg-primary/5 rounded flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[28px]">call</span>
+</div>
+<div class="flex-1 grid grid-cols-12 gap-4 items-center">
+<div class="col-span-4">
+<h4 class="font-title-lg text-title-lg text-text-main">Aarav Mehta</h4>
+<div class="flex items-center gap-2 mt-1">
+<span class="bg-red-50 text-status-danger px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border border-red-100">High Priority</span>
+<span class="text-text-muted text-[12px] flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">school</span> Computer Science, UK
+                                </span>
+</div>
+</div>
+<div class="col-span-3">
+<div class="flex flex-col">
+<span class="text-text-muted text-[12px] font-medium uppercase tracking-tight">Scheduled</span>
+<span class="text-text-main font-semibold">10:30 AM <span class="text-text-muted font-normal ml-1">(In 45m)</span></span>
+</div>
+</div>
+<div class="col-span-2">
+<div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full w-fit">
+<span class="material-symbols-outlined text-[16px] text-primary">phone_iphone</span>
+<span class="text-label-sm font-label-sm text-on-surface-variant">Call</span>
+</div>
+</div>
+<div class="col-span-3 flex justify-end gap-2">
+<button class="p-2 text-text-muted hover:text-primary hover:bg-primary/5 rounded transition-colors" title="Reschedule">
+<span class="material-symbols-outlined">schedule</span>
+</button>
+<button class="bg-primary px-4 py-2 text-white rounded font-label-md text-label-md hover:bg-primary-container transition-all flex items-center gap-2 shadow-sm active:scale-95">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                                Complete
+                            </button>
+</div>
+</div>
+</div>
+<!-- Item 2: Medium Priority -->
+<div class="bg-white border border-border-subtle rounded-lg p-4 flex items-center gap-4 group hover:border-primary/30 transition-all hover:shadow-sm">
+<div class="flex-shrink-0 w-12 h-12 bg-status-success/5 rounded flex items-center justify-center text-status-success">
+<span class="material-symbols-outlined text-[28px]">chat</span>
+</div>
+<div class="flex-1 grid grid-cols-12 gap-4 items-center">
+<div class="col-span-4">
+<h4 class="font-title-lg text-title-lg text-text-main">Ishani Kapoor</h4>
+<div class="flex items-center gap-2 mt-1">
+<span class="bg-amber-50 text-status-warning px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border border-amber-100">Medium</span>
+<span class="text-text-muted text-[12px] flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">history_edu</span> MBA, Canada
+                                </span>
+</div>
+</div>
+<div class="col-span-3">
+<div class="flex flex-col">
+<span class="text-text-muted text-[12px] font-medium uppercase tracking-tight">Scheduled</span>
+<span class="text-text-main font-semibold">12:15 PM</span>
+</div>
+</div>
+<div class="col-span-2">
+<div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full w-fit">
+<span class="material-symbols-outlined text-[16px] text-green-600">message</span>
+<span class="text-label-sm font-label-sm text-on-surface-variant">WhatsApp</span>
+</div>
+</div>
+<div class="col-span-3 flex justify-end gap-2 opacity-60 hover:opacity-100 transition-opacity">
+<button class="p-2 text-text-muted hover:text-primary hover:bg-primary/5 rounded transition-colors">
+<span class="material-symbols-outlined">schedule</span>
+</button>
+<button class="bg-primary px-4 py-2 text-white rounded font-label-md text-label-md hover:bg-primary-container transition-all flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[18px]">check_circle</span>
+                                Complete
+                            </button>
+</div>
+</div>
+</div>
+<!-- Item 3: Low Priority -->
+<div class="bg-white border border-border-subtle rounded-lg p-4 flex items-center gap-4 group hover:border-primary/30 transition-all hover:shadow-sm">
+<div class="flex-shrink-0 w-12 h-12 bg-primary/5 rounded flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[28px]">mail</span>
+</div>
+<div class="flex-1 grid grid-cols-12 gap-4 items-center">
+<div class="col-span-4">
+<h4 class="font-title-lg text-title-lg text-text-main">Vikram Malhotra</h4>
+<div class="flex items-center gap-2 mt-1">
+<span class="bg-slate-50 text-slate-500 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border border-slate-100">Low Priority</span>
+<span class="text-text-muted text-[12px] flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">flight_takeoff</span> Visa Document Follow-up
+                                </span>
+</div>
+</div>
+<div class="col-span-3">
+<div class="flex flex-col">
+<span class="text-text-muted text-[12px] font-medium uppercase tracking-tight">Scheduled</span>
+<span class="text-text-main font-semibold">02:45 PM</span>
+</div>
+</div>
+<div class="col-span-2">
+<div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full w-fit">
+<span class="material-symbols-outlined text-[16px] text-blue-500">alternate_email</span>
+<span class="text-label-sm font-label-sm text-on-surface-variant">Email</span>
+</div>
+</div>
+<div class="col-span-3 flex justify-end gap-2 opacity-60 hover:opacity-100 transition-opacity">
+<button class="p-2 text-text-muted hover:text-primary hover:bg-primary/5 rounded transition-colors">
+<span class="material-symbols-outlined">schedule</span>
+</button>
+<button class="bg-primary px-4 py-2 text-white rounded font-label-md text-label-md hover:bg-primary-container transition-all flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[18px]">check_circle</span>
+                                Complete
+                            </button>
+</div>
+</div>
+</div>
+<!-- Empty State Contextual Element -->
+<div class="border-2 border-dashed border-border-subtle rounded-xl h-32 flex flex-col items-center justify-center text-text-muted/60 hover:text-primary/60 hover:border-primary/40 transition-all cursor-pointer group">
+<span class="material-symbols-outlined text-[32px] mb-1 group-hover:scale-110 transition-transform">add_task</span>
+<p class="font-label-md text-label-md">Schedule another follow-up for today</p>
+</div>
+</div>
+</section>
+<!-- Right Section: Widgets -->
+<aside class="w-[320px] space-y-6">
+<!-- Calendar Widget -->
+<div class="bg-white border border-border-subtle rounded-lg p-card-padding">
+<div class="flex items-center justify-between mb-4">
+<h3 class="font-label-md text-label-md text-text-main uppercase tracking-widest">Date Navigator</h3>
+<div class="flex gap-1">
+<button class="p-1 hover:bg-surface-container rounded transition-colors"><span class="material-symbols-outlined text-[18px]">chevron_left</span></button>
+<button class="p-1 hover:bg-surface-container rounded transition-colors"><span class="material-symbols-outlined text-[18px]">chevron_right</span></button>
+</div>
+</div>
+<div class="mb-4">
+<p class="text-headline-sm font-headline-sm text-primary">October 2023</p>
+</div>
+<div class="grid grid-cols-7 text-center mb-2">
+<span class="text-[10px] font-bold text-text-muted uppercase">S</span>
+<span class="text-[10px] font-bold text-text-muted uppercase">M</span>
+<span class="text-[10px] font-bold text-text-muted uppercase">T</span>
+<span class="text-[10px] font-bold text-text-muted uppercase">W</span>
+<span class="text-[10px] font-bold text-text-muted uppercase">T</span>
+<span class="text-[10px] font-bold text-text-muted uppercase">F</span>
+<span class="text-[10px] font-bold text-text-muted uppercase">S</span>
+</div>
+<div class="grid grid-cols-7 gap-y-2 text-center text-body-md">
+<span class="py-1.5 text-text-muted/30">24</span>
+<span class="py-1.5 text-text-muted/30">25</span>
+<span class="py-1.5 text-text-muted/30">26</span>
+<span class="py-1.5 text-text-muted/30">27</span>
+<span class="py-1.5 text-text-muted/30">28</span>
+<span class="py-1.5 text-text-muted/30">29</span>
+<span class="py-1.5 text-text-muted/30">30</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">1</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">2</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">3</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">4</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">5</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">6</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">7</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">8</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">9</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">10</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">11</span>
+<span class="py-1.5 calendar-day-active font-bold shadow-sm relative">
+                        12
+                        <span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-white rounded-full"></span>
+</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">13</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">14</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer font-semibold text-primary">15</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">16</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">17</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer font-semibold text-primary">18</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">19</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">20</span>
+<span class="py-1.5 hover:bg-primary/5 rounded cursor-pointer">21</span>
+</div>
+</div>
+<!-- Stats Mini Bento -->
+<div class="grid grid-cols-2 gap-3">
+<div class="bg-white border border-border-subtle p-4 rounded-lg">
+<p class="text-text-muted text-[11px] font-bold uppercase tracking-tight mb-1">Conversion</p>
+<p class="text-headline-sm font-headline-sm text-text-main">24%</p>
+<div class="w-full bg-surface-container h-1 mt-2 rounded-full overflow-hidden">
+<div class="bg-status-success h-full" style="width: 24%"></div>
+</div>
+</div>
+<div class="bg-white border border-border-subtle p-4 rounded-lg">
+<p class="text-text-muted text-[11px] font-bold uppercase tracking-tight mb-1">Avg Response</p>
+<p class="text-headline-sm font-headline-sm text-text-main">1.2h</p>
+<p class="text-[10px] text-status-success mt-1 flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[14px]">trending_down</span> 15% improvement
+                    </p>
+</div>
+</div>
+<!-- Activity Feed -->
+<div class="bg-white border border-border-subtle rounded-lg p-card-padding">
+<h3 class="font-label-md text-label-md text-text-main uppercase tracking-widest mb-4">Recent Notes</h3>
+<div class="space-y-4">
+<div class="relative pl-4 border-l-2 border-primary/20 pb-4">
+<div class="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-primary"></div>
+<p class="text-[12px] text-text-muted mb-1">2 hours ago</p>
+<p class="text-body-md text-text-main leading-snug"><span class="font-semibold">Ishani Kapoor:</span> Interested in September intake. Needs scholarship details.</p>
+</div>
+<div class="relative pl-4 border-l-2 border-primary/20">
+<div class="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-primary/30"></div>
+<p class="text-[12px] text-text-muted mb-1">Yesterday</p>
+<p class="text-body-md text-text-main leading-snug"><span class="font-semibold">Vikram Malhotra:</span> Provided bank statements for financial check.</p>
+</div>
+</div>
+</div>
+</aside>
+</main>
+<script>
+        function switchTab(tab) {
+            // Placeholder logic for tab switching UI
+            console.log('Switching to tab:', tab);
+            const buttons = document.querySelectorAll('[onclick^="switchTab"]');
+            buttons.forEach(btn => {
+                btn.className = "px-6 py-1.5 font-label-md text-label-md rounded text-on-surface-variant hover:bg-surface-container-high transition-colors";
+                const badge = btn.querySelector('.absolute');
+                if (badge) badge.remove();
+            });
+            
+            const activeBtn = event.currentTarget;
+            activeBtn.className = "px-6 py-1.5 font-label-md text-label-md rounded relative text-primary bg-white shadow-sm";
+            
+            // Re-add the badge if it was today (mock logic)
+            if (tab === 'today') {
+                const badgeHtml = `<span class="absolute -top-1 -right-1 flex h-4 w-4">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-danger opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-4 w-4 bg-status-danger text-[10px] text-white items-center justify-center">8</span>
+                        </span>`;
+                activeBtn.insertAdjacentHTML('beforeend', badgeHtml);
+            }
+        }
+
+        // Simple Hover interaction enhancement
+        document.querySelectorAll('.material-symbols-outlined').forEach(icon => {
+            icon.addEventListener('mouseenter', () => {
+                icon.style.fontVariationSettings = "'FILL' 1";
+            });
+            icon.addEventListener('mouseleave', () => {
+                if (!icon.closest('.active')) {
+                    icon.style.fontVariationSettings = "'FILL' 0";
+                }
+            });
+        });
+    </script>
+</body></html>

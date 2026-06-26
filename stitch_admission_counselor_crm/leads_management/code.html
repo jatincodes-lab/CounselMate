@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Leads List | AdmitPro CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "status-warning": "#FFAB00",
+                    "error": "#ba1a1a",
+                    "on-tertiary": "#ffffff",
+                    "on-tertiary-fixed-variant": "#3b4858",
+                    "secondary-fixed-dim": "#b1c6ff",
+                    "on-primary-fixed": "#001848",
+                    "surface-container-highest": "#e1e2e4",
+                    "text-muted": "#6B778C",
+                    "on-secondary-container": "#003179",
+                    "secondary-fixed": "#d9e2ff",
+                    "surface": "#f8f9fb",
+                    "on-secondary": "#ffffff",
+                    "inverse-on-surface": "#f0f1f3",
+                    "text-main": "#172B4D",
+                    "status-danger": "#FF5630",
+                    "surface-container-low": "#f3f4f6",
+                    "on-primary-container": "#c4d2ff",
+                    "surface-variant": "#e1e2e4",
+                    "on-error": "#ffffff",
+                    "on-error-container": "#93000a",
+                    "background": "#f8f9fb",
+                    "on-background": "#191c1e",
+                    "sidebar-bg": "#0747A6",
+                    "on-secondary-fixed": "#001946",
+                    "on-surface": "#191c1e",
+                    "primary-fixed-dim": "#b2c5ff",
+                    "inverse-primary": "#b2c5ff",
+                    "tertiary-fixed-dim": "#bbc7db",
+                    "outline-variant": "#c3c6d6",
+                    "tertiary-container": "#4f5c6c",
+                    "primary-container": "#0052cc",
+                    "border-subtle": "#DFE1E6",
+                    "on-secondary-fixed-variant": "#00419d",
+                    "surface-tint": "#0c56d0",
+                    "on-primary-fixed-variant": "#0040a2",
+                    "tertiary": "#384454",
+                    "error-container": "#ffdad6",
+                    "on-primary": "#ffffff",
+                    "status-success": "#36B37E",
+                    "surface-card": "#FFFFFF",
+                    "surface-container-lowest": "#ffffff",
+                    "on-surface-variant": "#434654",
+                    "inverse-surface": "#2e3132",
+                    "secondary-container": "#709bfe",
+                    "primary": "#003d9b",
+                    "outline": "#737685",
+                    "secondary": "#285ab9",
+                    "on-tertiary-fixed": "#101c2b",
+                    "surface-dim": "#d9dadc",
+                    "on-tertiary-container": "#c7d4e8",
+                    "primary-fixed": "#dae2ff",
+                    "surface-container-high": "#e7e8ea",
+                    "surface-container": "#edeef0",
+                    "tertiary-fixed": "#d6e3f7",
+                    "surface-bright": "#f8f9fb"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "header-height": "64px",
+                    "table-cell-padding": "0.75rem 1rem",
+                    "stack-gap-sm": "0.5rem",
+                    "container-max-width": "1440px",
+                    "stack-gap-md": "1rem",
+                    "card-padding": "1.25rem",
+                    "gutter": "1.5rem",
+                    "sidebar-width": "260px"
+            },
+            "fontFamily": {
+                    "body-md": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "label-md": ["Inter"],
+                    "code-sm": ["JetBrains Mono"],
+                    "body-lg": ["Inter"],
+                    "title-lg": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "display-lg": ["Inter"],
+                    "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "label-md": ["13px", {"lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                    "code-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .active-nav {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #DFE1E6; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6B778C; }
+    </style>
+</head>
+<body class="bg-surface text-text-main font-body-md antialiased">
+<!-- Sidebar -->
+<aside class="fixed left-0 top-0 h-full w-sidebar-width z-40 bg-sidebar-bg flex flex-col border-r border-border-subtle transition-all duration-300">
+<!-- Brand Header -->
+<div class="h-header-height flex items-center px-6 gap-3 shrink-0">
+<div class="w-8 h-8 bg-white rounded flex items-center justify-center">
+<span class="material-symbols-outlined text-sidebar-bg" style="font-variation-settings: 'FILL' 1;">school</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm font-bold text-on-primary">AdmitPro</span>
+<span class="text-[10px] font-bold text-primary-fixed uppercase tracking-wider opacity-70">Premier Coaching</span>
+</div>
+</div>
+<!-- Navigation items -->
+<nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors rounded" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="dashboard">dashboard</span>
+                Dashboard
+            </a>
+<!-- Active Tab: Leads -->
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary font-bold border-l-4 border-primary-fixed bg-primary-container/20 transition-all scale-[0.98]" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="person_search" style="font-variation-settings: 'FILL' 1;">person_search</span>
+                Leads
+            </a>
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors rounded" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="view_kanban">view_kanban</span>
+                Pipeline
+            </a>
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors rounded" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="event_repeat">event_repeat</span>
+                Follow-ups
+            </a>
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors rounded" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="groups">groups</span>
+                Counsellors
+            </a>
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors rounded" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="assessment">assessment</span>
+                Reports
+            </a>
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors rounded" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="settings">settings</span>
+                Settings
+            </a>
+</nav>
+<!-- Footer Tab -->
+<div class="p-3 border-t border-white/10">
+<a class="group flex items-center px-3 py-2.5 font-label-md text-label-md text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors rounded" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="help">help</span>
+                Help Center
+            </a>
+</div>
+</aside>
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 right-0 left-sidebar-width h-header-height bg-surface flex items-center justify-between px-gutter z-30 border-b border-border-subtle">
+<div class="flex items-center gap-6 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border border-border-subtle rounded px-10 py-1.5 font-body-md focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="Search leads by name, email or phone..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-all relative">
+<span class="material-symbols-outlined text-text-main" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-status-danger rounded-full ring-2 ring-surface"></span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-text-main" data-icon="domain">domain</span>
+</button>
+<div class="h-8 w-[1px] bg-border-subtle mx-2"></div>
+<div class="flex items-center gap-3">
+<div class="text-right hidden md:block">
+<p class="font-label-md text-label-md text-text-main">Rahul Sharma</p>
+<p class="text-[11px] text-text-muted uppercase font-bold tracking-tight">Senior Counselor</p>
+</div>
+<img class="w-9 h-9 rounded-full object-cover border border-border-subtle" data-alt="A professional headshot of a young male counselor in a corporate office setting, clean lighting, wearing a navy blue blazer, focused on a modern tech workspace with a monochromatic blue aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzw056xq7j_jF0Yfs5gdwBL-XlkRYj6cN4bYaERv9um-ow6QP9NX-rFUvq1XyDuCS322cjjpRtrcM43eE3nNqm9KKviP7rI4G09EtKweTVtAqYUPCObqzfvdHbsFZs47Ff-kq6A7KwmlTAQT0K0matFszDk933w4UfXgFmTXCaP0km8K4OEyrFfuF-jh3EnvTfOaKrdEUUozSEbaQDgzZ5XuBpu3jSBvHyXpHDEbXYLxF_-x24RNXvGDlzInTvdhVoOpcUnh-x3uT3"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-sidebar-width mt-header-height p-gutter max-w-container-max-width mx-auto">
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+<div>
+<h1 class="font-headline-md text-headline-md text-text-main">Leads Management</h1>
+<p class="font-body-md text-body-md text-text-muted mt-1">Review and manage student admission pipelines.</p>
+</div>
+<button class="inline-flex items-center justify-center bg-primary-container text-on-primary px-4 py-2 rounded font-label-md text-label-md hover:bg-primary transition-colors shadow-sm active:opacity-80">
+<span class="material-symbols-outlined mr-2" data-icon="add">add</span>
+                Add Lead
+            </button>
+</div>
+<!-- Filters Section -->
+<div class="bg-surface-card border border-border-subtle rounded p-4 mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+<div class="space-y-1.5">
+<label class="font-label-sm text-label-sm text-text-muted">Lead Status</label>
+<select class="w-full bg-surface-container-lowest border border-border-subtle rounded p-2 text-body-md outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
+<option>All Statuses</option>
+<option>New Lead</option>
+<option>Interested</option>
+<option>In Discussion</option>
+<option>Application Sent</option>
+<option>Enrolled</option>
+<option>Dropped</option>
+</select>
+</div>
+<div class="space-y-1.5">
+<label class="font-label-sm text-label-sm text-text-muted">Course Interest</label>
+<select class="w-full bg-surface-container-lowest border border-border-subtle rounded p-2 text-body-md outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
+<option>All Courses</option>
+<option>MBA Global</option>
+<option>Data Science</option>
+<option>UI/UX Design</option>
+<option>Digital Marketing</option>
+</select>
+</div>
+<div class="space-y-1.5">
+<label class="font-label-sm text-label-sm text-text-muted">Date Range</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-sm" data-icon="calendar_month">calendar_month</span>
+<input class="w-full bg-surface-container-lowest border border-border-subtle rounded pl-8 pr-2 py-2 text-body-md cursor-pointer focus:ring-2 focus:ring-primary/20" readonly="" type="text" value="Oct 1 - Oct 31, 2023"/>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex-1 bg-surface-container-high text-text-main px-4 py-2 rounded font-label-md text-label-md hover:bg-surface-dim transition-all">
+                    Reset
+                </button>
+<button class="flex-1 bg-primary text-on-primary px-4 py-2 rounded font-label-md text-label-md hover:opacity-90 transition-all">
+                    Apply
+                </button>
+</div>
+</div>
+<!-- Leads Table -->
+<div class="bg-surface-card border border-border-subtle rounded overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container text-text-muted font-label-md text-label-md border-b border-border-subtle">
+<tr>
+<th class="p-table-cell-padding font-semibold">
+<input class="rounded border-border-subtle text-primary focus:ring-primary" type="checkbox"/>
+</th>
+<th class="p-table-cell-padding font-semibold">Student Name</th>
+<th class="p-table-cell-padding font-semibold">Phone</th>
+<th class="p-table-cell-padding font-semibold">Source</th>
+<th class="p-table-cell-padding font-semibold">Course</th>
+<th class="p-table-cell-padding font-semibold">Counselor</th>
+<th class="p-table-cell-padding font-semibold">Status</th>
+<th class="p-table-cell-padding font-semibold">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-subtle">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="p-table-cell-padding">
+<input class="rounded border-border-subtle text-primary focus:ring-primary" type="checkbox"/>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed-dim flex items-center justify-center text-primary font-bold text-xs">AA</div>
+<div>
+<p class="font-label-md text-text-main">Arjun Adhikari</p>
+<p class="text-[11px] text-text-muted">arjun.a@email.com</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding text-text-main">+91 98765 43210</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-[11px] font-bold text-text-muted uppercase">Google Ads</span>
+</td>
+<td class="p-table-cell-padding text-text-main">MBA Global</td>
+<td class="p-table-cell-padding text-text-main">S. Verma</td>
+<td class="p-table-cell-padding">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-status-success/10 text-status-success">
+<span class="w-1 h-1 rounded-full bg-status-success mr-1.5"></span>
+                                    Enrolled
+                                </span>
+</td>
+<td class="p-table-cell-padding">
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="p-table-cell-padding">
+<input class="rounded border-border-subtle text-primary focus:ring-primary" type="checkbox"/>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-tertiary-fixed flex items-center justify-center text-tertiary font-bold text-xs">PS</div>
+<div>
+<p class="font-label-md text-text-main">Priya Sharma</p>
+<p class="text-[11px] text-text-muted">priya.s@outlook.com</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding text-text-main">+91 91234 56789</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-[11px] font-bold text-text-muted uppercase">Website</span>
+</td>
+<td class="p-table-cell-padding text-text-main">Data Science</td>
+<td class="p-table-cell-padding text-text-main">R. Khanna</td>
+<td class="p-table-cell-padding">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-status-warning/10 text-status-warning">
+<span class="w-1 h-1 rounded-full bg-status-warning mr-1.5"></span>
+                                    Interested
+                                </span>
+</td>
+<td class="p-table-cell-padding">
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="p-table-cell-padding">
+<input class="rounded border-border-subtle text-primary focus:ring-primary" type="checkbox"/>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed flex items-center justify-center text-secondary font-bold text-xs">MJ</div>
+<div>
+<p class="font-label-md text-text-main">Michael Jones</p>
+<p class="text-[11px] text-text-muted">m.jones@gmail.com</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding text-text-main">+91 99887 76655</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-[11px] font-bold text-text-muted uppercase">LinkedIn</span>
+</td>
+<td class="p-table-cell-padding text-text-main">UI/UX Design</td>
+<td class="p-table-cell-padding text-text-main">Rahul Sharma</td>
+<td class="p-table-cell-padding">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-primary/10 text-primary">
+<span class="w-1 h-1 rounded-full bg-primary mr-1.5"></span>
+                                    Follow Up
+                                </span>
+</td>
+<td class="p-table-cell-padding">
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="p-table-cell-padding">
+<input class="rounded border-border-subtle text-primary focus:ring-primary" type="checkbox"/>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center text-text-main font-bold text-xs">DR</div>
+<div>
+<p class="font-label-md text-text-main">Deepak Reddy</p>
+<p class="text-[11px] text-text-muted">d.reddy@tcs.com</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding text-text-main">+91 90000 11223</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-[11px] font-bold text-text-muted uppercase">Referral</span>
+</td>
+<td class="p-table-cell-padding text-text-main">Full Stack Dev</td>
+<td class="p-table-cell-padding text-text-main">S. Verma</td>
+<td class="p-table-cell-padding">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-status-danger/10 text-status-danger">
+<span class="w-1 h-1 rounded-full bg-status-danger mr-1.5"></span>
+                                    Dropped
+                                </span>
+</td>
+<td class="p-table-cell-padding">
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="p-table-cell-padding">
+<input class="rounded border-border-subtle text-primary focus:ring-primary" type="checkbox"/>
+</td>
+<td class="p-table-cell-padding">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-bold text-xs">KL</div>
+<div>
+<p class="font-label-md text-text-main">Kriti Luthra</p>
+<p class="text-[11px] text-text-muted">k.luthra@gmail.com</p>
+</div>
+</div>
+</td>
+<td class="p-table-cell-padding text-text-main">+91 88776 65544</td>
+<td class="p-table-cell-padding">
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-[11px] font-bold text-text-muted uppercase">Offline Expo</span>
+</td>
+<td class="p-table-cell-padding text-text-main">Digital Mkt</td>
+<td class="p-table-cell-padding text-text-main">Rahul Sharma</td>
+<td class="p-table-cell-padding">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-secondary-container/20 text-secondary-container">
+<span class="w-1 h-1 rounded-full bg-secondary-container mr-1.5"></span>
+                                    New Lead
+                                </span>
+</td>
+<td class="p-table-cell-padding">
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer/Pagination -->
+<div class="flex items-center justify-between p-4 border-t border-border-subtle bg-surface">
+<span class="text-label-sm font-label-sm text-text-muted">Showing 5 of 124 leads</span>
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 flex items-center justify-center border border-border-subtle rounded hover:bg-surface-container-low transition-all disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined text-sm" data-icon="chevron_left">chevron_left</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center bg-primary text-on-primary rounded text-label-sm font-bold">1</button>
+<button class="w-8 h-8 flex items-center justify-center border border-border-subtle rounded hover:bg-surface-container-low text-label-sm">2</button>
+<button class="w-8 h-8 flex items-center justify-center border border-border-subtle rounded hover:bg-surface-container-low text-label-sm">3</button>
+<button class="w-8 h-8 flex items-center justify-center border border-border-subtle rounded hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Sticky Floating Action Button (for Mobile) -->
+<button class="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-primary-container text-on-primary rounded-full shadow-lg flex items-center justify-center z-50 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-2xl" data-icon="add">add</span>
+</button>
+</main>
+<script>
+        // Micro-interactions and UI Logic
+        document.addEventListener('DOMContentLoaded', () => {
+            const tableRows = document.querySelectorAll('tbody tr');
+            tableRows.forEach(row => {
+                row.addEventListener('mouseenter', () => {
+                    // Subtle hover effect logic if needed beyond CSS
+                });
+            });
+
+            // Simulate loading state for filters
+            const applyBtn = document.querySelector('button.bg-primary');
+            if(applyBtn) {
+                applyBtn.addEventListener('click', () => {
+                    applyBtn.classList.add('opacity-70', 'cursor-not-allowed');
+                    applyBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" data-icon="progress_activity">progress_activity</span>';
+                    setTimeout(() => {
+                        applyBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+                        applyBtn.innerHTML = 'Apply';
+                    }, 800);
+                });
+            }
+        });
+    </script>
+</body></html>

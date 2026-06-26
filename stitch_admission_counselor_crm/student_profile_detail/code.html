@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Lead Detail - AdmitPro CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+            text-transform: none;
+            letter-spacing: normal;
+            word-wrap: normal;
+            white-space: nowrap;
+            direction: ltr;
+        }
+        /* Custom scrollbar for high-density UI */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #dfe1e6;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #c3c6d6;
+        }
+        .active-tab-indicator {
+            position: relative;
+        }
+        .active-tab-indicator::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: #003d9b;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "status-warning": "#FFAB00",
+                      "error": "#ba1a1a",
+                      "on-tertiary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#3b4858",
+                      "secondary-fixed-dim": "#b1c6ff",
+                      "on-primary-fixed": "#001848",
+                      "surface-container-highest": "#e1e2e4",
+                      "text-muted": "#6B778C",
+                      "on-secondary-container": "#003179",
+                      "secondary-fixed": "#d9e2ff",
+                      "surface": "#f8f9fb",
+                      "on-secondary": "#ffffff",
+                      "inverse-on-surface": "#f0f1f3",
+                      "text-main": "#172B4D",
+                      "status-danger": "#FF5630",
+                      "surface-container-low": "#f3f4f6",
+                      "on-primary-container": "#c4d2ff",
+                      "surface-variant": "#e1e2e4",
+                      "on-error": "#ffffff",
+                      "on-error-container": "#93000a",
+                      "background": "#f8f9fb",
+                      "on-background": "#191c1e",
+                      "sidebar-bg": "#0747A6",
+                      "on-secondary-fixed": "#001946",
+                      "on-surface": "#191c1e",
+                      "primary-fixed-dim": "#b2c5ff",
+                      "inverse-primary": "#b2c5ff",
+                      "tertiary-fixed-dim": "#bbc7db",
+                      "outline-variant": "#c3c6d6",
+                      "tertiary-container": "#4f5c6c",
+                      "primary-container": "#0052cc",
+                      "border-subtle": "#DFE1E6",
+                      "on-secondary-fixed-variant": "#00419d",
+                      "surface-tint": "#0c56d0",
+                      "on-primary-fixed-variant": "#0040a2",
+                      "tertiary": "#384454",
+                      "error-container": "#ffdad6",
+                      "on-primary": "#ffffff",
+                      "status-success": "#36B37E",
+                      "surface-card": "#FFFFFF",
+                      "surface-container-lowest": "#ffffff",
+                      "on-surface-variant": "#434654",
+                      "inverse-surface": "#2e3132",
+                      "secondary-container": "#709bfe",
+                      "primary": "#003d9b",
+                      "outline": "#737685",
+                      "secondary": "#285ab9",
+                      "on-tertiary-fixed": "#101c2b",
+                      "surface-dim": "#d9dadc",
+                      "on-tertiary-container": "#c7d4e8",
+                      "primary-fixed": "#dae2ff",
+                      "surface-container-high": "#e7e8ea",
+                      "surface-container": "#edeef0",
+                      "tertiary-fixed": "#d6e3f7",
+                      "surface-bright": "#f8f9fb"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "header-height": "64px",
+                      "table-cell-padding": "0.75rem 1rem",
+                      "stack-gap-sm": "0.5rem",
+                      "container-max-width": "1440px",
+                      "stack-gap-md": "1rem",
+                      "card-padding": "1.25rem",
+                      "gutter": "1.5rem",
+                      "sidebar-width": "260px"
+              },
+              "fontFamily": {
+                      "body-md": ["Inter"],
+                      "label-sm": ["Inter"],
+                      "label-md": ["Inter"],
+                      "code-sm": ["JetBrains Mono"],
+                      "body-lg": ["Inter"],
+                      "title-lg": ["Inter"],
+                      "headline-sm": ["Inter"],
+                      "display-lg": ["Inter"],
+                      "headline-md": ["Inter"]
+              },
+              "fontSize": {
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                      "label-md": ["13px", {"lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                      "code-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                      "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+              }
+            }
+          }
+        }
+    </script>
+</head>
+<body class="bg-background font-body-md text-on-surface">
+<!-- Global Side Navigation -->
+<aside class="fixed left-0 top-0 h-full flex flex-col z-40 bg-sidebar-bg dark:bg-inverse-surface border-r border-border-subtle dark:border-outline-variant w-sidebar-width">
+<div class="p-6 mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-white flex items-center justify-center">
+<span class="material-symbols-outlined text-sidebar-bg font-bold">school</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-primary">AdmitPro</h1>
+<p class="text-[11px] opacity-80 text-on-primary uppercase tracking-widest font-bold">Premier Coaching</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-3 space-y-1">
+<!-- Dashboard Tab -->
+<a class="flex items-center gap-3 px-4 py-3 hover:bg-primary-container/10 transition-colors text-on-primary-fixed-variant font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<!-- Leads Tab (Active) -->
+<a class="flex items-center gap-3 px-4 py-3 bg-white/10 text-on-primary font-bold border-l-4 border-primary-fixed font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="person_search">person_search</span>
+<span>Leads</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 hover:bg-primary-container/10 transition-colors text-on-primary-fixed-variant font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="view_kanban">view_kanban</span>
+<span>Pipeline</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 hover:bg-primary-container/10 transition-colors text-on-primary-fixed-variant font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="event_repeat">event_repeat</span>
+<span>Follow-ups</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 hover:bg-primary-container/10 transition-colors text-on-primary-fixed-variant font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span>Counsellors</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 hover:bg-primary-container/10 transition-colors text-on-primary-fixed-variant font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<span>Reports</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 hover:bg-primary-container/10 transition-colors text-on-primary-fixed-variant font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+<div class="p-3 border-t border-white/10">
+<a class="flex items-center gap-3 px-4 py-3 hover:bg-primary-container/10 transition-colors text-on-primary-fixed-variant font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span>Help Center</span>
+</a>
+</div>
+</aside>
+<!-- Global Top Bar -->
+<header class="fixed top-0 right-0 left-[260px] flex items-center justify-between px- gutter z-30 bg-surface border-b border-border-subtle h-header-height px-6">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[20px]">search</span>
+<input class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2 pl-10 pr-4 text-body-md focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="Search leads, applications, or documents..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-5">
+<button class="relative text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-status-danger rounded-full border-2 border-surface"></span>
+</button>
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="domain">domain</span>
+</button>
+<div class="h-8 w-[1px] bg-border-subtle"></div>
+<div class="flex items-center gap-3 cursor-pointer group">
+<div class="text-right">
+<p class="text-label-md font-bold text-on-surface">Alex Rivera</p>
+<p class="text-[11px] text-text-muted uppercase font-bold tracking-wider">Sr. Counsellor</p>
+</div>
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-border-subtle group-hover:border-primary transition-all">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a senior admission counselor, middle-aged male with a friendly and authoritative expression, wearing a navy blue blazer and a light blue dress shirt, centered composition with a soft blurred office background, high-key lighting for a clean and trustworthy corporate aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBjc7zjr4sBRb_ARfW2xm5mYxh_uXOSYeAhfxW6Jv3bTYyfzvOozlmX-Z98DdmM6haJY2w4dFhNFaOHj_mIr_uf_OjLcNaKXD9OieLJoHboMlAFblk1CRbX5EvSG5vQX-kypDJmvIKNMg9LhqFPuZQoB4-Lf7tYTcWxNX4bi4N3fflDb0X33FylTVflh2yoybpZDAUZHTOJdKLMMR7OGKwA38aSdPydZ9PEufAzXCjruGFfRdAXjKaZ9e4LDkZBUOImCH7ThhH5T211"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="pt-[64px] pl-[260px] min-h-screen">
+<div class="max-w-[1440px] mx-auto p-6">
+<!-- Breadcrumbs -->
+<nav class="flex items-center gap-2 text-label-sm text-text-muted mb-4">
+<a class="hover:text-primary" href="#">Dashboard</a>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<a class="hover:text-primary" href="#">Leads</a>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-on-surface font-semibold">Julianna Smith</span>
+</nav>
+<div class="grid grid-cols-12 gap-6 items-start">
+<!-- Left Panel: Profile Detail -->
+<div class="col-span-3 space-y-6">
+<div class="bg-surface-card border border-border-subtle rounded shadow-sm overflow-hidden">
+<div class="p-6 text-center border-b border-border-subtle">
+<div class="w-32 h-32 rounded-full overflow-hidden mx-auto mb-4 border-4 border-surface-container">
+<img class="w-full h-full object-cover" data-alt="A detailed portrait of a young female student, Julianna Smith, with an optimistic and focused expression, dressed in casual academic attire, looking towards the camera. The lighting is soft and natural, reflecting a professional yet approachable modern student profile, set against a neutral, high-quality photographic studio background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKAx_6I7fYEANcrLYzbfw_eAdBdinnUn83DsmHr0fuUJFp2Z4Rtd2klgbKbMEbXMGP7bo8QxvjJempq_ZD66i6JJlG8TuU3UFBkc-EsF8eKgRMB7Wdcga34IctR-_3wpQ_vTgevUNcplCLMwyt1f3nPYwCjpk7NcfQvTaXtaHdJp2x1s_Z9I6BCZMfXb21gD6DlnBjVnOzpbcdBI3NQwOeTDaXHJ7qZIRcjFOxKBWjHAbwUZQioIC-g_Ajc8FD5CwEQD1qSTb-xxBj"/>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-text-main">Julianna Smith</h2>
+<p class="text-body-md text-text-muted">Applied: Computer Science, MIT</p>
+<div class="mt-4 flex justify-center gap-2">
+<span class="bg-primary-fixed text-on-primary-fixed-variant px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider">High Intent</span>
+<span class="bg-status-success/10 text-status-success px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider">Hot Lead</span>
+</div>
+</div>
+<div class="p-6 space-y-4">
+<div>
+<label class="text-label-sm text-text-muted uppercase font-bold">Contact Information</label>
+<div class="mt-3 space-y-3">
+<div class="flex items-center gap-3 text-body-md">
+<span class="material-symbols-outlined text-text-muted text-[18px]">mail</span>
+<span class="text-text-main">j.smith.24@gmail.com</span>
+</div>
+<div class="flex items-center gap-3 text-body-md">
+<span class="material-symbols-outlined text-text-muted text-[18px]">call</span>
+<span class="text-text-main">+1 (555) 012-3456</span>
+</div>
+<div class="flex items-center gap-3 text-body-md">
+<span class="material-symbols-outlined text-text-muted text-[18px]">location_on</span>
+<span class="text-text-main">Boston, MA</span>
+</div>
+</div>
+</div>
+<div class="pt-4 border-t border-border-subtle">
+<label class="text-label-sm text-text-muted uppercase font-bold">Academic Background</label>
+<div class="mt-3 space-y-2">
+<div class="flex justify-between text-body-md">
+<span class="text-text-muted">GPA:</span>
+<span class="font-semibold text-text-main">3.9 / 4.0</span>
+</div>
+<div class="flex justify-between text-body-md">
+<span class="text-text-muted">SAT:</span>
+<span class="font-semibold text-text-main">1540</span>
+</div>
+<div class="flex justify-between text-body-md">
+<span class="text-text-muted">School:</span>
+<span class="font-semibold text-text-main text-right">Cambridge Rindge &amp; Latin</span>
+</div>
+</div>
+</div>
+<button class="w-full mt-4 py-2 border border-primary text-primary font-label-md rounded hover:bg-primary/5 transition-colors">
+                                Edit Profile
+                            </button>
+</div>
+</div>
+</div>
+<!-- Main Area: Tabs & Timeline -->
+<div class="col-span-6 space-y-6">
+<div class="bg-surface-card border border-border-subtle rounded shadow-sm">
+<!-- Navigation Tabs -->
+<div class="flex border-b border-border-subtle px-6">
+<button class="px-6 py-4 text-label-md font-bold text-primary active-tab-indicator">Overview</button>
+<button class="px-6 py-4 text-label-md font-bold text-text-muted hover:text-text-main transition-colors">Activity Timeline</button>
+<button class="px-6 py-4 text-label-md font-bold text-text-muted hover:text-text-main transition-colors">Notes</button>
+<button class="px-6 py-4 text-label-md font-bold text-text-muted hover:text-text-main transition-colors">Follow-ups</button>
+<button class="px-6 py-4 text-label-md font-bold text-text-muted hover:text-text-main transition-colors">Documents</button>
+</div>
+<!-- Tab Content: Overview -->
+<div class="p-6">
+<div class="grid grid-cols-2 gap-6 mb-8">
+<div class="p-4 bg-surface-container-lowest border border-border-subtle rounded">
+<h4 class="text-label-sm text-text-muted uppercase font-bold mb-2">Lead Stage</h4>
+<div class="flex items-center gap-3">
+<div class="flex-1 h-2 bg-surface-container rounded-full overflow-hidden flex">
+<div class="w-1/4 bg-primary h-full"></div>
+<div class="w-1/4 bg-primary h-full border-l border-surface-card"></div>
+<div class="w-1/4 bg-primary h-full border-l border-surface-card"></div>
+<div class="w-1/4 bg-surface-container h-full border-l border-surface-card"></div>
+</div>
+<span class="text-label-md font-bold text-text-main">Decision Pending</span>
+</div>
+</div>
+<div class="p-4 bg-surface-container-lowest border border-border-subtle rounded">
+<h4 class="text-label-sm text-text-muted uppercase font-bold mb-2">Conversion Probability</h4>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-status-success">trending_up</span>
+<span class="text-display-lg font-bold text-text-main">84%</span>
+</div>
+</div>
+</div>
+<h3 class="font-title-lg text-title-lg text-text-main mb-4">Recent Activity</h3>
+<div class="space-y-6 relative before:absolute before:left-[17px] before:top-2 before:bottom-0 before:w-[2px] before:bg-border-subtle">
+<!-- Activity Item -->
+<div class="flex gap-4 relative">
+<div class="z-10 w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center text-primary border-4 border-surface-card">
+<span class="material-symbols-outlined text-[18px]">mail</span>
+</div>
+<div class="flex-1 bg-surface-container-low p-4 rounded border border-border-subtle">
+<div class="flex justify-between items-start mb-1">
+<p class="text-body-md font-bold text-text-main">Application Form Received</p>
+<span class="text-[11px] text-text-muted font-bold">2 HOURS AGO</span>
+</div>
+<p class="text-body-md text-on-surface-variant">Julianna completed the financial aid assessment form. Status updated to 'Under Review'.</p>
+</div>
+</div>
+<!-- Activity Item -->
+<div class="flex gap-4 relative">
+<div class="z-10 w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-text-muted border-4 border-surface-card">
+<span class="material-symbols-outlined text-[18px]">call</span>
+</div>
+<div class="flex-1 bg-white p-4 rounded border border-border-subtle">
+<div class="flex justify-between items-start mb-1">
+<p class="text-body-md font-bold text-text-main">Phone Inquiry</p>
+<span class="text-[11px] text-text-muted font-bold">YESTERDAY</span>
+</div>
+<p class="text-body-md text-on-surface-variant">Discussed course specifics and dorm options. Client seems very interested in the research labs.</p>
+<div class="mt-2 flex items-center gap-2 text-label-sm text-primary font-semibold">
+<span class="material-symbols-outlined text-[16px]">mic</span>
+<span>Recording_0912.mp3</span>
+</div>
+</div>
+</div>
+<!-- Activity Item -->
+<div class="flex gap-4 relative">
+<div class="z-10 w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-text-muted border-4 border-surface-card">
+<span class="material-symbols-outlined text-[18px]">description</span>
+</div>
+<div class="flex-1 bg-white p-4 rounded border border-border-subtle">
+<div class="flex justify-between items-start mb-1">
+<p class="text-body-md font-bold text-text-main">Transcript Uploaded</p>
+<span class="text-[11px] text-text-muted font-bold">3 DAYS AGO</span>
+</div>
+<p class="text-body-md text-on-surface-variant">Verified high school transcript for 2021-2023. GPA match confirmed.</p>
+</div>
+</div>
+</div>
+<button class="w-full mt-8 py-3 text-label-md font-bold text-text-muted hover:text-primary transition-colors border-t border-border-subtle">
+                                View All Activity
+                            </button>
+</div>
+</div>
+</div>
+<!-- Right Panel: Actions & Quick Status -->
+<div class="col-span-3 space-y-6">
+<!-- Next Follow-up Card -->
+<div class="bg-primary-container p-6 rounded shadow-sm border border-primary text-white">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined">event_upcoming</span>
+<h3 class="text-label-md font-bold uppercase tracking-wider">Next Follow-up</h3>
+</div>
+<div class="mb-6">
+<p class="text-headline-sm font-bold">Tomorrow, 10:00 AM</p>
+<p class="text-body-md opacity-90 mt-1">Video Consultation: Financial Aid Walkthrough</p>
+</div>
+<div class="space-y-3">
+<button class="w-full bg-white text-primary font-bold py-2.5 rounded hover:bg-surface-bright transition-all active:scale-[0.98]">
+                                Start Meeting
+                            </button>
+<button class="w-full bg-white/10 border border-white/20 text-white font-bold py-2.5 rounded hover:bg-white/20 transition-all">
+                                Reschedule
+                            </button>
+</div>
+</div>
+<!-- Quick Status Update -->
+<div class="bg-surface-card border border-border-subtle rounded shadow-sm p-6">
+<h3 class="text-label-md font-bold uppercase tracking-wider text-text-muted mb-4">Quick Update</h3>
+<div class="space-y-4">
+<div>
+<label class="text-label-sm text-text-muted mb-2 block">Change Lead Status</label>
+<select class="w-full bg-surface-container-low border border-border-subtle rounded p-2 text-body-md focus:ring-primary focus:border-primary">
+<option>Discovery</option>
+<option>Under Review</option>
+<option selected="">Decision Pending</option>
+<option>Admitted</option>
+<option>Waitlisted</option>
+</select>
+</div>
+<div>
+<label class="text-label-sm text-text-muted mb-2 block">Quick Note</label>
+<textarea class="w-full bg-surface-container-low border border-border-subtle rounded p-3 text-body-md h-24 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="Type a quick observation..."></textarea>
+</div>
+<button class="w-full bg-primary text-on-primary font-bold py-2.5 rounded hover:bg-secondary transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[20px]">save</span>
+                                Update Lead
+                            </button>
+</div>
+</div>
+<!-- Assigned Counsellors -->
+<div class="bg-surface-card border border-border-subtle rounded shadow-sm p-6">
+<h3 class="text-label-md font-bold uppercase tracking-wider text-text-muted mb-4">Team Assigned</h3>
+<div class="space-y-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center font-bold text-[12px]">AR</div>
+<div>
+<p class="text-body-md font-bold text-text-main">Alex Rivera</p>
+<p class="text-label-sm text-text-muted">Primary Counsellor</p>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-bold text-[12px]">ML</div>
+<div>
+<p class="text-body-md font-bold text-text-main">Marie Lefevre</p>
+<p class="text-label-sm text-text-muted">Financial Specialist</p>
+</div>
+</div>
+</div>
+<button class="w-full mt-4 flex items-center justify-center gap-2 text-label-md font-bold text-primary hover:underline">
+<span class="material-symbols-outlined text-[18px]">add_circle</span>
+                            Add Collaborator
+                        </button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Micro-interaction Scripts -->
+<script>
+        // Simple tab switching logic for demonstration
+        document.querySelectorAll('.flex.border-b button').forEach(button => {
+            button.addEventListener('click', function() {
+                document.querySelectorAll('.flex.border-b button').forEach(btn => {
+                    btn.classList.remove('text-primary', 'active-tab-indicator');
+                    btn.classList.add('text-text-muted');
+                });
+                this.classList.add('text-primary', 'active-tab-indicator');
+                this.classList.remove('text-text-muted');
+            });
+        });
+
+        // Hover scale effect for Sidebar items
+        document.querySelectorAll('aside nav a').forEach(item => {
+            item.addEventListener('mousedown', () => {
+                item.style.transform = 'scale(0.98)';
+            });
+            item.addEventListener('mouseup', () => {
+                item.style.transform = 'scale(1)';
+            });
+        });
+    </script>
+</body></html>

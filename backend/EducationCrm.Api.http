@@ -1,0 +1,6 @@
+@EducationCrm.Api_HostAddress = http://localhost:5160
+
+GET {{EducationCrm.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

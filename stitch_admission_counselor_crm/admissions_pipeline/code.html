@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AdmitPro | Lead Pipeline Kanban</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Use Tailwind Config from Brand Anchors -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "status-warning": "#FFAB00",
+                "error": "#ba1a1a",
+                "on-tertiary": "#ffffff",
+                "on-tertiary-fixed-variant": "#3b4858",
+                "secondary-fixed-dim": "#b1c6ff",
+                "on-primary-fixed": "#001848",
+                "surface-container-highest": "#e1e2e4",
+                "text-muted": "#6B778C",
+                "on-secondary-container": "#003179",
+                "secondary-fixed": "#d9e2ff",
+                "surface": "#f8f9fb",
+                "on-secondary": "#ffffff",
+                "inverse-on-surface": "#f0f1f3",
+                "text-main": "#172B4D",
+                "status-danger": "#FF5630",
+                "surface-container-low": "#f3f4f6",
+                "on-primary-container": "#c4d2ff",
+                "surface-variant": "#e1e2e4",
+                "on-error": "#ffffff",
+                "on-error-container": "#93000a",
+                "background": "#f8f9fb",
+                "on-background": "#191c1e",
+                "sidebar-bg": "#0747A6",
+                "on-secondary-fixed": "#001946",
+                "on-surface": "#191c1e",
+                "primary-fixed-dim": "#b2c5ff",
+                "inverse-primary": "#b2c5ff",
+                "tertiary-fixed-dim": "#bbc7db",
+                "outline-variant": "#c3c6d6",
+                "tertiary-container": "#4f5c6c",
+                "primary-container": "#0052cc",
+                "border-subtle": "#DFE1E6",
+                "on-secondary-fixed-variant": "#00419d",
+                "surface-tint": "#0c56d0",
+                "on-primary-fixed-variant": "#0040a2",
+                "tertiary": "#384454",
+                "error-container": "#ffdad6",
+                "on-primary": "#ffffff",
+                "status-success": "#36B37E",
+                "surface-card": "#FFFFFF",
+                "surface-container-lowest": "#ffffff",
+                "on-surface-variant": "#434654",
+                "inverse-surface": "#2e3132",
+                "secondary-container": "#709bfe",
+                "primary": "#003d9b",
+                "outline": "#737685",
+                "secondary": "#285ab9",
+                "on-tertiary-fixed": "#101c2b",
+                "surface-dim": "#d9dadc",
+                "on-tertiary-container": "#c7d4e8",
+                "primary-fixed": "#dae2ff",
+                "surface-container-high": "#e7e8ea",
+                "surface-container": "#edeef0",
+                "tertiary-fixed": "#d6e3f7",
+                "surface-bright": "#f8f9fb"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+            },
+            "spacing": {
+                "header-height": "64px",
+                "table-cell-padding": "0.75rem 1rem",
+                "stack-gap-sm": "0.5rem",
+                "container-max-width": "1440px",
+                "stack-gap-md": "1rem",
+                "card-padding": "1.25rem",
+                "gutter": "1.5rem",
+                "sidebar-width": "260px"
+            },
+            "fontFamily": {
+                "body-md": ["Inter"],
+                "label-sm": ["Inter"],
+                "label-md": ["Inter"],
+                "code-sm": ["JetBrains Mono"],
+                "body-lg": ["Inter"],
+                "title-lg": ["Inter"],
+                "headline-sm": ["Inter"],
+                "display-lg": ["Inter"],
+                "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                "label-md": ["13px", {"lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                "code-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8f9fb; color: #172B4D; }
+        .kanban-column { min-height: calc(100vh - 180px); }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #DFE1E6; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #C1C7D0; }
+        .card-drag:active { cursor: grabbing; transform: rotate(2deg) scale(1.02); }
+    </style>
+</head>
+<body class="bg-background overflow-hidden">
+<!-- Global SideNavBar -->
+<nav class="fixed left-0 top-0 h-full flex flex-col z-40 bg-sidebar-bg dark:bg-inverse-surface border-r border-border-subtle dark:border-outline-variant w-sidebar-width">
+<div class="p-gutter">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-sidebar-bg font-bold">school</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-primary dark:text-inverse-primary leading-none">AdmitPro</h1>
+<p class="text-[10px] uppercase tracking-widest text-on-primary/70 mt-1">Premier Coaching</p>
+</div>
+</div>
+</div>
+<div class="flex-1 px-3 space-y-1 mt-4">
+<!-- Navigation Items Mapping -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary-fixed-variant dark:text-on-tertiary-fixed-variant hover:bg-primary-container/10 transition-colors group" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary-fixed-variant dark:text-on-tertiary-fixed-variant hover:bg-primary-container/10 transition-colors" href="#">
+<span class="material-symbols-outlined">person_search</span>
+<span class="font-label-md text-label-md">Leads</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary dark:text-inverse-primary font-bold border-l-4 border-primary-fixed bg-primary-container/10 scale-[0.98]" href="#">
+<span class="material-symbols-outlined">view_kanban</span>
+<span class="font-label-md text-label-md">Pipeline</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary-fixed-variant dark:text-on-tertiary-fixed-variant hover:bg-primary-container/10 transition-colors" href="#">
+<span class="material-symbols-outlined">event_repeat</span>
+<span class="font-label-md text-label-md">Follow-ups</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary-fixed-variant dark:text-on-tertiary-fixed-variant hover:bg-primary-container/10 transition-colors" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-label-md text-label-md">Counsellors</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary-fixed-variant dark:text-on-tertiary-fixed-variant hover:bg-primary-container/10 transition-colors" href="#">
+<span class="material-symbols-outlined">assessment</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+</div>
+<div class="p-4 border-t border-white/10">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors mb-2" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-label-md text-label-md">Help Center</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-primary-fixed-variant hover:bg-primary-container/10 transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</div>
+</nav>
+<!-- Global TopNavBar -->
+<header class="fixed top-0 right-0 left-sidebar-width h-header-height flex items-center justify-between px-gutter z-30 bg-surface dark:bg-surface-dim border-b border-border-subtle dark:border-outline-variant">
+<div class="flex items-center gap-6 flex-1">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container-low border border-border-subtle rounded-lg text-body-md focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="Search leads, applications..." type="text"/>
+</div>
+<div class="h-6 w-[1px] bg-border-subtle"></div>
+<div class="flex items-center gap-2 text-text-muted font-label-md text-label-md">
+<span>Quick Filters:</span>
+<button class="px-3 py-1 bg-surface-container hover:bg-surface-container-high rounded transition-colors">High Priority</button>
+<button class="px-3 py-1 bg-surface-container hover:bg-surface-container-high rounded transition-colors">Due Today</button>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-all relative">
+<span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-status-danger rounded-full border-2 border-white"></span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-on-surface-variant">domain</span>
+</button>
+<div class="flex items-center gap-3 pl-4 border-l border-border-subtle">
+<div class="text-right">
+<p class="font-label-md text-label-md text-text-main">Alex Rivera</p>
+<p class="text-[11px] text-text-muted">Senior Counsellor</p>
+</div>
+<img class="w-10 h-10 rounded-full border border-border-subtle object-cover" data-alt="A professional headshot of a young male professional in a modern office, wearing a dark blazer over a light blue shirt. The lighting is bright and clean, typical of a high-end corporate setting, with a shallow depth of field focusing on his friendly yet authoritative expression." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAIp86cRUOkHj_Rn1qd3x9k8s6NtdPJEAb02HFi47_9uvT5-ibwsKOvCQUI4cNpHNJgu9zAmnwpQHd5BqOfrQ6K8RQFedxMYtulqwvYz0meDtHMH2VYv8E8nirBylabNM0GmnZ18Uvh-xBA6vP3VLXL-6Uf9-maUqCSLKgVYVEbHbN70iXZMhqSu0rBNZREjVF2wfQP8BIiutuYiLazNM7tT60mziY2LKdqqxDdtIhqyxqgDyXnlR0m733cWOitbNLbT2jF7W2Mmn5q"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] mt-[64px] h-[calc(100vh-64px)] overflow-hidden flex flex-col p-gutter">
+<!-- Toolbar Section -->
+<div class="flex items-center justify-between mb-gutter">
+<div>
+<h2 class="font-headline-md text-headline-md text-text-main">Lead Pipeline</h2>
+<p class="text-body-md text-text-muted">Manage and track student enrollment progress</p>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex items-center bg-white border border-border-subtle rounded-lg p-1">
+<button class="px-4 py-1.5 bg-primary text-white rounded text-label-md font-label-md flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">view_kanban</span>
+                        Board
+                    </button>
+<button class="px-4 py-1.5 text-text-muted hover:bg-surface-container-low rounded text-label-md font-label-md flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-[18px]">list</span>
+                        List
+                    </button>
+</div>
+<button class="bg-primary text-white px-5 py-2.5 rounded-lg text-label-md font-label-md flex items-center gap-2 hover:bg-primary-container transition-all active:scale-95 shadow-sm">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                    Create New Lead
+                </button>
+</div>
+</div>
+<!-- Kanban Board Container -->
+<div class="flex-1 overflow-x-auto flex gap-4 pb-6 custom-scrollbar">
+<!-- Inquiry Column -->
+<div class="flex-shrink-0 w-[300px] flex flex-col gap-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-text-main uppercase tracking-wider">Inquiry</span>
+<span class="bg-surface-container-highest text-text-main px-2 py-0.5 rounded text-[11px] font-bold">12</span>
+</div>
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">more_horiz</span></button>
+</div>
+<div class="kanban-column bg-surface-container-low/50 rounded-xl p-3 flex flex-col gap-3 border border-dashed border-border-subtle">
+<!-- Card 1 -->
+<div class="bg-surface-card border border-border-subtle rounded-lg p-card-padding shadow-[0_2px_4px_rgba(0,0,0,0.02)] card-drag hover:border-primary transition-all cursor-grab active:cursor-grabbing">
+<div class="flex justify-between items-start mb-3">
+<span class="px-2 py-0.5 bg-secondary-fixed text-on-secondary-fixed text-[10px] font-bold rounded uppercase">Masters</span>
+<span class="material-symbols-outlined text-text-muted text-[18px]">drag_indicator</span>
+</div>
+<h4 class="font-title-lg text-title-lg text-text-main mb-1">Emily Watson</h4>
+<p class="text-body-md text-text-muted mb-4">Computer Science • Fall 2024</p>
+<div class="flex items-center justify-between pt-3 border-t border-border-subtle">
+<div class="flex items-center gap-1.5 text-status-warning">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+<span class="text-label-sm font-label-sm">Due Today</span>
+</div>
+<div class="flex -space-x-2">
+<img class="w-6 h-6 rounded-full border-2 border-white" data-alt="Close-up headshot of a diverse female mentor with a warm smile, corporate profile style, minimalist background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB72oJG2O8qx_e_s8Ivcv0RoEgsjuM0uzh0Va9kO1HVRmdiy8peswP6uEqqC2nD4AyyKv0Z3_LBO4hx42ZNuIVR4x-o7m7kbZ-IYCroGt7wIHWPohr1gKyFvqpekGQ_VQg_LawzzTQ31LGv8-CsBeuIPclRa8vR9idoI3FUCdjUuRhzgH8IWQancMaQayZtkiB_9qT06aQrPRenojAd4zmryz0gP0n-sDr5FDxgxecsxrbo9lLNESd6Xixr4rp_WSIE1NnbslkSFDfU"/>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-card border border-border-subtle rounded-lg p-card-padding shadow-[0_2px_4px_rgba(0,0,0,0.02)] card-drag hover:border-primary transition-all cursor-grab">
+<div class="flex justify-between items-start mb-3">
+<span class="px-2 py-0.5 bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-bold rounded uppercase">PhD</span>
+<span class="material-symbols-outlined text-text-muted text-[18px]">drag_indicator</span>
+</div>
+<h4 class="font-title-lg text-title-lg text-text-main mb-1">Julian Cheng</h4>
+<p class="text-body-md text-text-muted mb-4">Data Analytics • Spring 2025</p>
+<div class="flex items-center justify-between pt-3 border-t border-border-subtle">
+<div class="flex items-center gap-1.5 text-text-muted">
+<span class="material-symbols-outlined text-[16px]">event</span>
+<span class="text-label-sm font-label-sm">May 12, 2024</span>
+</div>
+<div class="w-6 h-6 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">AR</div>
+</div>
+</div>
+<button class="w-full py-2 border border-dashed border-border-subtle rounded-lg text-text-muted font-label-sm flex items-center justify-center gap-2 hover:bg-white hover:text-primary transition-all">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                        Add Card
+                    </button>
+</div>
+</div>
+<!-- Contacted Column -->
+<div class="flex-shrink-0 w-[300px] flex flex-col gap-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-text-main uppercase tracking-wider">Contacted</span>
+<span class="bg-surface-container-highest text-text-main px-2 py-0.5 rounded text-[11px] font-bold">8</span>
+</div>
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">more_horiz</span></button>
+</div>
+<div class="kanban-column bg-surface-container-low/50 rounded-xl p-3 flex flex-col gap-3 border border-border-subtle">
+<!-- Card 3 -->
+<div class="bg-surface-card border border-border-subtle rounded-lg p-card-padding shadow-[0_2px_4px_rgba(0,0,0,0.02)] card-drag hover:border-primary transition-all cursor-grab">
+<div class="flex justify-between items-start mb-3">
+<span class="px-2 py-0.5 bg-secondary-fixed text-on-secondary-fixed text-[10px] font-bold rounded uppercase">Masters</span>
+<span class="material-symbols-outlined text-text-muted text-[18px]">drag_indicator</span>
+</div>
+<h4 class="font-title-lg text-title-lg text-text-main mb-1">Marcus Thorne</h4>
+<p class="text-body-md text-text-muted mb-4">Business Admin • Fall 2024</p>
+<div class="flex items-center justify-between pt-3 border-t border-border-subtle">
+<div class="flex items-center gap-1.5 text-status-danger">
+<span class="material-symbols-outlined text-[16px]">priority_high</span>
+<span class="text-label-sm font-label-sm">High Priority</span>
+</div>
+<div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-[10px] font-bold text-white">MT</div>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-card border border-border-subtle rounded-lg p-card-padding shadow-[0_2px_4px_rgba(0,0,0,0.02)] card-drag hover:border-primary transition-all cursor-grab">
+<div class="flex justify-between items-start mb-3">
+<span class="px-2 py-0.5 bg-primary-fixed text-on-primary-fixed text-[10px] font-bold rounded uppercase">MBA</span>
+<span class="material-symbols-outlined text-text-muted text-[18px]">drag_indicator</span>
+</div>
+<h4 class="font-title-lg text-title-lg text-text-main mb-1">Sarah Jenkins</h4>
+<p class="text-body-md text-text-muted mb-4">Finance • Fall 2024</p>
+<div class="flex items-center justify-between pt-3 border-t border-border-subtle">
+<div class="flex items-center gap-1.5 text-status-success font-bold">
+<span class="material-symbols-outlined text-[16px]">check_circle</span>
+<span class="text-label-sm font-label-sm">Email Sent</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Demo Column -->
+<div class="flex-shrink-0 w-[300px] flex flex-col gap-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-text-main uppercase tracking-wider">Demo</span>
+<span class="bg-surface-container-highest text-text-main px-2 py-0.5 rounded text-[11px] font-bold">5</span>
+</div>
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">more_horiz</span></button>
+</div>
+<div class="kanban-column bg-surface-container-low/50 rounded-xl p-3 flex flex-col gap-3 border border-border-subtle">
+<div class="bg-surface-card border border-border-subtle rounded-lg p-card-padding shadow-[0_2px_4px_rgba(0,0,0,0.02)] card-drag hover:border-primary transition-all cursor-grab">
+<div class="flex justify-between items-start mb-3">
+<span class="px-2 py-0.5 bg-status-success/10 text-status-success text-[10px] font-bold rounded uppercase">VIP</span>
+<span class="material-symbols-outlined text-text-muted text-[18px]">drag_indicator</span>
+</div>
+<h4 class="font-title-lg text-title-lg text-text-main mb-1">Liam O'Conner</h4>
+<p class="text-body-md text-text-muted mb-4">International Relations • Fall 2024</p>
+<div class="flex items-center justify-between pt-3 border-t border-border-subtle">
+<div class="flex items-center gap-1.5 text-primary">
+<span class="material-symbols-outlined text-[16px]">video_call</span>
+<span class="text-label-sm font-label-sm">Mon, 10:00 AM</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Enrolled Column -->
+<div class="flex-shrink-0 w-[300px] flex flex-col gap-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-text-main uppercase tracking-wider">Enrolled</span>
+<span class="bg-status-success text-white px-2 py-0.5 rounded text-[11px] font-bold">24</span>
+</div>
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">more_horiz</span></button>
+</div>
+<div class="kanban-column bg-status-success/5 rounded-xl p-3 flex flex-col gap-3 border border-status-success/20">
+<div class="bg-surface-card border border-status-success/30 rounded-lg p-card-padding shadow-[0_2px_4px_rgba(0,0,0,0.02)] card-drag">
+<div class="flex justify-between items-start mb-3">
+<span class="px-2 py-0.5 bg-status-success text-white text-[10px] font-bold rounded uppercase">Paid</span>
+<span class="material-symbols-outlined text-text-muted text-[18px]">drag_indicator</span>
+</div>
+<h4 class="font-title-lg text-title-lg text-text-main mb-1">Sophia Garcia</h4>
+<p class="text-body-md text-text-muted mb-4">Artificial Intelligence • 2024</p>
+<div class="flex items-center justify-between pt-3 border-t border-border-subtle">
+<span class="text-label-sm font-label-sm text-status-success font-bold">Completed May 1</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Dropped Column -->
+<div class="flex-shrink-0 w-[300px] flex flex-col gap-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center gap-2">
+<span class="font-label-md text-label-md text-text-main uppercase tracking-wider">Dropped</span>
+<span class="bg-surface-container-highest text-text-main px-2 py-0.5 rounded text-[11px] font-bold">14</span>
+</div>
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">more_horiz</span></button>
+</div>
+<div class="kanban-column bg-surface-container-low/50 rounded-xl p-3 flex flex-col gap-3 border border-border-subtle opacity-60 grayscale-[0.5]">
+<div class="bg-surface-card border border-border-subtle rounded-lg p-card-padding shadow-sm">
+<h4 class="font-title-lg text-title-lg text-text-main mb-1 line-through">Kevin Patel</h4>
+<p class="text-body-md text-text-muted">Opted for different university</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Action for Mobile / Quick Create -->
+<button class="fixed bottom-8 right-8 w-14 h-14 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all md:hidden z-50">
+<span class="material-symbols-outlined text-[32px]">add</span>
+</button>
+<script>
+        // Simple Interaction logic for Kanban cards
+        document.querySelectorAll('.card-drag').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.classList.add('shadow-md');
+                card.style.transform = 'translateY(-2px)';
+            });
+            card.addEventListener('mouseleave', () => {
+                card</script></body></html>

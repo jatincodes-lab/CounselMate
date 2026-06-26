@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Admissions Reports - AdmitPro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+            text-transform: none;
+            letter-spacing: normal;
+            word-wrap: normal;
+            white-space: nowrap;
+            direction: ltr;
+        }
+        /* Custom scrollbar for high-density feel */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #DFE1E6;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #0052cc;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#101c2b",
+                        "on-surface-variant": "#434654",
+                        "status-danger": "#FF5630",
+                        "tertiary-fixed": "#d6e3f7",
+                        "on-primary-container": "#c4d2ff",
+                        "inverse-on-surface": "#f0f1f3",
+                        "on-tertiary": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#bbc7db",
+                        "surface-container-high": "#e7e8ea",
+                        "on-secondary-fixed": "#001946",
+                        "on-primary": "#ffffff",
+                        "on-surface": "#191c1e",
+                        "status-success": "#36B37E",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#001848",
+                        "surface-container-highest": "#e1e2e4",
+                        "surface-tint": "#0c56d0",
+                        "status-warning": "#FFAB00",
+                        "on-secondary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "text-muted": "#6B778C",
+                        "surface-variant": "#e1e2e4",
+                        "border-subtle": "#DFE1E6",
+                        "inverse-primary": "#b2c5ff",
+                        "on-secondary-fixed-variant": "#00419d",
+                        "secondary-container": "#709bfe",
+                        "tertiary-container": "#4f5c6c",
+                        "surface-card": "#FFFFFF",
+                        "outline-variant": "#c3c6d6",
+                        "primary-fixed-dim": "#b2c5ff",
+                        "surface-dim": "#d9dadc",
+                        "primary": "#003d9b",
+                        "on-tertiary-fixed-variant": "#3b4858",
+                        "sidebar-bg": "#0747A6",
+                        "on-tertiary-container": "#c7d4e8",
+                        "on-secondary-container": "#003179",
+                        "background": "#f8f9fb",
+                        "outline": "#737685",
+                        "inverse-surface": "#2e3132",
+                        "primary-fixed": "#dae2ff",
+                        "surface-container-low": "#f3f4f6",
+                        "on-background": "#191c1e",
+                        "surface-bright": "#f8f9fb",
+                        "surface": "#f8f9fb",
+                        "on-primary-fixed-variant": "#0040a2",
+                        "on-error": "#ffffff",
+                        "primary-container": "#0052cc",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed": "#d9e2ff",
+                        "surface-container": "#edeef0",
+                        "tertiary": "#384454",
+                        "text-main": "#172B4D",
+                        "secondary-fixed-dim": "#b1c6ff",
+                        "secondary": "#285ab9"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "header-height": "64px",
+                        "card-padding": "1.25rem",
+                        "stack-gap-sm": "0.5rem",
+                        "container-max-width": "1440px",
+                        "gutter": "1.5rem",
+                        "sidebar-width": "260px",
+                        "table-cell-padding": "0.75rem 1rem",
+                        "stack-gap-md": "1rem"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "code-sm": ["JetBrains Mono"],
+                        "label-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "code-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                        "label-md": ["13px", {"lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background font-body-md text-on-surface">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-sidebar-bg flex flex-col py-6">
+<div class="px-6 mb-10">
+<h1 class="font-headline-md text-headline-md font-bold text-white">AdmitPro</h1>
+<p class="text-white/60 font-label-sm text-label-sm uppercase tracking-wider">Admission CRM</p>
+</div>
+<nav class="flex-1 px-3 space-y-1">
+<a class="flex items-center px-3 py-2 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center px-3 py-2 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="person_search">person_search</span>
+<span class="font-label-md text-label-md">Leads</span>
+</a>
+<a class="flex items-center px-3 py-2 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="account_tree">account_tree</span>
+<span class="font-label-md text-label-md">Pipeline</span>
+</a>
+<a class="flex items-center px-3 py-2 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="event_repeat">event_repeat</span>
+<span class="font-label-md text-label-md">Follow-ups</span>
+</a>
+<a class="flex items-center px-3 py-2 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="groups">groups</span>
+<span class="font-label-md text-label-md">Counsellors</span>
+</a>
+<a class="flex items-center px-3 py-2 text-white font-bold border-l-4 border-primary-fixed-dim bg-white/10 transition-colors group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="assessment">assessment</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+<a class="flex items-center px-3 py-2 text-on-tertiary-container/70 font-medium hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full bg-white/10 hover:bg-white/20 text-white font-label-md text-label-md py-3 rounded border border-white/10 transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Lead
+            </button>
+</div>
+</aside>
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface border-b border-border-subtle flex justify-between items-center px-gutter z-10">
+<div class="flex items-center flex-1 max-w-xl">
+<div class="relative w-full group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full bg-surface-container-low border border-border-subtle rounded-lg pl-10 pr-4 py-2 text-body-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="Search reports or leads..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-status-danger rounded-full border-2 border-surface"></span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<div class="h-8 w-px bg-border-subtle mx-2"></div>
+<div class="flex items-center gap-3 cursor-pointer group">
+<div class="text-right">
+<p class="font-label-md text-label-md text-main">Sarah Jenkins</p>
+<p class="text-[11px] text-text-muted uppercase font-bold tracking-tighter leading-none">Senior Counselor</p>
+</div>
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-white font-bold border-2 border-white shadow-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional portrait of a female university admission counselor with a friendly and authoritative demeanor, wearing a navy blue blazer, standing in a brightly lit modern office with soft bokeh background showing glass partitions and minimalist corporate decor." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD435zdvUZpDkbquzml1fvsgkxH2HU4bH0VX0PKeAwJoEWo6_mwvu7kQFjBWOYrr1aSwQVgC1rEPNA0igNBeVMds6l-4P6Gk10hQADw97uDF5jR_bf4jyPAKFmtSNYgMYKyzjJINSmT2mm2JKusXYwKJ4iLEGjFfwddLr06e3NfZsoxQiofhrQ_f1znsCZGjlJZC3jX1wSbM1IN0YV5gMuw3x1Q5uu6ktn7RTdvEEJc2l2-J6AqrxiBuJkFBju6sOCfMKkbHOn9ih1A"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="ml-[260px] pt-24 pb-12 px-gutter">
+<div class="max-w-[1440px] mx-auto">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+<div>
+<h2 class="font-headline-md text-headline-md text-main mb-1">Admissions Reports</h2>
+<p class="text-text-muted font-body-md">Real-time performance metrics and conversion insights.</p>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex items-center bg-white border border-border-subtle rounded px-3 py-2 shadow-sm">
+<span class="material-symbols-outlined text-outline mr-2 text-[20px]">calendar_today</span>
+<select class="bg-transparent border-none p-0 text-label-md font-label-md focus:ring-0 cursor-pointer">
+<option>Last 30 Days</option>
+<option>Last 90 Days</option>
+<option>This Semester</option>
+<option>Year to Date</option>
+</select>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white font-label-md text-label-md px-5 py-2.5 rounded flex items-center gap-2 transition-all active:scale-95 shadow-sm">
+<span class="material-symbols-outlined text-[20px]">download</span>
+                        Export Report
+                    </button>
+</div>
+</div>
+<!-- Dashboard Grid (Bento Style) -->
+<div class="grid grid-cols-12 gap-6">
+<!-- KPI Tiles -->
+<div class="col-span-12 lg:col-span-3 grid grid-cols-1 gap-4">
+<div class="bg-white border border-border-subtle p-card-padding rounded shadow-sm hover:border-primary/30 transition-colors">
+<div class="flex justify-between items-start mb-2">
+<div class="p-2 bg-primary-container/10 rounded">
+<span class="material-symbols-outlined text-primary-container">groups</span>
+</div>
+<span class="text-status-success font-label-sm text-[11px] flex items-center">+12.5%</span>
+</div>
+<p class="text-text-muted font-label-sm text-label-sm uppercase tracking-wide">Total Inquiries</p>
+<p class="font-display-lg text-display-lg text-main">2,840</p>
+</div>
+<div class="bg-white border border-border-subtle p-card-padding rounded shadow-sm hover:border-primary/30 transition-colors">
+<div class="flex justify-between items-start mb-2">
+<div class="p-2 bg-secondary-container/10 rounded">
+<span class="material-symbols-outlined text-secondary">trending_up</span>
+</div>
+<span class="text-status-success font-label-sm text-[11px] flex items-center">+4.2%</span>
+</div>
+<p class="text-text-muted font-label-sm text-label-sm uppercase tracking-wide">Conversion Rate</p>
+<p class="font-display-lg text-display-lg text-main">18.4%</p>
+</div>
+<div class="bg-white border border-border-subtle p-card-padding rounded shadow-sm hover:border-primary/30 transition-colors">
+<div class="flex justify-between items-start mb-2">
+<div class="p-2 bg-tertiary-fixed/30 rounded">
+<span class="material-symbols-outlined text-tertiary">monetization_on</span>
+</div>
+<span class="text-status-danger font-label-sm text-[11px] flex items-center">-2.1%</span>
+</div>
+<p class="text-text-muted font-label-sm text-label-sm uppercase tracking-wide">Avg. Acquisition Cost</p>
+<p class="font-display-lg text-display-lg text-main">$142</p>
+</div>
+</div>
+<!-- Lead Conversion Funnel -->
+<div class="col-span-12 lg:col-span-9 bg-white border border-border-subtle p-card-padding rounded shadow-sm">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h3 class="font-title-lg text-title-lg text-main">Lead Conversion Funnel</h3>
+<p class="text-text-muted font-body-md">Inquiry to Enrollment journey</p>
+</div>
+<div class="flex gap-2">
+<span class="w-3 h-3 rounded-full bg-primary-container"></span>
+<span class="w-3 h-3 rounded-full bg-primary/60"></span>
+<span class="w-3 h-3 rounded-full bg-primary/30"></span>
+</div>
+</div>
+<div class="relative h-[280px] flex flex-col justify-between">
+<!-- Funnel Steps Visual -->
+<div class="w-full h-full flex flex-col items-center">
+<!-- Layer 1: Inquiries -->
+<div class="w-[90%] h-[20%] bg-primary-container flex items-center justify-between px-6 mb-2 rounded transition-all hover:brightness-110">
+<span class="text-white font-label-md">Total Inquiries</span>
+<div class="text-right">
+<p class="text-white font-bold">2,840</p>
+<p class="text-white/60 text-[10px]">100%</p>
+</div>
+</div>
+<!-- Layer 2: Qualified -->
+<div class="w-[70%] h-[20%] bg-primary/80 flex items-center justify-between px-6 mb-2 rounded transition-all hover:brightness-110">
+<span class="text-white font-label-md">Qualified Leads</span>
+<div class="text-right">
+<p class="text-white font-bold">1,920</p>
+<p class="text-white/60 text-[10px]">67.6%</p>
+</div>
+</div>
+<!-- Layer 3: Applied -->
+<div class="w-[50%] h-[20%] bg-primary/60 flex items-center justify-between px-6 mb-2 rounded transition-all hover:brightness-110">
+<span class="text-white font-label-md">Applications</span>
+<div class="text-right">
+<p class="text-white font-bold">850</p>
+<p class="text-white/60 text-[10px]">29.9%</p>
+</div>
+</div>
+<!-- Layer 4: Offer -->
+<div class="w-[35%] h-[20%] bg-primary/40 flex items-center justify-between px-6 mb-2 rounded transition-all hover:brightness-110">
+<span class="text-white font-label-md">Offers Made</span>
+<div class="text-right">
+<p class="text-white font-bold">620</p>
+<p class="text-white/60 text-[10px]">21.8%</p>
+</div>
+</div>
+<!-- Layer 5: Enrolled -->
+<div class="w-[20%] h-[20%] bg-primary/20 flex items-center justify-between px-6 rounded border border-primary/20 transition-all hover:brightness-110">
+<span class="text-primary font-bold font-label-md">Enrolled</span>
+<div class="text-right">
+<p class="text-primary font-bold">524</p>
+<p class="text-primary/60 text-[10px]">18.4%</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Lead Source Distribution -->
+<div class="col-span-12 md:col-span-6 lg:col-span-4 bg-white border border-border-subtle p-card-padding rounded shadow-sm">
+<div class="mb-6">
+<h3 class="font-title-lg text-title-lg text-main">Lead Source</h3>
+<p class="text-text-muted font-body-md">Distribution by channel</p>
+</div>
+<div class="flex flex-col items-center">
+<!-- Custom CSS Pie Chart Placeholder -->
+<div class="relative w-48 h-48 rounded-full border-8 border-primary-container" style="background: conic-gradient(#0052cc 0% 35%, #0040a2 35% 60%, #4c89e8 60% 80%, #d1e1fa 80% 100%);">
+<div class="absolute inset-0 m-8 bg-white rounded-full flex flex-center items-center justify-center flex-col">
+<p class="text-[10px] text-text-muted font-bold uppercase">Total</p>
+<p class="font-headline-sm text-main">2,840</p>
+</div>
+</div>
+<div class="mt-8 w-full space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-[#0052cc]"></span>
+<span class="text-body-md text-main">Google Ads</span>
+</div>
+<span class="font-label-md text-main">35%</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-[#0040a2]"></span>
+<span class="text-body-md text-main">Direct Website</span>
+</div>
+<span class="font-label-md text-main">25%</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-[#4c89e8]"></span>
+<span class="text-body-md text-main">Referrals</span>
+</div>
+<span class="font-label-md text-main">20%</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-[#d1e1fa]"></span>
+<span class="text-body-md text-main">Social Media</span>
+</div>
+<span class="font-label-md text-main">20%</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Counselor Productivity -->
+<div class="col-span-12 md:col-span-6 lg:col-span-8 bg-white border border-border-subtle p-card-padding rounded shadow-sm">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h3 class="font-title-lg text-title-lg text-main">Counselor Productivity</h3>
+<p class="text-text-muted font-body-md">Lead conversions by advisor</p>
+</div>
+<button class="text-primary font-label-md text-label-md hover:underline">View All</button>
+</div>
+<div class="space-y-6">
+<!-- Bar Item -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A portrait of a male professional counselor, smiling, wearing glasses and a crisp white shirt, clean corporate headshot style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwTl1DqS6pcuIWgQpdgS1Dnmi_DGbQX1mfi8mXfYf5TfQGNmtCkBvkQN1_khIX2vCMSkFNkGYHaq75un9XxjwP_MQhh4UaxiNKKx3yfT5Grkx2tooMS7r2MDi7hr3dokqNUMiVitFmQrK9gppBif4pWo1cnsujVO755hywDZIrt06HxpGKiWr1Z9AKHeD3nxfom3yKVhgvpkeyYb0b2TpLDmHsjy2VOj-NPENJbuZ-DMLei4WFzeHpaRfY8N_TZkWkn98cffgk4EUD"/>
+</div>
+<span class="text-body-md font-medium text-main">Alex Rivera</span>
+</div>
+<span class="font-label-md text-main">142 Leads</span>
+</div>
+<div class="w-full h-3 bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 85%;"></div>
+</div>
+</div>
+<!-- Bar Item -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A portrait of a professional female counselor, wearing a modest dark blue dress, neutral corporate background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCDtLqGQEc3Ps5BVixUvPBa4BGNEAXaHWXbzeEdQ8h5xbbApUM9SyjXuQXDDyXiiiJYrUmphaL0rUOriK2xA6jIUE60LJLR_CoFBKt40cSq-dlVlXVX5WLkdYfk7M92iJus9bf6ud0uWvVfilC-SwhTFgFSbsBKSgIcAVdOo_kIAS32gLkB5XO5zNNztZzyNQzxoEBGLGwy-Bqkj9jtGVj3MmG3seF8rw-2KH2fvIP2yIp40R73mGmyWNX4dGY-ILns4IARzWp3VuFg"/>
+</div>
+<span class="text-body-md font-medium text-main">Sarah Jenkins</span>
+</div>
+<span class="font-label-md text-main">128 Leads</span>
+</div>
+<div class="w-full h-3 bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 72%;"></div>
+</div>
+</div>
+<!-- Bar Item -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A professional portrait of a senior male counselor with graying hair and a confident expression, wearing a gray suit." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8tHZvL7SiLG4ejTSVTOrN9eNOcGwjtf_PGH2vCliTYh1CCAGoMmxQY--Pm0k4JjvtnQ-6UUPrr-m8_AKUerpDoyni4583trMUa3EBRy9NAmFZEMhqjORgiheYGI4UCKEgaMx0cht_uFE2eW2ULZXvsvXu8RbO28lmQyB9wRQ7-_ZrVyU-QwhXnnbD2DtMlKg5e7YgDSqZyL_tji9i6i8ujgGPwMujVdZUGYIJjOWLJtx57xGQb4G2TpGzWeppYP4lgHSElxBdwaWq"/>
+</div>
+<span class="text-body-md font-medium text-main">Michael Chen</span>
+</div>
+<span class="font-label-md text-main">96 Leads</span>
+</div>
+<div class="w-full h-3 bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 58%;"></div>
+</div>
+</div>
+<!-- Bar Item -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A portrait of a young female academic advisor, friendly, in a bright modern office setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgi-zATmw2ECMKJWyfrZ9go2Ke3vV3aaMoHEqeOpJWV7f57MaKdVzkdIy0AHpLPopweNiksMenIq8xcA8kWy-mpUaYfDdZFZh0wnm8_Ld48IYbthKka9GAXn5o5iLFg0WGA8CDUrXNqMD0sot9O3y49SI2ZBRuExyolM9dRo0XMq00sRWVELDoihrJGhBYYVMlGwB-kl2Vrwfq8VYn6sG3pGnCkz-MECJj1lhFmAcLOAz7I21LEwYJnyTerEFjDdhj9edsxqUvg3DE"/>
+</div>
+<span class="text-body-md font-medium text-main">Emily Watson</span>
+</div>
+<span class="font-label-md text-main">74 Leads</span>
+</div>
+<div class="w-full h-3 bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 45%;"></div>
+</div>
+</div>
+</div>
+<div class="mt-10 p-4 bg-surface-container-low rounded border border-border-subtle flex items-start gap-3">
+<span class="material-symbols-outlined text-primary-container">info</span>
+<p class="text-label-sm text-text-muted">Projections suggest an 18% increase in overall conversion if counselor response times are reduced to under 4 hours.</p>
+</div>
+</div>
+<!-- Recent Activities (List) -->
+<div class="col-span-12 bg-white border border-border-subtle rounded shadow-sm overflow-hidden">
+<div class="px-card-padding py-4 border-b border-border-subtle flex items-center justify-between">
+<h3 class="font-title-lg text-title-lg text-main">Recent Report Exports</h3>
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined text-outline">more_horiz</span>
+</button>
+</div>
+<table class="w-full text-left">
+<thead class="bg-surface-container-low">
+<tr>
+<th class="px-gutter py-3 font-label-md text-label-md text-text-muted">Report Name</th>
+<th class="px-gutter py-3 font-label-md text-label-md text-text-muted">Exported By</th>
+<th class="px-gutter py-3 font-label-md text-label-md text-text-muted">Date</th>
+<th class="px-gutter py-3 font-label-md text-label-md text-text-muted">Format</th>
+<th class="px-gutter py-3 font-label-md text-label-md text-text-muted">Status</th>
+<th class="px-gutter py-3 font-label-md text-label-md text-text-muted text-right">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-subtle">
+<tr class="hover:bg-surface-container-lowest transition-colors">
+<td class="px-gutter py-3 font-label-md text-main">August_Inbound_Analysis.pdf</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">Sarah Jenkins</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">Aug 24, 2023</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">PDF</td>
+<td class="px-gutter py-3">
+<span class="px-2 py-1 bg-status-success/10 text-status-success rounded text-[10px] font-bold uppercase tracking-tight">Complete</span>
+</td>
+<td class="px-gutter py-3 text-right">
+<button class="text-primary hover:text-primary-container">
+<span class="material-symbols-outlined text-[20px]">download</span>
+</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest transition-colors">
+<td class="px-gutter py-3 font-label-md text-main">Q3_Marketing_Spend_Report.xlsx</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">Michael Chen</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">Aug 22, 2023</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">Excel</td>
+<td class="px-gutter py-3">
+<span class="px-2 py-1 bg-status-success/10 text-status-success rounded text-[10px] font-bold uppercase tracking-tight">Complete</span>
+</td>
+<td class="px-gutter py-3 text-right">
+<button class="text-primary hover:text-primary-container">
+<span class="material-symbols-outlined text-[20px]">download</span>
+</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest transition-colors">
+<td class="px-gutter py-3 font-label-md text-main">Counselor_Conversion_Snapshot.pdf</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">Sarah Jenkins</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">Aug 20, 2023</td>
+<td class="px-gutter py-3 font-body-md text-text-muted">PDF</td>
+<td class="px-gutter py-3">
+<span class="px-2 py-1 bg-status-warning/10 text-status-warning rounded text-[10px] font-bold uppercase tracking-tight">Processing</span>
+</td>
+<td class="px-gutter py-3 text-right">
+<button class="text-outline cursor-not-allowed">
+<span class="material-symbols-outlined text-[20px]">hourglass_empty</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Simple micro-interaction for fun: funnel hover effect
+        const funnelLayers = document.querySelectorAll('.funnel-layer');
+        funnelLayers.forEach(layer => {
+            layer.addEventListener('mouseenter', () => {
+                layer.classList.add('scale-[1.02]');
+            });
+            layer.addEventListener('mouseleave', () => {
+                layer.classList.remove('scale-[1.02]');
+            });
+        });
+    </script>
+</body></html>

@@ -102,6 +102,21 @@ The project has been started and the first working foundation is in place. The p
   - Role validation and escalation checks
   - Self-deactivation/self-role-change protection
   - Frontend Team Management page under Counsellors
+  - Team summary counts and name/email, role, status, and branch filters
+  - Accessible create, edit, and reset-password modals with client/server validation
+  - Silent directory refresh and success/error feedback after user actions
+  - Permission-aware actions that hide unavailable owner and self-management operations
+  - Backend guard preventing admins from updating owner accounts
+- Added production Master Data management:
+  - Tenant-scoped branches, courses, lead sources, and lead stages API
+  - Owner/Admin writes with authenticated read-only access for other roles
+  - Case-insensitive normalized-name uniqueness per tenant
+  - Optimistic concurrency versions returning `409` for stale updates
+  - Safe deactivation rules for assigned branches, required lookups, occupied stages, and default/won/lost stages
+  - Transactional lead-stage ordering and default-stage selection
+  - Responsive Settings workspace with tabs, search, status filters, usage counts, modals, and read-only states
+  - Live lookup synchronization for Add Lead, Team Management, Pipeline, and Dashboard
+  - IST `CreatedAt` and `UpdatedAt` storage
 
 ### Backend Foundation
 
@@ -156,6 +171,8 @@ The project has been started and the first working foundation is in place. The p
   - `AddUserAuthentication`
 - Added and applied the owner seed migration:
   - `SeedPlatformOwnerRole`
+- Added and applied the master-data management migration:
+  - `AddMasterDataManagement`
 
 ### Documentation
 
@@ -195,6 +212,43 @@ The project has been started and the first working foundation is in place. The p
 - Frontend build passed after API integration.
 - Frontend build passed after Add Lead workflow.
 - Frontend build passed after lead detail workflow.
+- Frontend production build passed after Team Management polish.
+- Backend Release build passed after Team Management authorization hardening.
+- Frontend production build passed after Master Data management.
+- Backend Release build passed after Master Data management.
+- Master Data migration applied successfully to Neon.
+- Master Data API smoke tests passed for duplicate names, invalid fields, dependency blocking, stale versions, stage invariants, and read-only permissions.
+- Lead Management Core migration applied successfully to Neon.
+- Lead Management Core is implemented:
+  - Paginated lead list with search, filters, sorting, and archive mode.
+  - Full lead profile edit with active master-data validation and historical inactive values preserved.
+  - Role-scoped lead visibility and mutation rules.
+  - Dedicated assign, stage move, archive, and restore APIs.
+  - Lead `Version`, `UpdatedAt`, `ArchivedAt`, and user audit fields.
+- Lead Management Core smoke tests passed:
+  - Login worked.
+  - Paginated lead list returned live data.
+  - Lead detail loaded.
+  - Stale archive request returned `409`.
+  - Archive and restore round trip succeeded.
+- Frontend production build passed after Lead Management Core.
+- Backend Release build passed after Lead Management Core.
+- Follow-up lifecycle migration applied successfully to Neon.
+- Follow-up reschedule/cancel and activity timeline polish are implemented:
+  - Follow-ups now have `Version`, `UpdatedAt`, `CompletedAt`, and `CancelledAt`.
+  - Scheduled follow-ups can be rescheduled, cancelled, or completed.
+  - Completed/cancelled follow-ups are immutable.
+  - Lead `NextFollowUpAt` is recalculated from scheduled follow-ups after every mutation.
+  - Lead drawer now has reschedule/cancel/complete controls and grouped activity timeline sections.
+- Follow-up lifecycle smoke tests passed:
+  - Follow-up create succeeded.
+  - Stale reschedule returned `409`.
+  - Reschedule advanced follow-up version.
+  - Cancel updated status to `Cancelled`.
+  - Complete updated status to `Completed`.
+  - `NextFollowUpAt` cleared when no scheduled follow-up remained.
+- Frontend production build passed after Follow-up lifecycle.
+- Backend Release build passed after Follow-up lifecycle.
 - Local frontend responded successfully while pointed at the Neon-backed API:
   - `http://127.0.0.1:5173`
 - Add Lead API smoke test passed:
@@ -245,19 +299,20 @@ The project has been started and the first working foundation is in place. The p
 - Current backend uses EF Core with PostgreSQL configuration and tenant-filtered queries.
 - The initial migration has been applied to the Neon database.
 - Authentication and role-based access control are implemented for local CRM workflows.
+- CRM timestamps are now standardized to Indian Standard Time for persisted business data. Backend code uses `IndianClock`, and EF stores `DateTimeOffset` fields as PostgreSQL `timestamp without time zone` values representing IST clock time.
 
 ## Next Development Steps
 
-1. Add follow-up reschedule/cancel actions.
-2. Add password change/reset workflow.
-3. Add tenant profile/settings persistence.
-4. Add payments, documents, and import/export later after core CRM workflows are stable.
+1. Add activity communication templates.
+2. Add tenant profile/settings persistence.
+3. Add lead import/export.
+4. Add payments and documents later after core CRM workflows are stable.
 
 ## Recommended Immediate Priority
 
 The next best step is:
 
-1. Add password change/reset workflow.
-2. Add follow-up reschedule/cancel workflow.
-3. Add tenant profile/settings persistence.
+1. Add activity communication templates.
+2. Add tenant profile/settings persistence.
+3. Add lead import/export.
 4. Deploy to Render/Vercel only after core workflows are complete.

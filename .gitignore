@@ -1,11 +1,13 @@
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/*.log
 
 # Backend
 backend/bin/
 backend/obj/
 backend/publish/
+backend/*.log
 
 # Local configuration and secrets
 *.user

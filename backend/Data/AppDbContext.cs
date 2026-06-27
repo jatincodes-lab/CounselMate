@@ -1,5 +1,7 @@
 using EducationCrm.Api.Models;
+using EducationCrm.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using CrmActivity = EducationCrm.Api.Models.Activity;
 
 namespace EducationCrm.Api.Data;
@@ -18,6 +20,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        ConfigureIndianTimestamps(modelBuilder);
         ConfigureTenants(modelBuilder);
         ConfigureBranches(modelBuilder);
         ConfigureUsers(modelBuilder);
@@ -28,6 +31,36 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         ConfigureFollowUps(modelBuilder);
         ConfigureActivities(modelBuilder);
         SeedDemoTenant(modelBuilder);
+    }
+
+    private static void ConfigureIndianTimestamps(ModelBuilder modelBuilder)
+    {
+        var timestampConverter = new ValueConverter<DateTimeOffset, DateTime>(
+            value => value.ToOffset(IndianClock.Offset).DateTime,
+            value => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Unspecified), IndianClock.Offset));
+
+        var nullableTimestampConverter = new ValueConverter<DateTimeOffset?, DateTime?>(
+            value => value.HasValue ? value.Value.ToOffset(IndianClock.Offset).DateTime : null,
+            value => value.HasValue
+                ? new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified), IndianClock.Offset)
+                : null);
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(DateTimeOffset))
+                {
+                    property.SetValueConverter(timestampConverter);
+                    property.SetColumnType("timestamp without time zone");
+                }
+                else if (property.ClrType == typeof(DateTimeOffset?))
+                {
+                    property.SetValueConverter(nullableTimestampConverter);
+                    property.SetColumnType("timestamp without time zone");
+                }
+            }
+        }
     }
 
     private static void ConfigureTenants(ModelBuilder modelBuilder)
@@ -48,9 +81,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.ToTable("branches");
             entity.HasKey(item => item.Id);
-            entity.HasIndex(item => new { item.TenantId, item.Name }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.NormalizedName }).IsUnique();
             entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.NormalizedName).HasMaxLength(160).IsRequired();
             entity.Property(item => item.City).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany(item => item.Branches)
                 .HasForeignKey(item => item.TenantId)
@@ -86,8 +121,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.ToTable("courses");
             entity.HasKey(item => item.Id);
-            entity.HasIndex(item => new { item.TenantId, item.Name }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.NormalizedName }).IsUnique();
             entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.NormalizedName).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany(item => item.Courses)
                 .HasForeignKey(item => item.TenantId)
@@ -101,9 +138,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.ToTable("lead_stages");
             entity.HasKey(item => item.Id);
-            entity.HasIndex(item => new { item.TenantId, item.Name }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.NormalizedName }).IsUnique();
             entity.HasIndex(item => new { item.TenantId, item.SortOrder }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.IsDefaultStage })
+                .HasFilter("\"IsDefaultStage\" = TRUE AND \"IsActive\" = TRUE")
+                .IsUnique();
             entity.Property(item => item.Name).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.NormalizedName).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany(item => item.LeadStages)
                 .HasForeignKey(item => item.TenantId)
@@ -117,8 +159,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.ToTable("lead_sources");
             entity.HasKey(item => item.Id);
-            entity.HasIndex(item => new { item.TenantId, item.Name }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.NormalizedName }).IsUnique();
             entity.Property(item => item.Name).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.NormalizedName).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany(item => item.LeadSources)
                 .HasForeignKey(item => item.TenantId)
@@ -136,6 +180,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(item => new { item.TenantId, item.LeadNumber }).IsUnique();
             entity.HasIndex(item => new { item.TenantId, item.NormalizedPhone }).IsUnique();
             entity.HasIndex(item => new { item.TenantId, item.CreatedAt });
+            entity.HasIndex(item => new { item.TenantId, item.ArchivedAt });
+            entity.HasIndex(item => new { item.TenantId, item.AssignedUserId });
+            entity.HasIndex(item => new { item.TenantId, item.BranchId });
+            entity.HasIndex(item => new { item.TenantId, item.LeadStageId });
             entity.Property(item => item.LeadNumber).HasMaxLength(40).IsRequired();
             entity.Property(item => item.StudentName).HasMaxLength(160).IsRequired();
             entity.Property(item => item.GuardianName).HasMaxLength(160);
@@ -145,6 +193,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.City).HasMaxLength(120);
             entity.Property(item => item.Status).HasMaxLength(80).IsRequired();
             entity.Property(item => item.Priority).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany(item => item.Leads)
                 .HasForeignKey(item => item.TenantId)
@@ -169,6 +218,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .WithMany(item => item.AssignedLeads)
                 .HasForeignKey(item => item.AssignedUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.ArchivedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.ArchivedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 
@@ -179,9 +240,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.ToTable("follow_ups");
             entity.HasKey(item => item.Id);
             entity.HasIndex(item => new { item.TenantId, item.DueAt });
+            entity.HasIndex(item => new { item.TenantId, item.Status, item.DueAt });
             entity.Property(item => item.Type).HasMaxLength(80).IsRequired();
             entity.Property(item => item.Priority).HasMaxLength(40).IsRequired();
             entity.Property(item => item.Status).HasMaxLength(60).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany()
                 .HasForeignKey(item => item.TenantId)
@@ -267,9 +330,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             Id = branchId,
             TenantId = tenantId,
             Name = "Main Branch",
+            NormalizedName = "MAIN BRANCH",
             City = "New Delhi",
             IsActive = true,
-            CreatedAt = createdAt
+            Version = 1,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt
         });
 
         modelBuilder.Entity<AppUser>().HasData(
@@ -279,43 +345,43 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         );
 
         modelBuilder.Entity<Course>().HasData(
-            new Course { Id = mbaCourseId, TenantId = tenantId, Name = "MBA Global", IsActive = true, CreatedAt = createdAt },
-            new Course { Id = dataScienceCourseId, TenantId = tenantId, Name = "Data Science", IsActive = true, CreatedAt = createdAt },
-            new Course { Id = uiUxCourseId, TenantId = tenantId, Name = "UI/UX Design", IsActive = true, CreatedAt = createdAt },
-            new Course { Id = fullStackCourseId, TenantId = tenantId, Name = "Full Stack Dev", IsActive = true, CreatedAt = createdAt },
-            new Course { Id = digitalMarketingCourseId, TenantId = tenantId, Name = "Digital Marketing", IsActive = true, CreatedAt = createdAt }
+            new Course { Id = mbaCourseId, TenantId = tenantId, Name = "MBA Global", NormalizedName = "MBA GLOBAL", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new Course { Id = dataScienceCourseId, TenantId = tenantId, Name = "Data Science", NormalizedName = "DATA SCIENCE", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new Course { Id = uiUxCourseId, TenantId = tenantId, Name = "UI/UX Design", NormalizedName = "UI/UX DESIGN", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new Course { Id = fullStackCourseId, TenantId = tenantId, Name = "Full Stack Dev", NormalizedName = "FULL STACK DEV", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new Course { Id = digitalMarketingCourseId, TenantId = tenantId, Name = "Digital Marketing", NormalizedName = "DIGITAL MARKETING", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt }
         );
 
         modelBuilder.Entity<LeadStage>().HasData(
-            new LeadStage { Id = newInquiryStageId, TenantId = tenantId, Name = "New Inquiry", SortOrder = 10, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-            new LeadStage { Id = contactedStageId, TenantId = tenantId, Name = "Contacted", SortOrder = 20, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-            new LeadStage { Id = interestedStageId, TenantId = tenantId, Name = "Interested", SortOrder = 30, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-            new LeadStage { Id = demoStageId, TenantId = tenantId, Name = "Demo Scheduled", SortOrder = 40, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-            new LeadStage { Id = applicationStageId, TenantId = tenantId, Name = "Application Started", SortOrder = 50, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-            new LeadStage { Id = enrolledStageId, TenantId = tenantId, Name = "Enrolled", SortOrder = 60, IsWonStage = true, IsLostStage = false, CreatedAt = createdAt },
-            new LeadStage { Id = droppedStageId, TenantId = tenantId, Name = "Dropped", SortOrder = 70, IsWonStage = false, IsLostStage = true, CreatedAt = createdAt }
+            new LeadStage { Id = newInquiryStageId, TenantId = tenantId, Name = "New Inquiry", NormalizedName = "NEW INQUIRY", SortOrder = 10, IsActive = true, IsDefaultStage = true, IsWonStage = false, IsLostStage = false, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadStage { Id = contactedStageId, TenantId = tenantId, Name = "Contacted", NormalizedName = "CONTACTED", SortOrder = 20, IsActive = true, IsDefaultStage = false, IsWonStage = false, IsLostStage = false, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadStage { Id = interestedStageId, TenantId = tenantId, Name = "Interested", NormalizedName = "INTERESTED", SortOrder = 30, IsActive = true, IsDefaultStage = false, IsWonStage = false, IsLostStage = false, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadStage { Id = demoStageId, TenantId = tenantId, Name = "Demo Scheduled", NormalizedName = "DEMO SCHEDULED", SortOrder = 40, IsActive = true, IsDefaultStage = false, IsWonStage = false, IsLostStage = false, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadStage { Id = applicationStageId, TenantId = tenantId, Name = "Application Started", NormalizedName = "APPLICATION STARTED", SortOrder = 50, IsActive = true, IsDefaultStage = false, IsWonStage = false, IsLostStage = false, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadStage { Id = enrolledStageId, TenantId = tenantId, Name = "Enrolled", NormalizedName = "ENROLLED", SortOrder = 60, IsActive = true, IsDefaultStage = false, IsWonStage = true, IsLostStage = false, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadStage { Id = droppedStageId, TenantId = tenantId, Name = "Dropped", NormalizedName = "DROPPED", SortOrder = 70, IsActive = true, IsDefaultStage = false, IsWonStage = false, IsLostStage = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt }
         );
 
         modelBuilder.Entity<LeadSource>().HasData(
-            new LeadSource { Id = googleSourceId, TenantId = tenantId, Name = "Google Ads", IsActive = true, CreatedAt = createdAt },
-            new LeadSource { Id = websiteSourceId, TenantId = tenantId, Name = "Website", IsActive = true, CreatedAt = createdAt },
-            new LeadSource { Id = linkedInSourceId, TenantId = tenantId, Name = "LinkedIn", IsActive = true, CreatedAt = createdAt },
-            new LeadSource { Id = referralSourceId, TenantId = tenantId, Name = "Referral", IsActive = true, CreatedAt = createdAt },
-            new LeadSource { Id = expoSourceId, TenantId = tenantId, Name = "Offline Expo", IsActive = true, CreatedAt = createdAt }
+            new LeadSource { Id = googleSourceId, TenantId = tenantId, Name = "Google Ads", NormalizedName = "GOOGLE ADS", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadSource { Id = websiteSourceId, TenantId = tenantId, Name = "Website", NormalizedName = "WEBSITE", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadSource { Id = linkedInSourceId, TenantId = tenantId, Name = "LinkedIn", NormalizedName = "LINKEDIN", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadSource { Id = referralSourceId, TenantId = tenantId, Name = "Referral", NormalizedName = "REFERRAL", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new LeadSource { Id = expoSourceId, TenantId = tenantId, Name = "Offline Expo", NormalizedName = "OFFLINE EXPO", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt }
         );
 
         modelBuilder.Entity<Lead>().HasData(
-            new Lead { Id = lead1Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1001", StudentName = "Arjun Adhikari", Email = "arjun.a@email.com", Phone = "+91 98765 43210", NormalizedPhone = "919876543210", CourseId = mbaCourseId, LeadStageId = enrolledStageId, LeadSourceId = googleSourceId, AssignedUserId = vermaId, Status = "Enrolled", Priority = "High", CreatedAt = createdAt.AddDays(-18), NextFollowUpAt = createdAt.AddHours(4) },
-            new Lead { Id = lead2Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1002", StudentName = "Priya Sharma", Email = "priya.s@outlook.com", Phone = "+91 91234 56789", NormalizedPhone = "919123456789", CourseId = dataScienceCourseId, LeadStageId = interestedStageId, LeadSourceId = websiteSourceId, AssignedUserId = khannaId, Status = "Interested", Priority = "Medium", CreatedAt = createdAt.AddDays(-6), NextFollowUpAt = createdAt.AddDays(1).AddHours(2) },
-            new Lead { Id = lead3Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1003", StudentName = "Michael Jones", Email = "m.jones@gmail.com", Phone = "+91 99887 76655", NormalizedPhone = "919988776655", CourseId = uiUxCourseId, LeadStageId = demoStageId, LeadSourceId = linkedInSourceId, AssignedUserId = rahulId, Status = "Follow Up", Priority = "High", CreatedAt = createdAt.AddDays(-4), NextFollowUpAt = createdAt.AddHours(3) },
-            new Lead { Id = lead4Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1004", StudentName = "Deepak Reddy", Email = "d.reddy@tcs.com", Phone = "+91 90000 11223", NormalizedPhone = "919000011223", CourseId = fullStackCourseId, LeadStageId = droppedStageId, LeadSourceId = referralSourceId, AssignedUserId = vermaId, Status = "Dropped", Priority = "Low", CreatedAt = createdAt.AddDays(-25), NextFollowUpAt = null },
-            new Lead { Id = lead5Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1005", StudentName = "Kriti Luthra", Email = "k.luthra@gmail.com", Phone = "+91 88776 65544", NormalizedPhone = "918877665544", CourseId = digitalMarketingCourseId, LeadStageId = newInquiryStageId, LeadSourceId = expoSourceId, AssignedUserId = rahulId, Status = "New Lead", Priority = "Medium", CreatedAt = createdAt.AddDays(-1), NextFollowUpAt = createdAt.AddHours(6) }
+            new Lead { Id = lead1Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1001", StudentName = "Arjun Adhikari", Email = "arjun.a@email.com", Phone = "+91 98765 43210", NormalizedPhone = "919876543210", CourseId = mbaCourseId, LeadStageId = enrolledStageId, LeadSourceId = googleSourceId, AssignedUserId = vermaId, Status = "Enrolled", Priority = "High", Version = 1, CreatedAt = createdAt.AddDays(-18), UpdatedAt = createdAt.AddDays(-18), NextFollowUpAt = createdAt.AddHours(4) },
+            new Lead { Id = lead2Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1002", StudentName = "Priya Sharma", Email = "priya.s@outlook.com", Phone = "+91 91234 56789", NormalizedPhone = "919123456789", CourseId = dataScienceCourseId, LeadStageId = interestedStageId, LeadSourceId = websiteSourceId, AssignedUserId = khannaId, Status = "Interested", Priority = "Medium", Version = 1, CreatedAt = createdAt.AddDays(-6), UpdatedAt = createdAt.AddDays(-6), NextFollowUpAt = createdAt.AddDays(1).AddHours(2) },
+            new Lead { Id = lead3Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1003", StudentName = "Michael Jones", Email = "m.jones@gmail.com", Phone = "+91 99887 76655", NormalizedPhone = "919988776655", CourseId = uiUxCourseId, LeadStageId = demoStageId, LeadSourceId = linkedInSourceId, AssignedUserId = rahulId, Status = "Follow Up", Priority = "High", Version = 1, CreatedAt = createdAt.AddDays(-4), UpdatedAt = createdAt.AddDays(-4), NextFollowUpAt = createdAt.AddHours(3) },
+            new Lead { Id = lead4Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1004", StudentName = "Deepak Reddy", Email = "d.reddy@tcs.com", Phone = "+91 90000 11223", NormalizedPhone = "919000011223", CourseId = fullStackCourseId, LeadStageId = droppedStageId, LeadSourceId = referralSourceId, AssignedUserId = vermaId, Status = "Dropped", Priority = "Low", Version = 1, CreatedAt = createdAt.AddDays(-25), UpdatedAt = createdAt.AddDays(-25), NextFollowUpAt = null },
+            new Lead { Id = lead5Id, TenantId = tenantId, BranchId = branchId, LeadNumber = "LD-1005", StudentName = "Kriti Luthra", Email = "k.luthra@gmail.com", Phone = "+91 88776 65544", NormalizedPhone = "918877665544", CourseId = digitalMarketingCourseId, LeadStageId = newInquiryStageId, LeadSourceId = expoSourceId, AssignedUserId = rahulId, Status = "New Lead", Priority = "Medium", Version = 1, CreatedAt = createdAt.AddDays(-1), UpdatedAt = createdAt.AddDays(-1), NextFollowUpAt = createdAt.AddHours(6) }
         );
 
         modelBuilder.Entity<FollowUp>().HasData(
-            new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000001"), TenantId = tenantId, LeadId = lead1Id, AssignedUserId = rahulId, Type = "Call", Priority = "High", Status = "Scheduled", DueAt = createdAt.AddMinutes(45), CreatedAt = createdAt },
-            new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000002"), TenantId = tenantId, LeadId = lead2Id, AssignedUserId = vermaId, Type = "WhatsApp", Priority = "Medium", Status = "Scheduled", DueAt = createdAt.AddHours(2), CreatedAt = createdAt },
-            new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000003"), TenantId = tenantId, LeadId = lead3Id, AssignedUserId = khannaId, Type = "Email", Priority = "Low", Status = "Scheduled", DueAt = createdAt.AddHours(4), CreatedAt = createdAt }
+            new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000001"), TenantId = tenantId, LeadId = lead1Id, AssignedUserId = rahulId, Type = "Call", Priority = "High", Status = "Scheduled", Version = 1, DueAt = createdAt.AddMinutes(45), CreatedAt = createdAt, UpdatedAt = createdAt },
+            new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000002"), TenantId = tenantId, LeadId = lead2Id, AssignedUserId = vermaId, Type = "WhatsApp", Priority = "Medium", Status = "Scheduled", Version = 1, DueAt = createdAt.AddHours(2), CreatedAt = createdAt, UpdatedAt = createdAt },
+            new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000003"), TenantId = tenantId, LeadId = lead3Id, AssignedUserId = khannaId, Type = "Email", Priority = "Low", Status = "Scheduled", Version = 1, DueAt = createdAt.AddHours(4), CreatedAt = createdAt, UpdatedAt = createdAt }
         );
     }
 }

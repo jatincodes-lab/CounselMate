@@ -3,6 +3,7 @@ using System;
 using EducationCrm.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace EducationCrm.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260627101357_AddLeadManagementCore")]
+    partial class AddLeadManagementCore
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -321,12 +324,6 @@ namespace EducationCrm.Api.Migrations
                     b.Property<Guid?>("AssignedUserId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp without time zone");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone");
 
@@ -354,13 +351,6 @@ namespace EducationCrm.Api.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
                     b.HasIndex("AssignedUserId");
@@ -368,8 +358,6 @@ namespace EducationCrm.Api.Migrations
                     b.HasIndex("LeadId");
 
                     b.HasIndex("TenantId", "DueAt");
-
-                    b.HasIndex("TenantId", "Status", "DueAt");
 
                     b.ToTable("follow_ups", (string)null);
 
@@ -384,9 +372,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "High",
                             Status = "Scheduled",
                             TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            Type = "Call",
-                            UpdatedAt = new DateTime(2026, 6, 25, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            Type = "Call"
                         },
                         new
                         {
@@ -398,9 +384,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "Medium",
                             Status = "Scheduled",
                             TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            Type = "WhatsApp",
-                            UpdatedAt = new DateTime(2026, 6, 25, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            Type = "WhatsApp"
                         },
                         new
                         {
@@ -412,9 +396,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "Low",
                             Status = "Scheduled",
                             TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            Type = "Email",
-                            UpdatedAt = new DateTime(2026, 6, 25, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            Type = "Email"
                         });
                 });
 

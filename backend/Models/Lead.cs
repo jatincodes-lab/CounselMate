@@ -18,8 +18,14 @@ public sealed class Lead
     public string? City { get; set; }
     public string Status { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
+    public int Version { get; set; } = 1;
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
     public DateTimeOffset? NextFollowUpAt { get; set; }
+    public Guid? CreatedByUserId { get; set; }
+    public Guid? UpdatedByUserId { get; set; }
+    public Guid? ArchivedByUserId { get; set; }
 
     public Tenant Tenant { get; set; } = null!;
     public Branch? Branch { get; set; }
@@ -27,6 +33,9 @@ public sealed class Lead
     public LeadStage LeadStage { get; set; } = null!;
     public LeadSource LeadSource { get; set; } = null!;
     public AppUser? AssignedUser { get; set; }
+    public AppUser? CreatedByUser { get; set; }
+    public AppUser? UpdatedByUser { get; set; }
+    public AppUser? ArchivedByUser { get; set; }
     public ICollection<FollowUp> FollowUps { get; set; } = [];
     public ICollection<Activity> Activities { get; set; } = [];
 }

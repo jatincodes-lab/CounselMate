@@ -96,7 +96,7 @@ api.MapGet("/health", async (AppDbContext db, CancellationToken cancellationToke
         status = canConnect ? "healthy" : "degraded",
         service = "CounselMate API",
         database = canConnect ? "connected" : "unavailable",
-        checkedAt = DateTimeOffset.UtcNow
+        checkedAt = IndianClock.Now()
     });
 });
 
@@ -112,25 +112,33 @@ api.MapPost("/auth/login", async (
         return Results.ValidationProblem(validationErrors);
     }
 
-    var tenantSlug = NormalizeOptionalText(request.TenantSlug) ?? configuration["DefaultTenantSlug"] ?? "demo-academy";
     var email = NormalizeEmail(request.Email);
-    var user = await db.Users
+    var matchingUsers = await db.Users
         .Include(item => item.Tenant)
-        .FirstOrDefaultAsync(item => item.Email == email && item.Tenant.Slug == tenantSlug, cancellationToken);
+        .Where(item => item.Email == email)
+        .ToListAsync(cancellationToken);
 
-    if (user is null || !user.IsActive || !user.Tenant.IsActive || !VerifyPassword(request.Password, user.PasswordHash))
+    var user = matchingUsers
+        .FirstOrDefault(item => item.IsActive && item.Tenant.IsActive && VerifyPassword(request.Password, item.PasswordHash));
+
+    if (user is null)
     {
-        if (user is not null)
+        var activeUsers = matchingUsers.Where(item => item.IsActive && item.Tenant.IsActive).ToList();
+        if (activeUsers.Count > 0)
         {
-            user.FailedLoginAttempts += 1;
+            foreach (var activeUser in activeUsers)
+            {
+                activeUser.FailedLoginAttempts += 1;
+            }
+
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        return Results.Json(new { message = "Invalid email, password, or tenant." }, statusCode: StatusCodes.Status401Unauthorized);
+        return Results.Json(new { message = "Invalid email or password." }, statusCode: StatusCodes.Status401Unauthorized);
     }
 
     user.FailedLoginAttempts = 0;
-    user.LastLoginAt = DateTimeOffset.UtcNow;
+    user.LastLoginAt = IndianClock.Now();
     await db.SaveChangesAsync(cancellationToken);
 
     var currentUser = new AuthenticatedUser(
@@ -154,6 +162,68 @@ api.MapGet("/auth/me", (HttpContext httpContext) =>
     return user is null
         ? Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized)
         : Results.Ok(user);
+});
+
+api.MapPost("/auth/forgot-password", async (
+    ForgotPasswordRequest request,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var validationErrors = ValidateForgotPasswordRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var email = NormalizeEmail(request.Email);
+    _ = await db.Users
+        .AsNoTracking()
+        .Where(item => item.Email == email && item.Tenant.IsActive)
+        .Select(item => item.Id)
+        .FirstOrDefaultAsync(cancellationToken);
+
+    return Results.Ok(new PasswordResetRequestResponse(
+        "If this email belongs to an active CounselMate account, ask your institute owner or admin to reset the password. Email reset links can be enabled after mail delivery is configured."));
+});
+
+api.MapPost("/auth/change-password", async (
+    ChangePasswordRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (currentUser is null)
+    {
+        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var validationErrors = ValidateChangePasswordRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var user = await db.Users
+        .FirstOrDefaultAsync(item => item.Id == currentUser.UserId && item.TenantId == currentUser.TenantId && item.IsActive && item.Tenant.IsActive, cancellationToken);
+    if (user is null)
+    {
+        return Results.Json(new { message = "User is inactive or no longer available." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    if (!VerifyPassword(request.CurrentPassword, user.PasswordHash))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["currentPassword"] = ["Current password is incorrect."]
+        });
+    }
+
+    user.PasswordHash = HashPassword(request.NewPassword);
+    user.FailedLoginAttempts = 0;
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new { message = "Password changed successfully." });
 });
 
 api.MapGet("/platform/tenants", async (
@@ -214,7 +284,7 @@ api.MapPost("/platform/tenants", async (
         return Results.Conflict(new { message = "A user already exists with this email for this tenant." });
     }
 
-    var now = DateTimeOffset.UtcNow;
+    var now = IndianClock.Now();
     var tenantId = Guid.NewGuid();
     var branchId = Guid.NewGuid();
     var adminUserId = Guid.NewGuid();
@@ -233,9 +303,12 @@ api.MapPost("/platform/tenants", async (
         Id = branchId,
         TenantId = tenantId,
         Name = NormalizeName(request.BranchName),
+        NormalizedName = NormalizeMasterName(request.BranchName),
         City = NormalizeName(request.City),
         IsActive = true,
-        CreatedAt = now
+        Version = 1,
+        CreatedAt = now,
+        UpdatedAt = now
     };
 
     var adminUser = new AppUser
@@ -348,7 +421,7 @@ api.MapPost("/users", async (
         PasswordHash = HashPassword(request.Password),
         Role = Enum.Parse<UserRole>(request.Role),
         IsActive = true,
-        CreatedAt = DateTimeOffset.UtcNow
+        CreatedAt = IndianClock.Now()
     };
 
     db.Users.Add(user);
@@ -377,6 +450,11 @@ api.MapPatch("/users/{id:guid}", async (
         return Results.NotFound(new { message = "User not found." });
     }
 
+    if (user.Role == UserRole.Owner && currentUser!.Role != nameof(UserRole.Owner))
+    {
+        return Results.Json(new { message = "Only platform owners can update owner accounts." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
     var validationErrors = ValidateUpdateUserRequest(request, currentUser, user);
     if (validationErrors.Count > 0)
     {
@@ -402,14 +480,420 @@ api.MapPatch("/users/{id:guid}", async (
     user.Role = Enum.Parse<UserRole>(request.Role);
     user.IsActive = request.IsActive;
 
-    if (!string.IsNullOrWhiteSpace(request.Password))
-    {
-        user.PasswordHash = HashPassword(request.Password);
-        user.FailedLoginAttempts = 0;
-    }
-
     await db.SaveChangesAsync(cancellationToken);
     return Results.Ok(await GetUserResponseAsync(db, currentUser!.TenantId, user.Id, cancellationToken));
+});
+
+api.MapPost("/users/{id:guid}/reset-password", async (
+    Guid id,
+    ResetUserPasswordRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser))
+    {
+        return Results.Json(new { message = "Only admins can reset passwords." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var user = await db.Users
+        .FirstOrDefaultAsync(item => item.TenantId == currentUser!.TenantId && item.Id == id, cancellationToken);
+    if (user is null)
+    {
+        return Results.NotFound(new { message = "User not found." });
+    }
+
+    if (user.Id == currentUser!.UserId)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["user"] = ["Use Change Password to update your own password."]
+        });
+    }
+
+    if (user.Role == UserRole.Owner && currentUser.Role != nameof(UserRole.Owner))
+    {
+        return Results.Json(new { message = "Only platform owners can reset owner passwords." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var validationErrors = ValidateResetUserPasswordRequest(request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    user.PasswordHash = HashPassword(request.NewPassword);
+    user.FailedLoginAttempts = 0;
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new { message = $"Password reset for {user.FullName}." });
+});
+
+var masterDataApi = api.MapGroup("/master-data");
+
+masterDataApi.MapGet("", async (
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (currentUser is null)
+    {
+        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    return Results.Ok(await GetMasterDataResponseAsync(db, currentUser.TenantId, cancellationToken));
+});
+
+masterDataApi.MapPost("/branches", async (
+    CreateBranchMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var errors = ValidateBranchMasterRequest(request.Name, request.City);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var name = NormalizeName(request.Name);
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.Branches.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.NormalizedName == normalizedName, cancellationToken))
+    {
+        return Results.Conflict(new { message = "A branch with this name already exists." });
+    }
+
+    var now = IndianClock.Now();
+    var branch = new Branch
+    {
+        Id = Guid.NewGuid(), TenantId = currentUser!.TenantId, Name = name, NormalizedName = normalizedName,
+        City = NormalizeName(request.City), IsActive = true, Version = 1, CreatedAt = now, UpdatedAt = now
+    };
+    db.Branches.Add(branch);
+
+    try
+    {
+        await db.SaveChangesAsync(cancellationToken);
+    }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+    {
+        return Results.Conflict(new { message = "A branch with this name already exists." });
+    }
+
+    return Results.Created($"/api/master-data/branches/{branch.Id}", new MasterMutationResponse(branch.Id, branch.Name, branch.Version, "Branch created."));
+});
+
+masterDataApi.MapPatch("/branches/{id:guid}", async (
+    Guid id,
+    UpdateBranchMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var errors = ValidateBranchMasterRequest(request.Name, request.City);
+    AddVersionError(errors, request.Version);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var branch = await db.Branches.FirstOrDefaultAsync(item => item.TenantId == currentUser!.TenantId && item.Id == id, cancellationToken);
+    if (branch is null)
+    {
+        return Results.NotFound(new { message = "Branch not found." });
+    }
+    if (branch.Version != request.Version)
+    {
+        return Results.Conflict(new { message = "This branch was changed by another user. Refresh and try again." });
+    }
+
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.Branches.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.Id != id && item.NormalizedName == normalizedName, cancellationToken))
+    {
+        return Results.Conflict(new { message = "A branch with this name already exists." });
+    }
+
+    if (branch.IsActive && !request.IsActive)
+    {
+        var activeUsers = await db.Users.CountAsync(item => item.TenantId == currentUser!.TenantId && item.BranchId == id && item.IsActive, cancellationToken);
+        if (activeUsers > 0)
+        {
+            return Results.Conflict(new { message = $"Reassign {activeUsers} active user(s) before deactivating this branch." });
+        }
+    }
+
+    branch.Name = NormalizeName(request.Name);
+    branch.NormalizedName = normalizedName;
+    branch.City = NormalizeName(request.City);
+    branch.IsActive = request.IsActive;
+    branch.Version += 1;
+    branch.UpdatedAt = IndianClock.Now();
+
+    try
+    {
+        await db.SaveChangesAsync(cancellationToken);
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        return Results.Conflict(new { message = "This branch was changed by another user. Refresh and try again." });
+    }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+    {
+        return Results.Conflict(new { message = "A branch with this name already exists." });
+    }
+
+    return Results.Ok(new MasterMutationResponse(branch.Id, branch.Name, branch.Version, "Branch updated."));
+});
+
+masterDataApi.MapPost("/courses", async (
+    CreateNamedMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+    var errors = ValidateNamedMasterRequest(request.Name, 160);
+    if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.Courses.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.NormalizedName == normalizedName, cancellationToken))
+        return Results.Conflict(new { message = "A course with this name already exists." });
+
+    var course = CreateCourse(currentUser!.TenantId, NormalizeName(request.Name), IndianClock.Now());
+    db.Courses.Add(course);
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception)) { return Results.Conflict(new { message = "A course with this name already exists." }); }
+    return Results.Created($"/api/master-data/courses/{course.Id}", new MasterMutationResponse(course.Id, course.Name, course.Version, "Course created."));
+});
+
+masterDataApi.MapPatch("/courses/{id:guid}", async (
+    Guid id,
+    UpdateNamedMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser)) return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    var errors = ValidateNamedMasterRequest(request.Name, 160);
+    AddVersionError(errors, request.Version);
+    if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+    var course = await db.Courses.FirstOrDefaultAsync(item => item.TenantId == currentUser!.TenantId && item.Id == id, cancellationToken);
+    if (course is null) return Results.NotFound(new { message = "Course not found." });
+    if (course.Version != request.Version) return Results.Conflict(new { message = "This course was changed by another user. Refresh and try again." });
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.Courses.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.Id != id && item.NormalizedName == normalizedName, cancellationToken))
+        return Results.Conflict(new { message = "A course with this name already exists." });
+    if (course.IsActive && !request.IsActive && await db.Courses.CountAsync(item => item.TenantId == currentUser!.TenantId && item.IsActive, cancellationToken) <= 1)
+        return Results.Conflict(new { message = "At least one active course is required." });
+
+    course.Name = NormalizeName(request.Name); course.NormalizedName = normalizedName; course.IsActive = request.IsActive;
+    course.Version += 1; course.UpdatedAt = IndianClock.Now();
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This course was changed by another user. Refresh and try again." }); }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception)) { return Results.Conflict(new { message = "A course with this name already exists." }); }
+    return Results.Ok(new MasterMutationResponse(course.Id, course.Name, course.Version, "Course updated."));
+});
+
+masterDataApi.MapPost("/lead-sources", async (
+    CreateNamedMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser)) return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    var errors = ValidateNamedMasterRequest(request.Name, 120);
+    if (errors.Count > 0) return Results.ValidationProblem(errors);
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.LeadSources.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.NormalizedName == normalizedName, cancellationToken))
+        return Results.Conflict(new { message = "A lead source with this name already exists." });
+    var source = CreateLeadSource(currentUser!.TenantId, NormalizeName(request.Name), IndianClock.Now());
+    db.LeadSources.Add(source);
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception)) { return Results.Conflict(new { message = "A lead source with this name already exists." }); }
+    return Results.Created($"/api/master-data/lead-sources/{source.Id}", new MasterMutationResponse(source.Id, source.Name, source.Version, "Lead source created."));
+});
+
+masterDataApi.MapPatch("/lead-sources/{id:guid}", async (
+    Guid id,
+    UpdateNamedMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser)) return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    var errors = ValidateNamedMasterRequest(request.Name, 120);
+    AddVersionError(errors, request.Version);
+    if (errors.Count > 0) return Results.ValidationProblem(errors);
+    var source = await db.LeadSources.FirstOrDefaultAsync(item => item.TenantId == currentUser!.TenantId && item.Id == id, cancellationToken);
+    if (source is null) return Results.NotFound(new { message = "Lead source not found." });
+    if (source.Version != request.Version) return Results.Conflict(new { message = "This lead source was changed by another user. Refresh and try again." });
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.LeadSources.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.Id != id && item.NormalizedName == normalizedName, cancellationToken))
+        return Results.Conflict(new { message = "A lead source with this name already exists." });
+    if (source.IsActive && !request.IsActive && await db.LeadSources.CountAsync(item => item.TenantId == currentUser!.TenantId && item.IsActive, cancellationToken) <= 1)
+        return Results.Conflict(new { message = "At least one active lead source is required." });
+
+    source.Name = NormalizeName(request.Name); source.NormalizedName = normalizedName; source.IsActive = request.IsActive;
+    source.Version += 1; source.UpdatedAt = IndianClock.Now();
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This lead source was changed by another user. Refresh and try again." }); }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception)) { return Results.Conflict(new { message = "A lead source with this name already exists." }); }
+    return Results.Ok(new MasterMutationResponse(source.Id, source.Name, source.Version, "Lead source updated."));
+});
+
+masterDataApi.MapPost("/lead-stages", async (
+    CreateLeadStageMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser)) return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    var errors = ValidateLeadStageMasterRequest(request.Name, request.IsDefaultStage, request.IsWonStage, request.IsLostStage);
+    if (errors.Count > 0) return Results.ValidationProblem(errors);
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.LeadStages.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.NormalizedName == normalizedName, cancellationToken))
+        return Results.Conflict(new { message = "A lead stage with this name already exists." });
+
+    await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+    LeadStage stage;
+    try
+    {
+        if (request.IsDefaultStage)
+        {
+            var currentDefaults = await db.LeadStages.Where(item => item.TenantId == currentUser!.TenantId && item.IsDefaultStage).ToListAsync(cancellationToken);
+            foreach (var item in currentDefaults) { item.IsDefaultStage = false; item.Version += 1; item.UpdatedAt = IndianClock.Now(); }
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        var nextOrder = (await db.LeadStages.Where(item => item.TenantId == currentUser!.TenantId).MaxAsync(item => (int?)item.SortOrder, cancellationToken) ?? 0) + 10;
+        stage = CreateLeadStage(currentUser!.TenantId, NormalizeName(request.Name), nextOrder, IndianClock.Now(), request.IsDefaultStage, request.IsWonStage, request.IsLostStage);
+        db.LeadStages.Add(stage);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "A lead stage was changed by another user. Refresh and try again." }); }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception)) { return Results.Conflict(new { message = "A lead stage with this name already exists." }); }
+    return Results.Created($"/api/master-data/lead-stages/{stage.Id}", new MasterMutationResponse(stage.Id, stage.Name, stage.Version, "Lead stage created."));
+});
+
+masterDataApi.MapPatch("/lead-stages/{id:guid}", async (
+    Guid id,
+    UpdateLeadStageMasterRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser)) return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    var errors = ValidateLeadStageMasterRequest(request.Name, request.IsDefaultStage, request.IsWonStage, request.IsLostStage);
+    AddVersionError(errors, request.Version);
+    if (errors.Count > 0) return Results.ValidationProblem(errors);
+    var stage = await db.LeadStages.FirstOrDefaultAsync(item => item.TenantId == currentUser!.TenantId && item.Id == id, cancellationToken);
+    if (stage is null) return Results.NotFound(new { message = "Lead stage not found." });
+    if (stage.Version != request.Version) return Results.Conflict(new { message = "This lead stage was changed by another user. Refresh and try again." });
+    var normalizedName = NormalizeMasterName(request.Name);
+    if (await db.LeadStages.AnyAsync(item => item.TenantId == currentUser!.TenantId && item.Id != id && item.NormalizedName == normalizedName, cancellationToken))
+        return Results.Conflict(new { message = "A lead stage with this name already exists." });
+    if (stage.IsActive && !request.IsActive)
+    {
+        if (stage.IsDefaultStage) return Results.Conflict(new { message = "Select another default stage before deactivating this stage." });
+        if (await db.LeadStages.CountAsync(item => item.TenantId == currentUser!.TenantId && item.IsActive, cancellationToken) <= 1)
+            return Results.Conflict(new { message = "At least one active lead stage is required." });
+        var leadCount = await db.Leads.CountAsync(item => item.TenantId == currentUser!.TenantId && item.LeadStageId == id, cancellationToken);
+        if (leadCount > 0) return Results.Conflict(new { message = $"Move {leadCount} lead(s) to another stage before deactivating this stage." });
+        if (stage.IsWonStage && await db.LeadStages.CountAsync(item => item.TenantId == currentUser!.TenantId && item.IsActive && item.IsWonStage, cancellationToken) <= 1)
+            return Results.Conflict(new { message = "At least one active won stage is required." });
+        if (stage.IsLostStage && await db.LeadStages.CountAsync(item => item.TenantId == currentUser!.TenantId && item.IsActive && item.IsLostStage, cancellationToken) <= 1)
+            return Results.Conflict(new { message = "At least one active lost stage is required." });
+    }
+    if (stage.IsDefaultStage && !request.IsDefaultStage)
+        return Results.Conflict(new { message = "Set another stage as default instead of removing the current default." });
+    if (stage.IsWonStage && !request.IsWonStage && stage.IsActive && await db.LeadStages.CountAsync(item => item.TenantId == currentUser!.TenantId && item.IsActive && item.IsWonStage, cancellationToken) <= 1)
+        return Results.Conflict(new { message = "At least one active won stage is required." });
+    if (stage.IsLostStage && !request.IsLostStage && stage.IsActive && await db.LeadStages.CountAsync(item => item.TenantId == currentUser!.TenantId && item.IsActive && item.IsLostStage, cancellationToken) <= 1)
+        return Results.Conflict(new { message = "At least one active lost stage is required." });
+
+    await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+    try
+    {
+        if (request.IsDefaultStage && !stage.IsDefaultStage)
+        {
+            var previousDefaults = await db.LeadStages.Where(item => item.TenantId == currentUser!.TenantId && item.IsDefaultStage).ToListAsync(cancellationToken);
+            foreach (var item in previousDefaults) { item.IsDefaultStage = false; item.Version += 1; item.UpdatedAt = IndianClock.Now(); }
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        stage.Name = NormalizeName(request.Name); stage.NormalizedName = normalizedName; stage.IsActive = request.IsActive;
+        stage.IsDefaultStage = request.IsDefaultStage; stage.IsWonStage = request.IsWonStage; stage.IsLostStage = request.IsLostStage;
+        stage.Version += 1; stage.UpdatedAt = IndianClock.Now();
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This lead stage was changed by another user. Refresh and try again." }); }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception)) { return Results.Conflict(new { message = "A lead stage with this name already exists." }); }
+    return Results.Ok(new MasterMutationResponse(stage.Id, stage.Name, stage.Version, "Lead stage updated."));
+});
+
+masterDataApi.MapPost("/lead-stages/reorder", async (
+    ReorderLeadStagesRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageUsers(currentUser)) return Results.Json(new { message = "Only owners and admins can manage master data." }, statusCode: StatusCodes.Status403Forbidden);
+    if (request.Items is null || request.Items.Count == 0 || request.Items.Any(item => item.Id == Guid.Empty || item.Version < 1) || request.Items.Select(item => item.Id).Distinct().Count() != request.Items.Count)
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["items"] = ["Provide every active stage exactly once with its current version."] });
+
+    var stages = await db.LeadStages.Where(item => item.TenantId == currentUser!.TenantId).OrderBy(item => item.SortOrder).ToListAsync(cancellationToken);
+    var activeStages = stages.Where(item => item.IsActive).ToList();
+    if (activeStages.Count != request.Items.Count || activeStages.Select(item => item.Id).Except(request.Items.Select(item => item.Id)).Any())
+        return Results.Conflict(new { message = "The stage list changed. Refresh before reordering." });
+    var requestVersions = request.Items.ToDictionary(item => item.Id, item => item.Version);
+    if (activeStages.Any(item => requestVersions[item.Id] != item.Version))
+        return Results.Conflict(new { message = "A lead stage was changed by another user. Refresh before reordering." });
+
+    await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+    for (var index = 0; index < stages.Count; index++) stages[index].SortOrder = -10000 - index;
+    await db.SaveChangesAsync(cancellationToken);
+    var now = IndianClock.Now();
+    var orderedIds = request.Items.Select(item => item.Id).ToList();
+    for (var index = 0; index < orderedIds.Count; index++)
+    {
+        var item = stages.Single(stageItem => stageItem.Id == orderedIds[index]);
+        item.SortOrder = (index + 1) * 10; item.Version += 1; item.UpdatedAt = now;
+    }
+    var inactiveStages = stages.Where(item => !item.IsActive).OrderBy(item => item.Name).ToList();
+    for (var index = 0; index < inactiveStages.Count; index++)
+    {
+        inactiveStages[index].SortOrder = (orderedIds.Count + index + 1) * 10;
+        inactiveStages[index].Version += 1;
+        inactiveStages[index].UpdatedAt = now;
+    }
+    try { await db.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "A lead stage was changed by another user. Refresh before reordering." }); }
+    return Results.Ok(new { message = "Lead stages reordered." });
 });
 
 api.MapGet("/tenants/current", async (
@@ -436,12 +920,12 @@ api.MapGet("/dashboard", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    var todayStart = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
-    var totalLeads = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId, cancellationToken);
-    var enrolled = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.LeadStage.IsWonStage, cancellationToken);
-    var contacted = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.LeadStage.SortOrder >= 20, cancellationToken);
-    var pendingFollowUps = await db.FollowUps.CountAsync(item => item.TenantId == tenant.TenantId && item.Status == "Scheduled", cancellationToken);
-    var newLeadsToday = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.CreatedAt >= todayStart, cancellationToken);
+    var todayStart = IndianClock.TodayStart();
+    var totalLeads = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.ArchivedAt == null, cancellationToken);
+    var enrolled = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.ArchivedAt == null && lead.LeadStage.IsWonStage, cancellationToken);
+    var contacted = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.ArchivedAt == null && lead.LeadStage.SortOrder >= 20, cancellationToken);
+    var pendingFollowUps = await db.FollowUps.CountAsync(item => item.TenantId == tenant.TenantId && item.Status == "Scheduled" && item.Lead.ArchivedAt == null, cancellationToken);
+    var newLeadsToday = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.ArchivedAt == null && lead.CreatedAt >= todayStart, cancellationToken);
     var conversionRate = totalLeads == 0 ? 0m : Math.Round((decimal)enrolled / totalLeads * 100m, 1);
 
     return Results.Ok(new DashboardSummary(
@@ -455,6 +939,17 @@ api.MapGet("/dashboard", async (
 });
 
 api.MapGet("/leads", async (
+    string? search,
+    Guid? branchId,
+    Guid? courseId,
+    Guid? sourceId,
+    Guid? stageId,
+    Guid? assignedUserId,
+    string? priority,
+    string? archive,
+    string? sort,
+    int? page,
+    int? pageSize,
     HttpContext httpContext,
     AppDbContext db,
     IConfiguration configuration,
@@ -466,10 +961,56 @@ api.MapGet("/leads", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    var leads = await db.Leads
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    var pageNumber = Math.Clamp(page ?? 1, 1, 100000);
+    var take = Math.Clamp(pageSize ?? 25, 1, 100);
+    var normalizedSearch = NormalizeOptionalText(search);
+    var normalizedPriority = NormalizeOptionalText(priority);
+    var archiveMode = NormalizeOptionalText(archive)?.ToLowerInvariant() ?? "active";
+
+    var query = ApplyLeadAccessScope(db.Leads.AsNoTracking().Where(lead => lead.TenantId == tenant.TenantId), currentUser, accessScope);
+
+    query = archiveMode switch
+    {
+        "all" => query,
+        "archived" => query.Where(lead => lead.ArchivedAt != null),
+        _ => query.Where(lead => lead.ArchivedAt == null)
+    };
+
+    if (!string.IsNullOrWhiteSpace(normalizedSearch))
+    {
+        var loweredSearch = normalizedSearch.ToLowerInvariant();
+        var phoneSearch = NormalizePhone(normalizedSearch);
+        query = query.Where(lead =>
+            lead.LeadNumber.ToLower().Contains(loweredSearch) ||
+            lead.StudentName.ToLower().Contains(loweredSearch) ||
+            lead.Email.ToLower().Contains(loweredSearch) ||
+            lead.Phone.Contains(normalizedSearch) ||
+            (phoneSearch != "" && lead.NormalizedPhone.Contains(phoneSearch)));
+    }
+
+    if (branchId is not null) query = query.Where(lead => lead.BranchId == branchId);
+    if (courseId is not null) query = query.Where(lead => lead.CourseId == courseId);
+    if (sourceId is not null) query = query.Where(lead => lead.LeadSourceId == sourceId);
+    if (stageId is not null) query = query.Where(lead => lead.LeadStageId == stageId);
+    if (assignedUserId is not null) query = query.Where(lead => lead.AssignedUserId == assignedUserId);
+    if (!string.IsNullOrWhiteSpace(normalizedPriority)) query = query.Where(lead => lead.Priority == normalizedPriority);
+
+    query = (NormalizeOptionalText(sort)?.ToLowerInvariant()) switch
+    {
+        "oldest" => query.OrderBy(lead => lead.CreatedAt).ThenBy(lead => lead.LeadNumber),
+        "name" => query.OrderBy(lead => lead.StudentName).ThenByDescending(lead => lead.CreatedAt),
+        "follow-up" => query.OrderBy(lead => lead.NextFollowUpAt == null).ThenBy(lead => lead.NextFollowUpAt).ThenByDescending(lead => lead.CreatedAt),
+        "priority" => query.OrderByDescending(lead => lead.Priority == "Urgent").ThenByDescending(lead => lead.Priority == "High").ThenByDescending(lead => lead.Priority == "Medium").ThenByDescending(lead => lead.CreatedAt),
+        _ => query.OrderByDescending(lead => lead.CreatedAt).ThenByDescending(lead => lead.LeadNumber)
+    };
+
+    var total = await query.CountAsync(cancellationToken);
+    var leads = await query
+        .Skip((pageNumber - 1) * take)
+        .Take(take)
         .AsNoTracking()
-        .Where(lead => lead.TenantId == tenant.TenantId)
-        .OrderByDescending(lead => lead.CreatedAt)
         .Select(lead => new LeadResponse(
             lead.LeadNumber,
             lead.StudentName,
@@ -481,12 +1022,17 @@ api.MapGet("/leads", async (
             lead.Status,
             lead.Priority,
             lead.LeadStage.Name,
+            lead.Branch == null ? null : lead.Branch.Name,
+            lead.AssignedUserId,
+            lead.LeadStageId,
+            lead.Version,
             lead.CreatedAt,
-            lead.NextFollowUpAt
-        ))
+            lead.UpdatedAt,
+            lead.ArchivedAt,
+            lead.NextFollowUpAt))
         .ToListAsync(cancellationToken);
 
-    return Results.Ok(leads);
+    return Results.Ok(new LeadListResponse(leads, pageNumber, take, total));
 });
 
 api.MapGet("/leads/options", async (
@@ -524,14 +1070,14 @@ api.MapGet("/leads/options", async (
 
     var stages = await db.LeadStages
         .AsNoTracking()
-        .Where(item => item.TenantId == tenant.TenantId)
+        .Where(item => item.TenantId == tenant.TenantId && item.IsActive)
         .OrderBy(item => item.SortOrder)
         .Select(item => new LookupOption(item.Id, item.Name))
         .ToListAsync(cancellationToken);
 
     var counselors = await db.Users
         .AsNoTracking()
-        .Where(item => item.TenantId == tenant.TenantId && item.IsActive)
+        .Where(item => item.TenantId == tenant.TenantId && item.IsActive && item.Role != UserRole.Accountant && item.Role != UserRole.ReadOnly)
         .OrderBy(item => item.FullName)
         .Select(item => new LookupOption(item.Id, item.FullName))
         .ToListAsync(cancellationToken);
@@ -552,7 +1098,9 @@ api.MapPost("/leads", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser))
     {
         return Results.Json(new { message = "You do not have permission to create leads." }, statusCode: StatusCodes.Status403Forbidden);
     }
@@ -601,13 +1149,21 @@ api.MapPost("/leads", async (
     }
 
     var stageExists = await db.LeadStages.AnyAsync(
-        item => item.TenantId == tenant.TenantId && item.Id == request.LeadStageId,
+        item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.LeadStageId,
         cancellationToken);
     if (!stageExists)
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
             ["leadStageId"] = ["Select a valid lead stage."]
+        });
+    }
+
+    if (!CanCreateLeadInBranch(currentUser, accessScope, request.BranchId))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["branchId"] = ["You cannot create leads for this branch."]
         });
     }
 
@@ -627,18 +1183,17 @@ api.MapPost("/leads", async (
 
     if (request.AssignedUserId is not null)
     {
-        var userExists = await db.Users.AnyAsync(
-            item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.AssignedUserId,
-            cancellationToken);
-        if (!userExists)
+        var assignmentError = await ValidateLeadAssignmentAsync(db, tenant.TenantId, currentUser, accessScope, request.BranchId, request.AssignedUserId.Value, cancellationToken);
+        if (assignmentError is not null)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                ["assignedUserId"] = ["Select a valid active counsellor."]
+                ["assignedUserId"] = [assignmentError]
             });
         }
     }
 
+    var now = IndianClock.Now();
     var lead = new Lead
     {
         Id = Guid.NewGuid(),
@@ -657,8 +1212,12 @@ api.MapPost("/leads", async (
         City = NormalizeOptionalText(request.City),
         Status = NormalizeOptionalText(request.Status) ?? "New Lead",
         Priority = NormalizePriority(request.Priority),
-        CreatedAt = DateTimeOffset.UtcNow,
-        NextFollowUpAt = request.NextFollowUpAt?.ToUniversalTime()
+        Version = 1,
+        CreatedAt = now,
+        UpdatedAt = now,
+        NextFollowUpAt = IndianClock.ToIndianTime(request.NextFollowUpAt),
+        CreatedByUserId = currentUser?.UserId,
+        UpdatedByUserId = currentUser?.UserId
     };
 
     db.Leads.Add(lead);
@@ -670,7 +1229,7 @@ api.MapPost("/leads", async (
         CreatedByUserId = request.AssignedUserId,
         Type = "LeadCreated",
         Description = $"Lead {lead.LeadNumber} created for {lead.StudentName}.",
-        CreatedAt = DateTimeOffset.UtcNow
+        CreatedAt = now
     });
 
     try
@@ -696,9 +1255,14 @@ api.MapPost("/leads", async (
             item.Status,
             item.Priority,
             item.LeadStage.Name,
+            item.Branch == null ? null : item.Branch.Name,
+            item.AssignedUserId,
+            item.LeadStageId,
+            item.Version,
             item.CreatedAt,
-            item.NextFollowUpAt
-        ))
+            item.UpdatedAt,
+            item.ArchivedAt,
+            item.NextFollowUpAt))
         .FirstAsync(cancellationToken);
 
     return Results.Created($"/api/leads/{response.Id}", response);
@@ -717,9 +1281,16 @@ api.MapGet("/leads/{id}", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    var canAccessLead = await ApplyLeadAccessScope(
+            db.Leads.AsNoTracking().Where(item => item.TenantId == tenant.TenantId && item.LeadNumber == id),
+            currentUser,
+            accessScope)
+        .AnyAsync(cancellationToken);
+    if (!canAccessLead)
     {
-        return Results.Json(new { message = "You do not have permission to update leads." }, statusCode: StatusCodes.Status403Forbidden);
+        return Results.NotFound(new { message = "Lead not found." });
     }
 
     var lead = await db.Leads
@@ -744,7 +1315,10 @@ api.MapGet("/leads/{id}", async (
             item.AssignedUser == null ? "Unassigned" : item.AssignedUser.FullName,
             item.Status,
             item.Priority,
+            item.Version,
             item.CreatedAt,
+            item.UpdatedAt,
+            item.ArchivedAt,
             item.NextFollowUpAt,
             item.FollowUps
                 .OrderByDescending(followUp => followUp.DueAt)
@@ -755,7 +1329,12 @@ api.MapGet("/leads/{id}", async (
                     followUp.Type,
                     followUp.Priority,
                     followUp.Status,
+                    followUp.Version,
                     followUp.DueAt,
+                    followUp.CreatedAt,
+                    followUp.UpdatedAt,
+                    followUp.CompletedAt,
+                    followUp.CancelledAt,
                     followUp.AssignedUser == null ? "Unassigned" : followUp.AssignedUser.FullName
                 ))
                 .ToArray(),
@@ -791,9 +1370,11 @@ api.MapPatch("/leads/{id}", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser))
     {
-        return Results.Json(new { message = "You do not have permission to add lead activity." }, statusCode: StatusCodes.Status403Forbidden);
+        return Results.Json(new { message = "You do not have permission to update leads." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var lead = await db.Leads
@@ -803,15 +1384,52 @@ api.MapPatch("/leads/{id}", async (
         return Results.NotFound(new { message = "Lead not found." });
     }
 
+    if (!CanAccessLead(currentUser, accessScope, lead))
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+
+    if (lead.ArchivedAt is not null)
+    {
+        return Results.Conflict(new { message = "Restore this lead before editing it." });
+    }
+
+    if (request.Version != lead.Version)
+    {
+        return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." });
+    }
+
     var validationErrors = ValidateUpdateLeadRequest(request);
     if (validationErrors.Count > 0)
     {
         return Results.ValidationProblem(validationErrors);
     }
 
+    var course = await db.Courses
+        .AsNoTracking()
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.CourseId, cancellationToken);
+    if (course is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["courseId"] = ["Select a valid active course."]
+        });
+    }
+
+    var source = await db.LeadSources
+        .AsNoTracking()
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.LeadSourceId, cancellationToken);
+    if (source is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["leadSourceId"] = ["Select a valid active lead source."]
+        });
+    }
+
     var stage = await db.LeadStages
         .AsNoTracking()
-        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.Id == request.LeadStageId, cancellationToken);
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.LeadStageId, cancellationToken);
     if (stage is null)
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -820,33 +1438,95 @@ api.MapPatch("/leads/{id}", async (
         });
     }
 
-    if (request.AssignedUserId is not null)
+    if (!CanCreateLeadInBranch(currentUser, accessScope, request.BranchId))
     {
-        var userExists = await db.Users.AnyAsync(
-            item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.AssignedUserId,
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["branchId"] = ["You cannot move leads to this branch."]
+        });
+    }
+
+    if (request.BranchId is not null)
+    {
+        var branchExists = await db.Branches.AnyAsync(
+            item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.BranchId,
             cancellationToken);
-        if (!userExists)
+        if (!branchExists)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                ["assignedUserId"] = ["Select a valid active counsellor."]
+                ["branchId"] = ["Select a valid active branch."]
             });
         }
     }
 
+    if (request.AssignedUserId is not null)
+    {
+        var assignmentError = await ValidateLeadAssignmentAsync(db, tenant.TenantId, currentUser, accessScope, request.BranchId, request.AssignedUserId.Value, cancellationToken);
+        if (assignmentError is not null)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["assignedUserId"] = [assignmentError]
+            });
+        }
+    }
+
+    var normalizedPhone = NormalizePhone(request.Phone);
+    var duplicateLead = await db.Leads
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenant.TenantId && item.Id != lead.Id && item.NormalizedPhone == normalizedPhone)
+        .Select(item => new { item.LeadNumber, item.StudentName })
+        .FirstOrDefaultAsync(cancellationToken);
+    if (duplicateLead is not null)
+    {
+        return Results.Conflict(new { message = $"A lead already exists with this phone number: {duplicateLead.LeadNumber} - {duplicateLead.StudentName}." });
+    }
+
+    var previousName = lead.StudentName;
+    var previousCourseId = lead.CourseId;
+    var previousSourceId = lead.LeadSourceId;
     var previousStageId = lead.LeadStageId;
     var previousStatus = lead.Status;
     var previousPriority = lead.Priority;
+    var previousBranchId = lead.BranchId;
     var previousAssignedUserId = lead.AssignedUserId;
     var previousFollowUpAt = lead.NextFollowUpAt;
 
+    lead.StudentName = NormalizeName(request.StudentName);
+    lead.GuardianName = NormalizeOptionalText(request.GuardianName);
+    lead.Email = NormalizeEmail(request.Email);
+    lead.Phone = NormalizePhoneDisplay(request.Phone);
+    lead.NormalizedPhone = normalizedPhone;
+    lead.City = NormalizeOptionalText(request.City);
+    lead.BranchId = request.BranchId;
+    lead.CourseId = request.CourseId;
+    lead.LeadSourceId = request.LeadSourceId;
     lead.LeadStageId = request.LeadStageId;
     lead.AssignedUserId = request.AssignedUserId;
     lead.Status = NormalizeOptionalText(request.Status) ?? lead.Status;
     lead.Priority = NormalizePriority(request.Priority);
-    lead.NextFollowUpAt = request.NextFollowUpAt?.ToUniversalTime();
+    lead.NextFollowUpAt = IndianClock.ToIndianTime(request.NextFollowUpAt);
+    lead.UpdatedAt = IndianClock.Now();
+    lead.UpdatedByUserId = currentUser?.UserId;
+    lead.Version += 1;
 
     var changes = new List<string>();
+    if (!string.Equals(previousName, lead.StudentName, StringComparison.Ordinal))
+    {
+        changes.Add("profile updated");
+    }
+
+    if (previousCourseId != lead.CourseId)
+    {
+        changes.Add($"course changed to {course.Name}");
+    }
+
+    if (previousSourceId != lead.LeadSourceId)
+    {
+        changes.Add($"source changed to {source.Name}");
+    }
+
     if (previousStageId != lead.LeadStageId)
     {
         changes.Add($"stage changed to {stage.Name}");
@@ -867,6 +1547,11 @@ api.MapPatch("/leads/{id}", async (
         changes.Add("counsellor assignment updated");
     }
 
+    if (previousBranchId != lead.BranchId)
+    {
+        changes.Add("branch updated");
+    }
+
     if (previousFollowUpAt != lead.NextFollowUpAt)
     {
         changes.Add(lead.NextFollowUpAt is null ? "next follow-up cleared" : "next follow-up updated");
@@ -879,14 +1564,204 @@ api.MapPatch("/leads/{id}", async (
             Id = Guid.NewGuid(),
             TenantId = tenant.TenantId,
             LeadId = lead.Id,
-            CreatedByUserId = lead.AssignedUserId,
+            CreatedByUserId = currentUser?.UserId,
             Type = "LeadUpdated",
             Description = $"Lead {lead.LeadNumber} {string.Join(", ", changes)}.",
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = lead.UpdatedAt
         });
     }
 
-    await db.SaveChangesAsync(cancellationToken);
+    try
+    {
+        await db.SaveChangesAsync(cancellationToken);
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." });
+    }
+    catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+    {
+        return Results.Conflict(new { message = "A lead with this phone number already exists." });
+    }
+
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPatch("/leads/{id}/assign", async (
+    string id,
+    AssignLeadRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser)) return Results.Json(new { message = "You do not have permission to assign leads." }, statusCode: StatusCodes.Status403Forbidden);
+
+    var lead = await db.Leads.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == id, cancellationToken);
+    if (lead is null || !CanAccessLead(currentUser, accessScope, lead)) return Results.NotFound(new { message = "Lead not found." });
+    if (lead.ArchivedAt is not null) return Results.Conflict(new { message = "Restore this lead before assigning it." });
+    if (request.Version != lead.Version) return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." });
+
+    if (request.AssignedUserId is not null)
+    {
+        var assignmentError = await ValidateLeadAssignmentAsync(db, tenant.TenantId, currentUser, accessScope, lead.BranchId, request.AssignedUserId.Value, cancellationToken);
+        if (assignmentError is not null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["assignedUserId"] = [assignmentError] });
+    }
+
+    if (lead.AssignedUserId != request.AssignedUserId)
+    {
+        lead.AssignedUserId = request.AssignedUserId;
+        lead.UpdatedAt = IndianClock.Now();
+        lead.UpdatedByUserId = currentUser?.UserId;
+        lead.Version += 1;
+        db.Activities.Add(new EducationCrm.Api.Models.Activity
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            CreatedByUserId = currentUser?.UserId,
+            Type = "LeadAssigned",
+            Description = request.AssignedUserId is null ? $"Lead {lead.LeadNumber} unassigned." : $"Lead {lead.LeadNumber} assignment updated.",
+            CreatedAt = lead.UpdatedAt
+        });
+    }
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." }); }
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPatch("/leads/{id}/stage", async (
+    string id,
+    UpdateLeadStageRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser)) return Results.Json(new { message = "You do not have permission to update lead stages." }, statusCode: StatusCodes.Status403Forbidden);
+
+    var lead = await db.Leads.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == id, cancellationToken);
+    if (lead is null || !CanAccessLead(currentUser, accessScope, lead)) return Results.NotFound(new { message = "Lead not found." });
+    if (lead.ArchivedAt is not null) return Results.Conflict(new { message = "Restore this lead before moving it." });
+    if (request.Version != lead.Version) return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." });
+
+    var stage = await db.LeadStages.AsNoTracking().FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == request.LeadStageId, cancellationToken);
+    if (stage is null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["leadStageId"] = ["Select a valid active lead stage."] });
+
+    if (lead.LeadStageId != request.LeadStageId)
+    {
+        lead.LeadStageId = request.LeadStageId;
+        lead.Status = NormalizeOptionalText(request.Status) ?? stage.Name;
+        lead.UpdatedAt = IndianClock.Now();
+        lead.UpdatedByUserId = currentUser?.UserId;
+        lead.Version += 1;
+        db.Activities.Add(new EducationCrm.Api.Models.Activity
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            CreatedByUserId = currentUser?.UserId,
+            Type = "StageChanged",
+            Description = $"Lead {lead.LeadNumber} moved to {stage.Name}.",
+            CreatedAt = lead.UpdatedAt
+        });
+    }
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." }); }
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPatch("/leads/{id}/archive", async (
+    string id,
+    LeadVersionRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeadArchive(currentUser)) return Results.Json(new { message = "Only owners, admins, and branch managers can archive leads." }, statusCode: StatusCodes.Status403Forbidden);
+
+    var lead = await db.Leads.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == id, cancellationToken);
+    if (lead is null || !CanAccessLead(currentUser, accessScope, lead)) return Results.NotFound(new { message = "Lead not found." });
+    if (request.Version != lead.Version) return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." });
+    if (lead.ArchivedAt is null)
+    {
+        var now = IndianClock.Now();
+        lead.ArchivedAt = now;
+        lead.ArchivedByUserId = currentUser?.UserId;
+        lead.UpdatedAt = now;
+        lead.UpdatedByUserId = currentUser?.UserId;
+        lead.Version += 1;
+        db.Activities.Add(new EducationCrm.Api.Models.Activity
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            CreatedByUserId = currentUser?.UserId,
+            Type = "LeadArchived",
+            Description = $"Lead {lead.LeadNumber} archived.",
+            CreatedAt = now
+        });
+    }
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." }); }
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPatch("/leads/{id}/restore", async (
+    string id,
+    LeadVersionRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeadArchive(currentUser)) return Results.Json(new { message = "Only owners, admins, and branch managers can restore leads." }, statusCode: StatusCodes.Status403Forbidden);
+
+    var lead = await db.Leads.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == id, cancellationToken);
+    if (lead is null || !CanAccessLead(currentUser, accessScope, lead)) return Results.NotFound(new { message = "Lead not found." });
+    if (request.Version != lead.Version) return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." });
+    if (lead.ArchivedAt is not null)
+    {
+        var now = IndianClock.Now();
+        lead.ArchivedAt = null;
+        lead.ArchivedByUserId = null;
+        lead.UpdatedAt = now;
+        lead.UpdatedByUserId = currentUser?.UserId;
+        lead.Version += 1;
+        db.Activities.Add(new EducationCrm.Api.Models.Activity
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            CreatedByUserId = currentUser?.UserId,
+            Type = "LeadRestored",
+            Description = $"Lead {lead.LeadNumber} restored.",
+            CreatedAt = now
+        });
+    }
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This lead was changed by another user. Refresh and try again." }); }
     return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
 });
 
@@ -904,19 +1779,29 @@ api.MapPost("/leads/{id}/activities", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser))
     {
-        return Results.Json(new { message = "You do not have permission to schedule follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
+        return Results.Json(new { message = "You do not have permission to add lead activity." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var lead = await db.Leads
         .AsNoTracking()
         .Where(item => item.TenantId == tenant.TenantId && item.LeadNumber == id)
-        .Select(item => new { item.Id, item.LeadNumber, item.AssignedUserId })
+        .Select(item => new { item.Id, item.LeadNumber, item.AssignedUserId, item.BranchId, item.ArchivedAt })
         .FirstOrDefaultAsync(cancellationToken);
     if (lead is null)
     {
         return Results.NotFound(new { message = "Lead not found." });
+    }
+    if (!CanAccessLeadValues(currentUser, accessScope, lead.BranchId, lead.AssignedUserId))
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+    if (lead.ArchivedAt is not null)
+    {
+        return Results.Conflict(new { message = "Restore this lead before adding activity." });
     }
 
     var validationErrors = ValidateAddLeadActivityRequest(request);
@@ -930,10 +1815,10 @@ api.MapPost("/leads/{id}/activities", async (
         Id = Guid.NewGuid(),
         TenantId = tenant.TenantId,
         LeadId = lead.Id,
-        CreatedByUserId = lead.AssignedUserId,
+        CreatedByUserId = currentUser?.UserId,
         Type = NormalizeActivityType(request.Type),
         Description = NormalizeName(request.Description),
-        CreatedAt = DateTimeOffset.UtcNow
+        CreatedAt = IndianClock.Now()
     });
 
     await db.SaveChangesAsync(cancellationToken);
@@ -954,9 +1839,11 @@ api.MapPost("/leads/{id}/follow-ups", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    if (!CanManageLeads(TenantResolver.GetCurrentUser(httpContext)))
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser))
     {
-        return Results.Json(new { message = "You do not have permission to complete follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
+        return Results.Json(new { message = "You do not have permission to schedule follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var lead = await db.Leads
@@ -964,6 +1851,14 @@ api.MapPost("/leads/{id}/follow-ups", async (
     if (lead is null)
     {
         return Results.NotFound(new { message = "Lead not found." });
+    }
+    if (!CanAccessLead(currentUser, accessScope, lead))
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+    if (lead.ArchivedAt is not null)
+    {
+        return Results.Conflict(new { message = "Restore this lead before scheduling follow-ups." });
     }
 
     var validationErrors = ValidateCreateFollowUpRequest(request);
@@ -975,19 +1870,18 @@ api.MapPost("/leads/{id}/follow-ups", async (
     var assignedUserId = request.AssignedUserId ?? lead.AssignedUserId;
     if (assignedUserId is not null)
     {
-        var userExists = await db.Users.AnyAsync(
-            item => item.TenantId == tenant.TenantId && item.IsActive && item.Id == assignedUserId,
-            cancellationToken);
-        if (!userExists)
+        var assignmentError = await ValidateLeadAssignmentAsync(db, tenant.TenantId, currentUser, accessScope, lead.BranchId, assignedUserId.Value, cancellationToken);
+        if (assignmentError is not null)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                ["assignedUserId"] = ["Select a valid active counsellor."]
+                ["assignedUserId"] = [assignmentError]
             });
         }
     }
 
-    var dueAt = request.DueAt.ToUniversalTime();
+    var dueAt = IndianClock.ToIndianTime(request.DueAt);
+    var now = IndianClock.Now();
     var followUp = new FollowUp
     {
         Id = Guid.NewGuid(),
@@ -997,30 +1891,151 @@ api.MapPost("/leads/{id}/follow-ups", async (
         Type = NormalizeFollowUpType(request.Type),
         Priority = NormalizePriority(request.Priority),
         Status = "Scheduled",
+        Version = 1,
         DueAt = dueAt,
-        CreatedAt = DateTimeOffset.UtcNow
+        CreatedAt = now,
+        UpdatedAt = now
     };
 
-    lead.NextFollowUpAt = dueAt;
+    lead.NextFollowUpAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, followUp.Status, followUp.DueAt, cancellationToken);
+    lead.UpdatedAt = now;
+    lead.UpdatedByUserId = currentUser?.UserId;
+    lead.Version += 1;
     db.FollowUps.Add(followUp);
     db.Activities.Add(new EducationCrm.Api.Models.Activity
     {
         Id = Guid.NewGuid(),
         TenantId = tenant.TenantId,
         LeadId = lead.Id,
-        CreatedByUserId = assignedUserId,
+        CreatedByUserId = currentUser?.UserId,
         Type = "FollowUpScheduled",
         Description = $"{followUp.Type} follow-up scheduled for lead {lead.LeadNumber}.",
-        CreatedAt = DateTimeOffset.UtcNow
+        CreatedAt = now
     });
 
     await db.SaveChangesAsync(cancellationToken);
     return Results.Created($"/api/leads/{lead.LeadNumber}", await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
 });
 
+api.MapPatch("/leads/{leadId}/follow-ups/{followUpId}/reschedule", async (
+    string leadId,
+    Guid followUpId,
+    RescheduleFollowUpRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser)) return Results.Json(new { message = "You do not have permission to reschedule follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
+
+    var lead = await db.Leads.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == leadId, cancellationToken);
+    if (lead is null || !CanAccessLead(currentUser, accessScope, lead)) return Results.NotFound(new { message = "Lead not found." });
+    if (lead.ArchivedAt is not null) return Results.Conflict(new { message = "Restore this lead before rescheduling follow-ups." });
+
+    var followUp = await db.FollowUps.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadId == lead.Id && item.Id == followUpId, cancellationToken);
+    if (followUp is null) return Results.NotFound(new { message = "Follow-up not found." });
+    if (request.Version != followUp.Version) return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." });
+    if (followUp.Status != "Scheduled") return Results.Conflict(new { message = "Only scheduled follow-ups can be rescheduled." });
+
+    var validationErrors = ValidateRescheduleFollowUpRequest(request);
+    if (validationErrors.Count > 0) return Results.ValidationProblem(validationErrors);
+
+    var assignedUserId = request.AssignedUserId ?? followUp.AssignedUserId ?? lead.AssignedUserId;
+    if (assignedUserId is not null)
+    {
+        var assignmentError = await ValidateLeadAssignmentAsync(db, tenant.TenantId, currentUser, accessScope, lead.BranchId, assignedUserId.Value, cancellationToken);
+        if (assignmentError is not null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["assignedUserId"] = [assignmentError] });
+    }
+
+    var dueAt = IndianClock.ToIndianTime(request.DueAt);
+    var now = IndianClock.Now();
+    followUp.Type = NormalizeFollowUpType(request.Type);
+    followUp.Priority = NormalizePriority(request.Priority);
+    followUp.AssignedUserId = assignedUserId;
+    followUp.DueAt = dueAt;
+    followUp.UpdatedAt = now;
+    followUp.Version += 1;
+
+    lead.NextFollowUpAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, followUp.Status, followUp.DueAt, cancellationToken);
+    lead.UpdatedAt = now;
+    lead.UpdatedByUserId = currentUser?.UserId;
+    lead.Version += 1;
+    db.Activities.Add(new EducationCrm.Api.Models.Activity
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = lead.Id,
+        CreatedByUserId = currentUser?.UserId,
+        Type = "FollowUpRescheduled",
+        Description = $"{followUp.Type} follow-up rescheduled for lead {lead.LeadNumber}.",
+        CreatedAt = now
+    });
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPatch("/leads/{leadId}/follow-ups/{followUpId}/cancel", async (
+    string leadId,
+    Guid followUpId,
+    FollowUpVersionRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser)) return Results.Json(new { message = "You do not have permission to cancel follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
+
+    var lead = await db.Leads.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == leadId, cancellationToken);
+    if (lead is null || !CanAccessLead(currentUser, accessScope, lead)) return Results.NotFound(new { message = "Lead not found." });
+    if (lead.ArchivedAt is not null) return Results.Conflict(new { message = "Restore this lead before cancelling follow-ups." });
+
+    var followUp = await db.FollowUps.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadId == lead.Id && item.Id == followUpId, cancellationToken);
+    if (followUp is null) return Results.NotFound(new { message = "Follow-up not found." });
+    if (request.Version != followUp.Version) return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." });
+    if (followUp.Status == "Completed") return Results.Conflict(new { message = "Completed follow-ups cannot be cancelled." });
+    if (followUp.Status == "Cancelled") return Results.Conflict(new { message = "This follow-up is already cancelled." });
+
+    var now = IndianClock.Now();
+    followUp.Status = "Cancelled";
+    followUp.CancelledAt = now;
+    followUp.UpdatedAt = now;
+    followUp.Version += 1;
+    lead.NextFollowUpAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, followUp.Status, followUp.DueAt, cancellationToken);
+    lead.UpdatedAt = now;
+    lead.UpdatedByUserId = currentUser?.UserId;
+    lead.Version += 1;
+    db.Activities.Add(new EducationCrm.Api.Models.Activity
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = lead.Id,
+        CreatedByUserId = currentUser?.UserId,
+        Type = "FollowUpCancelled",
+        Description = $"{followUp.Type} follow-up cancelled for lead {lead.LeadNumber}.",
+        CreatedAt = now
+    });
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
 api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
     string leadId,
     Guid followUpId,
+    FollowUpVersionRequest request,
     HttpContext httpContext,
     AppDbContext db,
     IConfiguration configuration,
@@ -1032,11 +2047,26 @@ api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser))
+    {
+        return Results.Json(new { message = "You do not have permission to complete follow-ups." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
     var lead = await db.Leads
         .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == leadId, cancellationToken);
     if (lead is null)
     {
         return Results.NotFound(new { message = "Lead not found." });
+    }
+    if (!CanAccessLead(currentUser, accessScope, lead))
+    {
+        return Results.NotFound(new { message = "Lead not found." });
+    }
+    if (lead.ArchivedAt is not null)
+    {
+        return Results.Conflict(new { message = "Restore this lead before completing follow-ups." });
     }
 
     var followUp = await db.FollowUps
@@ -1046,30 +2076,47 @@ api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
         return Results.NotFound(new { message = "Follow-up not found." });
     }
 
-    if (followUp.Status != "Completed")
+    if (request.Version != followUp.Version)
     {
+        return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." });
+    }
+
+    if (followUp.Status == "Cancelled")
+    {
+        return Results.Conflict(new { message = "Cancelled follow-ups cannot be completed." });
+    }
+
+    if (followUp.Status == "Completed")
+    {
+        return Results.Conflict(new { message = "This follow-up is already completed." });
+    }
+
+    if (followUp.Status == "Scheduled")
+    {
+        var now = IndianClock.Now();
         followUp.Status = "Completed";
+        followUp.CompletedAt = now;
+        followUp.UpdatedAt = now;
+        followUp.Version += 1;
         db.Activities.Add(new EducationCrm.Api.Models.Activity
         {
             Id = Guid.NewGuid(),
             TenantId = tenant.TenantId,
             LeadId = lead.Id,
-            CreatedByUserId = followUp.AssignedUserId,
+            CreatedByUserId = currentUser?.UserId,
             Type = "FollowUpCompleted",
             Description = $"{followUp.Type} follow-up completed for lead {lead.LeadNumber}.",
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = now
         });
     }
 
-    var nextScheduled = await db.FollowUps
-        .AsNoTracking()
-        .Where(item => item.TenantId == tenant.TenantId && item.LeadId == lead.Id && item.Id != followUp.Id && item.Status == "Scheduled")
-        .OrderBy(item => item.DueAt)
-        .Select(item => (DateTimeOffset?)item.DueAt)
-        .FirstOrDefaultAsync(cancellationToken);
-    lead.NextFollowUpAt = nextScheduled;
+    lead.NextFollowUpAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, followUp.Status, followUp.DueAt, cancellationToken);
+    lead.UpdatedAt = IndianClock.Now();
+    lead.UpdatedByUserId = currentUser?.UserId;
+    lead.Version += 1;
 
-    await db.SaveChangesAsync(cancellationToken);
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
     return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
 });
 
@@ -1085,16 +2132,23 @@ api.MapGet("/pipeline", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+
     var stages = await db.LeadStages
         .AsNoTracking()
-        .Where(stage => stage.TenantId == tenant.TenantId)
+        .Where(stage => stage.TenantId == tenant.TenantId && stage.IsActive)
         .OrderBy(stage => stage.SortOrder)
         .Select(stage => new { stage.Id, stage.Name })
         .ToListAsync(cancellationToken);
 
-    var leads = await db.Leads
+    var leadQuery = ApplyLeadAccessScope(
+        db.Leads.AsNoTracking().Where(lead => lead.TenantId == tenant.TenantId && lead.ArchivedAt == null),
+        currentUser,
+        accessScope);
+
+    var leads = await leadQuery
         .AsNoTracking()
-        .Where(lead => lead.TenantId == tenant.TenantId)
         .Select(lead => new
         {
             lead.LeadStageId,
@@ -1109,9 +2163,14 @@ api.MapGet("/pipeline", async (
                 lead.Status,
                 lead.Priority,
                 lead.LeadStage.Name,
+                lead.Branch == null ? null : lead.Branch.Name,
+                lead.AssignedUserId,
+                lead.LeadStageId,
+                lead.Version,
                 lead.CreatedAt,
-                lead.NextFollowUpAt
-            )
+                lead.UpdatedAt,
+                lead.ArchivedAt,
+                lead.NextFollowUpAt)
         })
         .ToListAsync(cancellationToken);
 
@@ -1142,9 +2201,15 @@ api.MapGet("/follow-ups", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
     var followUps = await db.FollowUps
         .AsNoTracking()
-        .Where(item => item.TenantId == tenant.TenantId)
+        .Where(item => item.TenantId == tenant.TenantId && item.Lead.ArchivedAt == null)
+        .Where(item =>
+            accessScope.CanViewAll ||
+            (accessScope.BranchId != null && (item.Lead.BranchId == accessScope.BranchId || item.Lead.AssignedUserId == currentUser!.UserId)) ||
+            item.Lead.AssignedUserId == currentUser!.UserId)
         .OrderBy(item => item.DueAt)
         .Select(item => new FollowUpResponse(
             item.Id.ToString(),
@@ -1153,7 +2218,12 @@ api.MapGet("/follow-ups", async (
             item.Type,
             item.Priority,
             item.Status,
+            item.Version,
             item.DueAt,
+            item.CreatedAt,
+            item.UpdatedAt,
+            item.CompletedAt,
+            item.CancelledAt,
             item.AssignedUser == null ? "Unassigned" : item.AssignedUser.FullName
         ))
         .ToListAsync(cancellationToken);
@@ -1173,15 +2243,15 @@ api.MapGet("/reports/conversion", async (
         return Results.NotFound(new { message = "Tenant not found." });
     }
 
-    var totalLeads = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId, cancellationToken);
+    var totalLeads = await db.Leads.CountAsync(lead => lead.TenantId == tenant.TenantId && lead.ArchivedAt == null, cancellationToken);
     var stageCounts = await db.LeadStages
         .AsNoTracking()
-        .Where(stage => stage.TenantId == tenant.TenantId)
+        .Where(stage => stage.TenantId == tenant.TenantId && stage.IsActive)
         .OrderBy(stage => stage.SortOrder)
         .Select(stage => new
         {
             stage.Name,
-            Count = stage.Leads.Count(lead => lead.TenantId == tenant.TenantId)
+            Count = stage.Leads.Count(lead => lead.TenantId == tenant.TenantId && lead.ArchivedAt == null)
         })
         .ToListAsync(cancellationToken);
 
@@ -1201,7 +2271,8 @@ app.Run();
 static bool IsPublicEndpoint(PathString path)
 {
     return path.StartsWithSegments("/api/health") ||
-        path.StartsWithSegments("/api/auth/login");
+        path.StartsWithSegments("/api/auth/login") ||
+        path.StartsWithSegments("/api/auth/forgot-password");
 }
 
 static async Task WriteAuthErrorAsync(HttpContext httpContext, int statusCode, string message)
@@ -1356,6 +2427,142 @@ static bool CanManageLeads(AuthenticatedUser? user)
         or nameof(UserRole.Telecaller);
 }
 
+static bool CanManageLeadArchive(AuthenticatedUser? user)
+{
+    return user?.Role is nameof(UserRole.Owner)
+        or nameof(UserRole.Admin)
+        or nameof(UserRole.BranchManager);
+}
+
+static async Task<LeadAccessScope> GetLeadAccessScopeAsync(AppDbContext db, AuthenticatedUser? currentUser, CancellationToken cancellationToken)
+{
+    if (currentUser is null)
+    {
+        return new LeadAccessScope(false, null);
+    }
+
+    if (currentUser.Role is nameof(UserRole.Owner) or nameof(UserRole.Admin) or nameof(UserRole.Accountant) or nameof(UserRole.ReadOnly))
+    {
+        return new LeadAccessScope(true, null);
+    }
+
+    var branchId = await db.Users
+        .AsNoTracking()
+        .Where(item => item.Id == currentUser.UserId && item.TenantId == currentUser.TenantId && item.IsActive)
+        .Select(item => item.BranchId)
+        .FirstOrDefaultAsync(cancellationToken);
+
+    return new LeadAccessScope(false, branchId);
+}
+
+static IQueryable<Lead> ApplyLeadAccessScope(IQueryable<Lead> query, AuthenticatedUser? currentUser, LeadAccessScope accessScope)
+{
+    if (currentUser is null)
+    {
+        return query.Where(_ => false);
+    }
+
+    if (accessScope.CanViewAll)
+    {
+        return query;
+    }
+
+    if (currentUser.Role == nameof(UserRole.BranchManager) && accessScope.BranchId is not null)
+    {
+        var branchId = accessScope.BranchId.Value;
+        var userId = currentUser.UserId;
+        return query.Where(item => item.BranchId == branchId || item.AssignedUserId == userId);
+    }
+
+    var currentUserId = currentUser.UserId;
+    return query.Where(item => item.AssignedUserId == currentUserId);
+}
+
+static bool CanAccessLead(AuthenticatedUser? currentUser, LeadAccessScope accessScope, Lead lead)
+{
+    return CanAccessLeadValues(currentUser, accessScope, lead.BranchId, lead.AssignedUserId);
+}
+
+static bool CanAccessLeadValues(AuthenticatedUser? currentUser, LeadAccessScope accessScope, Guid? branchId, Guid? assignedUserId)
+{
+    if (currentUser is null) return false;
+    if (accessScope.CanViewAll) return true;
+    if (currentUser.Role == nameof(UserRole.BranchManager) && accessScope.BranchId is not null)
+    {
+        return branchId == accessScope.BranchId || assignedUserId == currentUser.UserId;
+    }
+
+    return assignedUserId == currentUser.UserId;
+}
+
+static bool CanCreateLeadInBranch(AuthenticatedUser? currentUser, LeadAccessScope accessScope, Guid? branchId)
+{
+    if (currentUser is null) return false;
+    if (accessScope.CanViewAll) return true;
+    if (currentUser.Role == nameof(UserRole.BranchManager))
+    {
+        return accessScope.BranchId is null ? branchId is null : branchId == accessScope.BranchId;
+    }
+
+    return branchId is null || branchId == accessScope.BranchId;
+}
+
+static async Task<string?> ValidateLeadAssignmentAsync(
+    AppDbContext db,
+    Guid tenantId,
+    AuthenticatedUser? currentUser,
+    LeadAccessScope accessScope,
+    Guid? leadBranchId,
+    Guid assignedUserId,
+    CancellationToken cancellationToken)
+{
+    if (currentUser is null)
+    {
+        return "Authentication is required.";
+    }
+
+    if (currentUser.Role is nameof(UserRole.Counselor) or nameof(UserRole.Telecaller) && assignedUserId != currentUser.UserId)
+    {
+        return "You can only assign leads to yourself.";
+    }
+
+    var assignee = await db.Users
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenantId && item.Id == assignedUserId && item.IsActive)
+        .Select(item => new { item.Id, item.Role, item.BranchId })
+        .FirstOrDefaultAsync(cancellationToken);
+
+    if (assignee is null)
+    {
+        return "Select a valid active counsellor.";
+    }
+
+    if (assignee.Role is UserRole.Accountant or UserRole.ReadOnly)
+    {
+        return "Leads can only be assigned to CRM working roles.";
+    }
+
+    if (currentUser.Role == nameof(UserRole.BranchManager) && accessScope.BranchId is not null)
+    {
+        if (leadBranchId != accessScope.BranchId)
+        {
+            return "You can only assign leads from your branch.";
+        }
+
+        if (assignee.BranchId is not null && assignee.BranchId != accessScope.BranchId)
+        {
+            return "Select a user from your branch.";
+        }
+    }
+
+    if (leadBranchId is not null && assignee.BranchId is not null && assignee.BranchId != leadBranchId)
+    {
+        return "Assigned user must belong to the lead branch.";
+    }
+
+    return null;
+}
+
 static bool CanManagePlatform(AuthenticatedUser? user)
 {
     return user?.Role == nameof(UserRole.Owner);
@@ -1364,6 +2571,41 @@ static bool CanManagePlatform(AuthenticatedUser? user)
 static bool CanManageUsers(AuthenticatedUser? user)
 {
     return user?.Role is nameof(UserRole.Owner) or nameof(UserRole.Admin);
+}
+
+static async Task<MasterDataResponse> GetMasterDataResponseAsync(AppDbContext db, Guid tenantId, CancellationToken cancellationToken)
+{
+    var branches = await db.Branches.AsNoTracking()
+        .Where(item => item.TenantId == tenantId)
+        .OrderByDescending(item => item.IsActive).ThenBy(item => item.Name)
+        .Select(item => new BranchMasterResponse(
+            item.Id, item.Name, item.City, item.IsActive, item.Version, item.CreatedAt, item.UpdatedAt,
+            item.Users.Count(user => user.IsActive), item.Leads.Count))
+        .ToListAsync(cancellationToken);
+
+    var courses = await db.Courses.AsNoTracking()
+        .Where(item => item.TenantId == tenantId)
+        .OrderByDescending(item => item.IsActive).ThenBy(item => item.Name)
+        .Select(item => new NamedMasterResponse(
+            item.Id, item.Name, item.IsActive, item.Version, item.CreatedAt, item.UpdatedAt, item.Leads.Count))
+        .ToListAsync(cancellationToken);
+
+    var sources = await db.LeadSources.AsNoTracking()
+        .Where(item => item.TenantId == tenantId)
+        .OrderByDescending(item => item.IsActive).ThenBy(item => item.Name)
+        .Select(item => new NamedMasterResponse(
+            item.Id, item.Name, item.IsActive, item.Version, item.CreatedAt, item.UpdatedAt, item.Leads.Count))
+        .ToListAsync(cancellationToken);
+
+    var stages = await db.LeadStages.AsNoTracking()
+        .Where(item => item.TenantId == tenantId)
+        .OrderBy(item => item.IsActive ? 0 : 1).ThenBy(item => item.SortOrder)
+        .Select(item => new LeadStageMasterResponse(
+            item.Id, item.Name, item.SortOrder, item.IsActive, item.IsDefaultStage, item.IsWonStage,
+            item.IsLostStage, item.Version, item.CreatedAt, item.UpdatedAt, item.Leads.Count))
+        .ToListAsync(cancellationToken);
+
+    return new MasterDataResponse(branches, courses, sources, stages);
 }
 
 static bool IsAllowedManagedRole(string? role, AuthenticatedUser? currentUser)
@@ -1389,28 +2631,47 @@ static bool IsAllowedManagedRole(string? role, AuthenticatedUser? currentUser)
 static void AddDefaultTenantSetup(AppDbContext db, Guid tenantId, DateTimeOffset createdAt)
 {
     db.LeadStages.AddRange(
-        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "New Inquiry", SortOrder = 10, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Contacted", SortOrder = 20, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Interested", SortOrder = 30, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Demo Scheduled", SortOrder = 40, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Application Started", SortOrder = 50, IsWonStage = false, IsLostStage = false, CreatedAt = createdAt },
-        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Enrolled", SortOrder = 60, IsWonStage = true, IsLostStage = false, CreatedAt = createdAt },
-        new LeadStage { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Dropped", SortOrder = 70, IsWonStage = false, IsLostStage = true, CreatedAt = createdAt }
+        CreateLeadStage(tenantId, "New Inquiry", 10, createdAt, isDefault: true),
+        CreateLeadStage(tenantId, "Contacted", 20, createdAt),
+        CreateLeadStage(tenantId, "Interested", 30, createdAt),
+        CreateLeadStage(tenantId, "Demo Scheduled", 40, createdAt),
+        CreateLeadStage(tenantId, "Application Started", 50, createdAt),
+        CreateLeadStage(tenantId, "Enrolled", 60, createdAt, isWon: true),
+        CreateLeadStage(tenantId, "Dropped", 70, createdAt, isLost: true)
     );
 
     db.LeadSources.AddRange(
-        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Website", IsActive = true, CreatedAt = createdAt },
-        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Google Ads", IsActive = true, CreatedAt = createdAt },
-        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Referral", IsActive = true, CreatedAt = createdAt },
-        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Walk-in", IsActive = true, CreatedAt = createdAt },
-        new LeadSource { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Social Media", IsActive = true, CreatedAt = createdAt }
+        CreateLeadSource(tenantId, "Website", createdAt),
+        CreateLeadSource(tenantId, "Google Ads", createdAt),
+        CreateLeadSource(tenantId, "Referral", createdAt),
+        CreateLeadSource(tenantId, "Walk-in", createdAt),
+        CreateLeadSource(tenantId, "Social Media", createdAt)
     );
 
     db.Courses.AddRange(
-        new Course { Id = Guid.NewGuid(), TenantId = tenantId, Name = "General Admission", IsActive = true, CreatedAt = createdAt },
-        new Course { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Counselling Session", IsActive = true, CreatedAt = createdAt }
+        CreateCourse(tenantId, "General Admission", createdAt),
+        CreateCourse(tenantId, "Counselling Session", createdAt)
     );
 }
+
+static Course CreateCourse(Guid tenantId, string name, DateTimeOffset timestamp) => new()
+{
+    Id = Guid.NewGuid(), TenantId = tenantId, Name = name, NormalizedName = NormalizeMasterName(name),
+    IsActive = true, Version = 1, CreatedAt = timestamp, UpdatedAt = timestamp
+};
+
+static LeadSource CreateLeadSource(Guid tenantId, string name, DateTimeOffset timestamp) => new()
+{
+    Id = Guid.NewGuid(), TenantId = tenantId, Name = name, NormalizedName = NormalizeMasterName(name),
+    IsActive = true, Version = 1, CreatedAt = timestamp, UpdatedAt = timestamp
+};
+
+static LeadStage CreateLeadStage(Guid tenantId, string name, int sortOrder, DateTimeOffset timestamp, bool isDefault = false, bool isWon = false, bool isLost = false) => new()
+{
+    Id = Guid.NewGuid(), TenantId = tenantId, Name = name, NormalizedName = NormalizeMasterName(name),
+    SortOrder = sortOrder, IsActive = true, IsDefaultStage = isDefault, IsWonStage = isWon, IsLostStage = isLost,
+    Version = 1, CreatedAt = timestamp, UpdatedAt = timestamp
+};
 
 static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid tenantId, string leadNumber, CancellationToken cancellationToken)
 {
@@ -1436,7 +2697,10 @@ static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid t
             item.AssignedUser == null ? "Unassigned" : item.AssignedUser.FullName,
             item.Status,
             item.Priority,
+            item.Version,
             item.CreatedAt,
+            item.UpdatedAt,
+            item.ArchivedAt,
             item.NextFollowUpAt,
             item.FollowUps
                 .OrderByDescending(followUp => followUp.DueAt)
@@ -1447,7 +2711,12 @@ static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid t
                     followUp.Type,
                     followUp.Priority,
                     followUp.Status,
+                    followUp.Version,
                     followUp.DueAt,
+                    followUp.CreatedAt,
+                    followUp.UpdatedAt,
+                    followUp.CompletedAt,
+                    followUp.CancelledAt,
                     followUp.AssignedUser == null ? "Unassigned" : followUp.AssignedUser.FullName
                 ))
                 .ToArray(),
@@ -1463,6 +2732,30 @@ static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid t
                 .ToArray()
         ))
         .FirstAsync(cancellationToken);
+}
+
+static async Task<DateTimeOffset?> CalculateNextScheduledFollowUpAsync(
+    AppDbContext db,
+    Guid tenantId,
+    Guid leadId,
+    Guid? changedFollowUpId,
+    string? changedStatus,
+    DateTimeOffset? changedDueAt,
+    CancellationToken cancellationToken)
+{
+    var scheduledDueTimes = await db.FollowUps
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenantId && item.LeadId == leadId && item.Status == "Scheduled")
+        .Where(item => changedFollowUpId == null || item.Id != changedFollowUpId)
+        .Select(item => item.DueAt)
+        .ToListAsync(cancellationToken);
+
+    if (changedStatus == "Scheduled" && changedDueAt is not null)
+    {
+        scheduledDueTimes.Add(changedDueAt.Value);
+    }
+
+    return scheduledDueTimes.Count == 0 ? null : scheduledDueTimes.Min();
 }
 
 static async Task<UserResponse> GetUserResponseAsync(AppDbContext db, Guid tenantId, Guid userId, CancellationToken cancellationToken)
@@ -1525,7 +2818,7 @@ static Dictionary<string, string[]> ValidateCreateLeadRequest(CreateLeadRequest 
         errors["leadStageId"] = ["Lead stage is required."];
     }
 
-    if (request.NextFollowUpAt is not null && request.NextFollowUpAt.Value < DateTimeOffset.UtcNow.AddMinutes(-5))
+    if (request.NextFollowUpAt is not null && IndianClock.ToIndianTime(request.NextFollowUpAt.Value) < IndianClock.Now().AddMinutes(-5))
     {
         errors["nextFollowUpAt"] = ["Next follow-up cannot be in the past."];
     }
@@ -1538,7 +2831,6 @@ static Dictionary<string, string[]> ValidateLoginRequest(LoginRequest request)
     var errors = new Dictionary<string, string[]>();
     AddRequiredError(errors, "email", request.Email, 240);
     AddRequiredError(errors, "password", request.Password, 120);
-    AddOptionalLengthError(errors, "tenantSlug", request.TenantSlug, 80);
 
     if (!errors.ContainsKey("email") && !IsValidEmail(request.Email))
     {
@@ -1546,6 +2838,103 @@ static Dictionary<string, string[]> ValidateLoginRequest(LoginRequest request)
     }
 
     return errors;
+}
+
+static Dictionary<string, string[]> ValidateForgotPasswordRequest(ForgotPasswordRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "email", request.Email, 240);
+
+    if (!errors.ContainsKey("email") && !IsValidEmail(request.Email))
+    {
+        errors["email"] = ["Enter a valid email address."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateChangePasswordRequest(ChangePasswordRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "currentPassword", request.CurrentPassword, 120);
+    AddRequiredError(errors, "newPassword", request.NewPassword, 120);
+    AddRequiredError(errors, "confirmPassword", request.ConfirmPassword, 120);
+
+    if (!errors.ContainsKey("newPassword"))
+    {
+        AddPasswordPolicyErrors(errors, "newPassword", request.NewPassword);
+    }
+
+    if (!errors.ContainsKey("newPassword") &&
+        !errors.ContainsKey("currentPassword") &&
+        string.Equals(request.CurrentPassword, request.NewPassword, StringComparison.Ordinal))
+    {
+        errors["newPassword"] = ["New password must be different from the current password."];
+    }
+
+    if (!errors.ContainsKey("confirmPassword") &&
+        !string.Equals(request.NewPassword, request.ConfirmPassword, StringComparison.Ordinal))
+    {
+        errors["confirmPassword"] = ["Password confirmation does not match."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateResetUserPasswordRequest(ResetUserPasswordRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "newPassword", request.NewPassword, 120);
+    AddRequiredError(errors, "confirmPassword", request.ConfirmPassword, 120);
+
+    if (!errors.ContainsKey("newPassword"))
+    {
+        AddPasswordPolicyErrors(errors, "newPassword", request.NewPassword);
+    }
+
+    if (!errors.ContainsKey("confirmPassword") &&
+        !string.Equals(request.NewPassword, request.ConfirmPassword, StringComparison.Ordinal))
+    {
+        errors["confirmPassword"] = ["Password confirmation does not match."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateNamedMasterRequest(string? name, int maxLength)
+{
+    var errors = new Dictionary<string, string[]>();
+    AddRequiredError(errors, "name", name, maxLength);
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateBranchMasterRequest(string? name, string? city)
+{
+    var errors = ValidateNamedMasterRequest(name, 160);
+    AddRequiredError(errors, "city", city, 120);
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateLeadStageMasterRequest(string? name, bool isDefaultStage, bool isWonStage, bool isLostStage)
+{
+    var errors = ValidateNamedMasterRequest(name, 120);
+    if (isWonStage && isLostStage)
+    {
+        errors["stageType"] = ["A lead stage cannot be both won and lost."];
+    }
+    if (isDefaultStage && (isWonStage || isLostStage))
+    {
+        errors["isDefaultStage"] = ["The default stage cannot be a won or lost stage."];
+    }
+    return errors;
+}
+
+static void AddVersionError(Dictionary<string, string[]> errors, int version)
+{
+    if (version < 1)
+    {
+        errors["version"] = ["A valid record version is required."];
+    }
 }
 
 static Dictionary<string, string[]> ValidateCreateTenantRequest(CreateTenantRequest request)
@@ -1569,9 +2958,9 @@ static Dictionary<string, string[]> ValidateCreateTenantRequest(CreateTenantRequ
         errors["adminEmail"] = ["Enter a valid admin email address."];
     }
 
-    if (!errors.ContainsKey("adminPassword") && request.AdminPassword.Length < 8)
+    if (!errors.ContainsKey("adminPassword"))
     {
-        errors["adminPassword"] = ["Password must be at least 8 characters."];
+        AddPasswordPolicyErrors(errors, "adminPassword", request.AdminPassword);
     }
 
     return errors;
@@ -1595,9 +2984,9 @@ static Dictionary<string, string[]> ValidateCreateUserRequest(CreateUserRequest 
         errors["role"] = ["Select a valid role for your permission level."];
     }
 
-    if (!errors.ContainsKey("password") && request.Password.Length < 8)
+    if (!errors.ContainsKey("password"))
     {
-        errors["password"] = ["Password must be at least 8 characters."];
+        AddPasswordPolicyErrors(errors, "password", request.Password);
     }
 
     return errors;
@@ -1614,9 +3003,9 @@ static Dictionary<string, string[]> ValidateUpdateUserRequest(UpdateUserRequest 
         errors["role"] = ["Select a valid role for your permission level."];
     }
 
-    if (!string.IsNullOrWhiteSpace(request.Password) && request.Password.Length < 8)
+    if (!string.IsNullOrWhiteSpace(request.Password))
     {
-        errors["password"] = ["Password must be at least 8 characters."];
+        errors["password"] = ["Use the dedicated reset password action to change user passwords."];
     }
 
     if (currentUser?.UserId == targetUser.Id)
@@ -1639,15 +3028,49 @@ static Dictionary<string, string[]> ValidateUpdateLeadRequest(UpdateLeadRequest 
 {
     var errors = new Dictionary<string, string[]>();
 
+    AddRequiredError(errors, "studentName", request.StudentName, 160);
+    AddOptionalLengthError(errors, "guardianName", request.GuardianName, 160);
+    AddRequiredError(errors, "email", request.Email, 240);
+    AddRequiredError(errors, "phone", request.Phone, 40);
+    AddOptionalLengthError(errors, "city", request.City, 120);
+    AddOptionalLengthError(errors, "status", request.Status, 80);
+    AddOptionalLengthError(errors, "priority", request.Priority, 40);
+
+    if (!errors.ContainsKey("email") && !IsValidEmail(request.Email))
+    {
+        errors["email"] = ["Enter a valid email address."];
+    }
+
+    if (!errors.ContainsKey("phone"))
+    {
+        var normalizedPhone = NormalizePhone(request.Phone);
+        if (normalizedPhone.Length < 10 || normalizedPhone.Length > 15)
+        {
+            errors["phone"] = ["Enter a valid phone number with 10 to 15 digits."];
+        }
+    }
+
+    if (request.CourseId == Guid.Empty)
+    {
+        errors["courseId"] = ["Course is required."];
+    }
+
+    if (request.LeadSourceId == Guid.Empty)
+    {
+        errors["leadSourceId"] = ["Lead source is required."];
+    }
+
     if (request.LeadStageId == Guid.Empty)
     {
         errors["leadStageId"] = ["Lead stage is required."];
     }
 
-    AddOptionalLengthError(errors, "status", request.Status, 80);
-    AddOptionalLengthError(errors, "priority", request.Priority, 40);
+    if (request.Version < 1)
+    {
+        errors["version"] = ["Refresh the lead before saving changes."];
+    }
 
-    if (request.NextFollowUpAt is not null && request.NextFollowUpAt.Value < DateTimeOffset.UtcNow.AddMinutes(-5))
+    if (request.NextFollowUpAt is not null && IndianClock.ToIndianTime(request.NextFollowUpAt.Value) < IndianClock.Now().AddMinutes(-5))
     {
         errors["nextFollowUpAt"] = ["Next follow-up cannot be in the past."];
     }
@@ -1674,7 +3097,31 @@ static Dictionary<string, string[]> ValidateCreateFollowUpRequest(CreateFollowUp
     {
         errors["dueAt"] = ["Due date is required."];
     }
-    else if (request.DueAt < DateTimeOffset.UtcNow.AddMinutes(-5))
+    else if (IndianClock.ToIndianTime(request.DueAt) < IndianClock.Now().AddMinutes(-5))
+    {
+        errors["dueAt"] = ["Follow-up due date cannot be in the past."];
+    }
+
+    return errors;
+}
+
+static Dictionary<string, string[]> ValidateRescheduleFollowUpRequest(RescheduleFollowUpRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+
+    AddOptionalLengthError(errors, "type", request.Type, 40);
+    AddOptionalLengthError(errors, "priority", request.Priority, 40);
+
+    if (request.Version < 1)
+    {
+        errors["version"] = ["Refresh the follow-up before saving changes."];
+    }
+
+    if (request.DueAt == default)
+    {
+        errors["dueAt"] = ["Due date is required."];
+    }
+    else if (IndianClock.ToIndianTime(request.DueAt) < IndianClock.Now().AddMinutes(-5))
     {
         errors["dueAt"] = ["Follow-up due date cannot be in the past."];
     }
@@ -1704,14 +3151,53 @@ static void AddOptionalLengthError(Dictionary<string, string[]> errors, string k
     }
 }
 
+static void AddPasswordPolicyErrors(Dictionary<string, string[]> errors, string key, string? password)
+{
+    if (string.IsNullOrEmpty(password))
+    {
+        errors[key] = ["Password is required."];
+        return;
+    }
+
+    if (password.Length is < 8 or > 120)
+    {
+        errors[key] = ["Password must be 8 to 120 characters."];
+        return;
+    }
+
+    if (password.Any(char.IsWhiteSpace))
+    {
+        errors[key] = ["Password cannot contain spaces."];
+        return;
+    }
+
+    if (!password.Any(char.IsUpper) ||
+        !password.Any(char.IsLower) ||
+        !password.Any(char.IsDigit) ||
+        !password.Any(character => !char.IsLetterOrDigit(character)))
+    {
+        errors[key] = ["Password must include uppercase, lowercase, number, and special character."];
+    }
+}
+
 static bool IsValidEmail(string email)
 {
     return Regex.IsMatch(email.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250));
 }
 
+static bool IsUniqueViolation(DbUpdateException exception)
+{
+    return exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+}
+
 static string NormalizeName(string value)
 {
     return Regex.Replace(value.Trim(), @"\s+", " ");
+}
+
+static string NormalizeMasterName(string value)
+{
+    return NormalizeName(value).ToUpperInvariant();
 }
 
 static string NormalizeEmail(string value)
@@ -1787,8 +3273,22 @@ record DashboardSummary(
 
 record LoginRequest(
     string Email,
-    string Password,
-    string? TenantSlug);
+    string Password);
+
+record ForgotPasswordRequest(
+    string Email);
+
+record PasswordResetRequestResponse(
+    string Message);
+
+record ChangePasswordRequest(
+    string CurrentPassword,
+    string NewPassword,
+    string ConfirmPassword);
+
+record ResetUserPasswordRequest(
+    string NewPassword,
+    string ConfirmPassword);
 
 record AuthResponse(
     string Token,
@@ -1819,6 +3319,55 @@ record TenantCreatedResponse(
     string Slug,
     string AdminEmail);
 
+record MasterDataResponse(
+    IReadOnlyCollection<BranchMasterResponse> Branches,
+    IReadOnlyCollection<NamedMasterResponse> Courses,
+    IReadOnlyCollection<NamedMasterResponse> Sources,
+    IReadOnlyCollection<LeadStageMasterResponse> Stages);
+
+record BranchMasterResponse(
+    Guid Id,
+    string Name,
+    string City,
+    bool IsActive,
+    int Version,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    int ActiveUsers,
+    int Leads);
+
+record NamedMasterResponse(
+    Guid Id,
+    string Name,
+    bool IsActive,
+    int Version,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    int Leads);
+
+record LeadStageMasterResponse(
+    Guid Id,
+    string Name,
+    int SortOrder,
+    bool IsActive,
+    bool IsDefaultStage,
+    bool IsWonStage,
+    bool IsLostStage,
+    int Version,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    int Leads);
+
+record MasterMutationResponse(Guid Id, string Name, int Version, string Message);
+record CreateBranchMasterRequest(string Name, string City);
+record UpdateBranchMasterRequest(string Name, string City, bool IsActive, int Version);
+record CreateNamedMasterRequest(string Name);
+record UpdateNamedMasterRequest(string Name, bool IsActive, int Version);
+record CreateLeadStageMasterRequest(string Name, bool IsDefaultStage, bool IsWonStage, bool IsLostStage);
+record UpdateLeadStageMasterRequest(string Name, bool IsActive, bool IsDefaultStage, bool IsWonStage, bool IsLostStage, int Version);
+record ReorderLeadStageItem(Guid Id, int Version);
+record ReorderLeadStagesRequest(IReadOnlyCollection<ReorderLeadStageItem> Items);
+
 record UserResponse(
     Guid Id,
     string FullName,
@@ -1846,6 +3395,8 @@ record UpdateUserRequest(
 
 record TokenClaims(Guid UserId, Guid TenantId);
 
+record LeadAccessScope(bool CanViewAll, Guid? BranchId);
+
 record AccessTokenPayload(
     string Sub,
     string Tid,
@@ -1867,8 +3418,20 @@ record LeadResponse(
     string Status,
     string Priority,
     string Stage,
+    string? Branch,
+    Guid? AssignedUserId,
+    Guid LeadStageId,
+    int Version,
     DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? ArchivedAt,
     DateTimeOffset? NextFollowUpAt);
+
+record LeadListResponse(
+    IReadOnlyCollection<LeadResponse> Items,
+    int Page,
+    int PageSize,
+    int Total);
 
 record LeadDetailResponse(
     string Id,
@@ -1889,7 +3452,10 @@ record LeadDetailResponse(
     string Counselor,
     string Status,
     string Priority,
+    int Version,
     DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? ArchivedAt,
     DateTimeOffset? NextFollowUpAt,
     IReadOnlyCollection<FollowUpResponse> FollowUps,
     IReadOnlyCollection<ActivityResponse> Activities);
@@ -1901,7 +3467,12 @@ record FollowUpResponse(
     string Type,
     string Priority,
     string Status,
+    int Version,
     DateTimeOffset DueAt,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? CompletedAt,
+    DateTimeOffset? CancelledAt,
     string AssignedTo);
 
 record ActivityResponse(
@@ -1940,11 +3511,24 @@ record CreateLeadRequest(
     DateTimeOffset? NextFollowUpAt);
 
 record UpdateLeadRequest(
+    string StudentName,
+    string? GuardianName,
+    string Email,
+    string Phone,
+    string? City,
+    Guid CourseId,
+    Guid LeadSourceId,
     Guid LeadStageId,
+    Guid? BranchId,
     Guid? AssignedUserId,
     string? Status,
     string? Priority,
-    DateTimeOffset? NextFollowUpAt);
+    DateTimeOffset? NextFollowUpAt,
+    int Version);
+
+record AssignLeadRequest(Guid? AssignedUserId, int Version);
+record UpdateLeadStageRequest(Guid LeadStageId, string? Status, int Version);
+record LeadVersionRequest(int Version);
 
 record AddLeadActivityRequest(
     string Description,
@@ -1955,3 +3539,12 @@ record CreateFollowUpRequest(
     string? Priority,
     Guid? AssignedUserId,
     DateTimeOffset DueAt);
+
+record RescheduleFollowUpRequest(
+    string? Type,
+    string? Priority,
+    Guid? AssignedUserId,
+    DateTimeOffset DueAt,
+    int Version);
+
+record FollowUpVersionRequest(int Version);

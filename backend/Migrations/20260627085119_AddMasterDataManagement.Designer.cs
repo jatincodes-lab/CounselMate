@@ -3,6 +3,7 @@ using System;
 using EducationCrm.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace EducationCrm.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260627085119_AddMasterDataManagement")]
+    partial class AddMasterDataManagement
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -321,12 +324,6 @@ namespace EducationCrm.Api.Migrations
                     b.Property<Guid?>("AssignedUserId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp without time zone");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone");
 
@@ -354,13 +351,6 @@ namespace EducationCrm.Api.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
                     b.HasIndex("AssignedUserId");
@@ -368,8 +358,6 @@ namespace EducationCrm.Api.Migrations
                     b.HasIndex("LeadId");
 
                     b.HasIndex("TenantId", "DueAt");
-
-                    b.HasIndex("TenantId", "Status", "DueAt");
 
                     b.ToTable("follow_ups", (string)null);
 
@@ -384,9 +372,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "High",
                             Status = "Scheduled",
                             TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            Type = "Call",
-                            UpdatedAt = new DateTime(2026, 6, 25, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            Type = "Call"
                         },
                         new
                         {
@@ -398,9 +384,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "Medium",
                             Status = "Scheduled",
                             TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            Type = "WhatsApp",
-                            UpdatedAt = new DateTime(2026, 6, 25, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            Type = "WhatsApp"
                         },
                         new
                         {
@@ -412,9 +396,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "Low",
                             Status = "Scheduled",
                             TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            Type = "Email",
-                            UpdatedAt = new DateTime(2026, 6, 25, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            Type = "Email"
                         });
                 });
 
@@ -422,12 +404,6 @@ namespace EducationCrm.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("ArchivedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("ArchivedByUserId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("AssignedUserId")
@@ -445,9 +421,6 @@ namespace EducationCrm.Api.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -500,19 +473,7 @@ namespace EducationCrm.Api.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("ArchivedByUserId");
 
                     b.HasIndex("AssignedUserId");
 
@@ -520,28 +481,16 @@ namespace EducationCrm.Api.Migrations
 
                     b.HasIndex("CourseId");
 
-                    b.HasIndex("CreatedByUserId");
-
                     b.HasIndex("LeadSourceId");
 
                     b.HasIndex("LeadStageId");
 
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.HasIndex("TenantId", "ArchivedAt");
-
-                    b.HasIndex("TenantId", "AssignedUserId");
-
-                    b.HasIndex("TenantId", "BranchId");
-
                     b.HasIndex("TenantId", "CreatedAt");
 
                     b.HasIndex("TenantId", "LeadNumber")
                         .IsUnique();
-
-                    b.HasIndex("TenantId", "LeadStageId");
 
                     b.HasIndex("TenantId", "NormalizedPhone")
                         .IsUnique();
@@ -566,9 +515,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "High",
                             Status = "Enrolled",
                             StudentName = "Arjun Adhikari",
-                            TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            UpdatedAt = new DateTime(2026, 6, 7, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            TenantId = new Guid("10000000-0000-0000-0000-000000000001")
                         },
                         new
                         {
@@ -587,9 +534,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "Medium",
                             Status = "Interested",
                             StudentName = "Priya Sharma",
-                            TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            UpdatedAt = new DateTime(2026, 6, 19, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            TenantId = new Guid("10000000-0000-0000-0000-000000000001")
                         },
                         new
                         {
@@ -608,9 +553,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "High",
                             Status = "Follow Up",
                             StudentName = "Michael Jones",
-                            TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            UpdatedAt = new DateTime(2026, 6, 21, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            TenantId = new Guid("10000000-0000-0000-0000-000000000001")
                         },
                         new
                         {
@@ -628,9 +571,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "Low",
                             Status = "Dropped",
                             StudentName = "Deepak Reddy",
-                            TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            UpdatedAt = new DateTime(2026, 5, 31, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            TenantId = new Guid("10000000-0000-0000-0000-000000000001")
                         },
                         new
                         {
@@ -649,9 +590,7 @@ namespace EducationCrm.Api.Migrations
                             Priority = "Medium",
                             Status = "New Lead",
                             StudentName = "Kriti Luthra",
-                            TenantId = new Guid("10000000-0000-0000-0000-000000000001"),
-                            UpdatedAt = new DateTime(2026, 6, 24, 5, 30, 0, 0, DateTimeKind.Unspecified),
-                            Version = 1
+                            TenantId = new Guid("10000000-0000-0000-0000-000000000001")
                         });
                 });
 
@@ -1052,11 +991,6 @@ namespace EducationCrm.Api.Migrations
 
             modelBuilder.Entity("EducationCrm.Api.Models.Lead", b =>
                 {
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "ArchivedByUser")
-                        .WithMany()
-                        .HasForeignKey("ArchivedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("EducationCrm.Api.Models.AppUser", "AssignedUser")
                         .WithMany("AssignedLeads")
                         .HasForeignKey("AssignedUserId")
@@ -1072,11 +1006,6 @@ namespace EducationCrm.Api.Migrations
                         .HasForeignKey("CourseId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("EducationCrm.Api.Models.LeadSource", "LeadSource")
                         .WithMany("Leads")
@@ -1096,28 +1025,17 @@ namespace EducationCrm.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "UpdatedByUser")
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("ArchivedByUser");
-
                     b.Navigation("AssignedUser");
 
                     b.Navigation("Branch");
 
                     b.Navigation("Course");
 
-                    b.Navigation("CreatedByUser");
-
                     b.Navigation("LeadSource");
 
                     b.Navigation("LeadStage");
 
                     b.Navigation("Tenant");
-
-                    b.Navigation("UpdatedByUser");
                 });
 
             modelBuilder.Entity("EducationCrm.Api.Models.LeadSource", b =>

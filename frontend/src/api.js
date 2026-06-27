@@ -1,5 +1,4 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5078/api").replace(/\/$/, "");
-const TENANT_SLUG = import.meta.env.VITE_TENANT_SLUG || "demo-academy";
 const TOKEN_STORAGE_KEY = "counselmate_access_token";
 const USER_STORAGE_KEY = "counselmate_user";
 
@@ -52,7 +51,6 @@ export async function login(payload) {
   const response = await request("/auth/login", {
     method: "POST",
     body: {
-      tenantSlug: payload.tenantSlug || TENANT_SLUG,
       email: payload.email,
       password: payload.password,
     },
@@ -61,6 +59,22 @@ export async function login(payload) {
   localStorage.setItem(TOKEN_STORAGE_KEY, response.token);
   localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
   return response;
+}
+
+export async function forgotPassword(payload) {
+  return request("/auth/forgot-password", {
+    method: "POST",
+    body: {
+      email: payload.email,
+    },
+  });
+}
+
+export async function changePassword(payload) {
+  return request("/auth/change-password", {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export async function getCurrentUser() {
@@ -97,11 +111,23 @@ export async function getCrmData() {
 
   return {
     dashboard,
-    leads,
+    leads: normalizeLeadList(leads),
     pipeline,
     followUps,
     leadOptions,
   };
+}
+
+export async function getLeads(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+
+  const response = await request(`/leads${query.toString() ? `?${query}` : ""}`);
+  return normalizeLeadList(response);
 }
 
 export async function getPlatformTenants() {
@@ -133,6 +159,38 @@ export async function updateUser(userId, payload) {
   });
 }
 
+export async function resetUserPassword(userId, payload) {
+  return request(`/users/${encodeURIComponent(userId)}/reset-password`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function getMasterData() {
+  return request("/master-data");
+}
+
+export async function createMasterRecord(type, payload) {
+  return request(`/master-data/${encodeURIComponent(type)}`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateMasterRecord(type, recordId, payload) {
+  return request(`/master-data/${encodeURIComponent(type)}/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function reorderLeadStages(items) {
+  return request("/master-data/lead-stages/reorder", {
+    method: "POST",
+    body: { items },
+  });
+}
+
 export async function createLead(payload) {
   return request("/leads", {
     method: "POST",
@@ -146,6 +204,34 @@ export async function getLeadDetail(leadId) {
 
 export async function updateLead(leadId, payload) {
   return request(`/leads/${encodeURIComponent(leadId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function assignLead(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/assign`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function updateLeadStage(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/stage`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function archiveLead(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/archive`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function restoreLead(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/restore`, {
     method: "PATCH",
     body: payload,
   });
@@ -165,8 +251,41 @@ export async function createLeadFollowUp(leadId, payload) {
   });
 }
 
-export async function completeLeadFollowUp(leadId, followUpId) {
+export async function rescheduleLeadFollowUp(leadId, followUpId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/follow-ups/${encodeURIComponent(followUpId)}/reschedule`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function cancelLeadFollowUp(leadId, followUpId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/follow-ups/${encodeURIComponent(followUpId)}/cancel`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function completeLeadFollowUp(leadId, followUpId, payload) {
   return request(`/leads/${encodeURIComponent(leadId)}/follow-ups/${encodeURIComponent(followUpId)}/complete`, {
     method: "POST",
+    body: payload,
   });
+}
+
+function normalizeLeadList(response) {
+  if (Array.isArray(response)) {
+    return {
+      items: response,
+      page: 1,
+      pageSize: response.length,
+      total: response.length,
+    };
+  }
+
+  return {
+    items: response?.items || [],
+    page: response?.page || 1,
+    pageSize: response?.pageSize || 25,
+    total: response?.total || 0,
+  };
 }

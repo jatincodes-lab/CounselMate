@@ -1939,7 +1939,7 @@ function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, o
                   <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} interval={0} />
                   <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip unit="leads" />} cursor={{ fill: "rgba(37, 99, 235, 0.06)" }} />
-                  <Bar dataKey="count" radius={[8, 8, 0, 0]} barSize={44}>
+                  <Bar dataKey="count" radius={[0, 0, 0, 0]} barSize={44}>
                     {pipelineData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
                     <LabelList dataKey="count" position="top" fill="#0f172a" fontSize={12} fontWeight={700} />
                   </Bar>

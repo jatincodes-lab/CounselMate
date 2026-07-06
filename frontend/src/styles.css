@@ -10,7 +10,7 @@
   --success: #0ca678;
   --warning: #ffab00;
   --danger: #ff5630;
-  font-family: "Inter", "Segoe UI", Roboto, Arial, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: "Geist", "Inter", "Segoe UI", Roboto, Arial, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text);
   background: var(--surface);
 }

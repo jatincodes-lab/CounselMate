@@ -1927,14 +1927,14 @@ function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, o
       </div>
 
       <div className="dashboard-grid dashboard-command-grid">
-        <Card title="Admission Pipeline" badge={`${formatNumber(pipelineTotal)} Leads`} className="wide-card dashboard-chart-card">
+        <Card title="Admission Pipeline" badge={`${formatNumber(pipelineTotal)} Leads`} className="wide-card dashboard-pipeline-card">
           {loading && <StatePanel title="Loading pipeline" message="Fetching live stage counts..." />}
           {error && <StatePanel title="Could not load pipeline" message={error} action={onRetry} />}
           {!loading && !error && pipelineData.length === 0 && <StatePanel title="No pipeline data" message="Pipeline stages will appear here once leads are available." />}
           {!loading && !error && (
             <div className="chart-shell">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={pipelineData} margin={{ top: 26, right: 10, left: -24, bottom: 10 }}>
+              <ResponsiveContainer width="100%" height={238}>
+                <BarChart data={pipelineData} margin={{ top: 24, right: 10, left: -24, bottom: 2 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} interval={0} />
                   <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />

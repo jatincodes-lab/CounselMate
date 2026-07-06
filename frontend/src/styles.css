@@ -1297,6 +1297,14 @@ h1 {
   min-height: 348px;
 }
 
+.dashboard-pipeline-card {
+  min-height: 306px;
+}
+
+.dashboard-pipeline-card .chart-shell {
+  min-height: 238px;
+}
+
 .dashboard-focus-card {
   min-height: 348px;
 }

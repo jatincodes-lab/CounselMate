@@ -4753,13 +4753,38 @@ function ApplicationsPage({
   canManagePayments,
 }) {
   const items = applications?.items || [];
+  const totalApplications = applications?.total || 0;
+  const visibleSubmitted = items.filter((item) => ["Submitted", "UnderReview", "ChangesRequired"].includes(item.status)).length;
+  const visibleApproved = items.filter((item) => ["Approved", "Enrolled"].includes(item.status)).length;
+  const visibleBlocked = items.filter((item) => ["Rejected", "Withdrawn", "Cancelled"].includes(item.status)).length;
   const totalPages = Math.max(1, Math.ceil((applications?.total || 0) / Math.max(applications?.pageSize || 25, 1)));
   return (
-    <>
-      <PageTitle
-        title="Applications & Enrollment"
-        subtitle="Review admission applications, checklist readiness, and final enrollment."
-      />
+    <section className="applications-workspace">
+      <div className="applications-hero">
+        <div>
+          <span className="eyebrow">Admission review</span>
+          <h1>Applications & Enrollment</h1>
+          <p>Review checklist readiness, document/payment blockers, and final enrollment decisions.</p>
+        </div>
+        <div className="applications-hero-actions">
+          <div className="applications-hero-stat">
+            <span>Total</span>
+            <strong>{status.loading ? "..." : formatNumber(totalApplications)}</strong>
+          </div>
+          <div className="applications-hero-stat">
+            <span>In Review</span>
+            <strong>{status.loading ? "..." : formatNumber(visibleSubmitted)}</strong>
+          </div>
+          <div className="applications-hero-stat success">
+            <span>Ready</span>
+            <strong>{status.loading ? "..." : formatNumber(visibleApproved)}</strong>
+          </div>
+          <div className="applications-hero-stat danger">
+            <span>Closed</span>
+            <strong>{status.loading ? "..." : formatNumber(visibleBlocked)}</strong>
+          </div>
+        </div>
+      </div>
       <div className="report-filter-panel application-filter-panel">
         <Field label="Search">
           <input value={filters.search} placeholder="Student or APP number" onChange={(event) => onFiltersChange({ search: event.target.value })} />
@@ -4773,6 +4798,7 @@ function ApplicationsPage({
         <div className="lead-filter-actions">
           <strong>{status.loading ? "Loading..." : `${applications?.total || 0} applications`}</strong>
           <button className="soft-button" onClick={onRetry} disabled={status.loading}>Refresh</button>
+          <button className="ghost-button" onClick={() => onFiltersChange({ search: "", status: "", page: 1 })} disabled={status.loading || (!filters.search && !filters.status)}>Reset</button>
         </div>
       </div>
       {status.error && <div className="form-alert" role="alert">{status.error}</div>}
@@ -4807,10 +4833,10 @@ function ApplicationsPage({
           </table>
         )}
         <footer className="table-footer">
-          <span>Page {applications?.page || 1} of {totalPages}</span>
-          <div>
+          <span>Showing {items.length} of {formatNumber(totalApplications)} applications</span>
+          <div className="application-pagination">
             <button className="pager" disabled={(applications?.page || 1) <= 1 || status.loading} onClick={() => onFiltersChange({ page: (applications?.page || 1) - 1 })}>Prev</button>
-            <button className="pager active" disabled>{applications?.page || 1}</button>
+            <span className="pagination-status">Page {applications?.page || 1} of {totalPages}</span>
             <button className="pager" disabled={(applications?.page || 1) >= totalPages || status.loading} onClick={() => onFiltersChange({ page: (applications?.page || 1) + 1 })}>Next</button>
           </div>
         </footer>
@@ -4837,7 +4863,7 @@ function ApplicationsPage({
           canManagePayments={canManagePayments}
         />
       )}
-    </>
+    </section>
   );
 }
 

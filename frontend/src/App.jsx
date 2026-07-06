@@ -1035,7 +1035,13 @@ function App() {
     <div className="app-shell" style={{ "--tenant-brand": currentUser.tenantBrandColor || "#2171D3" }}>
       <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
         <div className="brand">
-          <img src={counselMateLogo} alt="CounselMate CRM" />
+          <span className="brand-mark" aria-hidden="true">
+            <img src={counselMateLogo} alt="" />
+          </span>
+          <div className="brand-copy">
+            <strong>CounselMate</strong>
+            <span>Admission CRM</span>
+          </div>
         </div>
         <TenantIdentity user={currentUser} />
 

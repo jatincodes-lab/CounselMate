@@ -482,16 +482,54 @@ button:disabled {
 .brand {
   display: flex;
   align-items: center;
-  padding: 24px 18px 18px;
+  gap: 12px;
+  padding: 22px 18px 18px;
 }
 
-.brand img {
-  width: 100%;
-  max-height: 82px;
-  object-fit: contain;
-  border-radius: 4px;
+.brand-mark {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
   background: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mark img {
+  width: 142px;
+  max-width: none;
+  height: auto;
   display: block;
+  transform: translateX(-3px) scale(1.22);
+  transform-origin: left center;
+}
+
+.brand-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.brand-copy strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-copy span {
+  color: #b9c7df;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .tenant-identity {

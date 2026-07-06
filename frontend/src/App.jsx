@@ -127,8 +127,24 @@ const navItems = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
+const ACTIVE_PAGE_STORAGE_KEY = "counselmate.activePage";
+const defaultActivePage = "dashboard";
+const navItemIds = new Set(navItems.map((item) => item.id));
+
+function getInitialActivePage() {
+  try {
+    if (typeof window === "undefined") {
+      return defaultActivePage;
+    }
+    const stored = window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY);
+    return navItemIds.has(stored) ? stored : defaultActivePage;
+  } catch {
+    return defaultActivePage;
+  }
+}
+
 function App() {
-  const [activePage, setActivePage] = useState("dashboard");
+  const [activePage, setActivePage] = useState(getInitialActivePage);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => getStoredAuth().user);
   const [authStatus, setAuthStatus] = useState({
@@ -225,6 +241,25 @@ function App() {
   const [notificationData, setNotificationData] = useState({ items: [], total: 0, unreadCount: 0, page: 1 });
   const [notificationStatus, setNotificationStatus] = useState({ loading: false, error: "", saving: false });
   const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
+
+  useEffect(() => {
+    if (!navItemIds.has(activePage)) {
+      setActivePage(defaultActivePage);
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, activePage);
+    } catch {
+      // Ignore storage failures; navigation still works for the current session.
+    }
+  }, [activePage]);
+
+  useEffect(() => {
+    if (currentUser && activePage === "platform" && currentUser.role !== "Owner") {
+      setActivePage(defaultActivePage);
+    }
+  }, [activePage, currentUser]);
 
   const loadNotifications = useCallback(async ({ page = 1, append = false, silent = false } = {}) => {
     if (!currentUser) {
@@ -3954,17 +3989,34 @@ function CounselorsPage({
   };
 
   return (
-    <>
-      <PageTitle
-        title="Team Management"
-        subtitle="Manage tenant admins, counsellors, callers, accountants, and read-only users."
-        action={canManageUsers ? (
+    <section className="team-workspace">
+      <div className="team-hero">
+        <div>
+          <span className="eyebrow">Access & counselling team</span>
+          <h1>Team Management</h1>
+          <p>Manage tenant admins, counsellors, callers, accountants, read-only users, and branch access.</p>
+        </div>
+        <div className="team-hero-actions">
+          <div className="team-hero-stat">
+            <span>Total users</span>
+            <strong>{loading ? "..." : formatNumber(users.length)}</strong>
+          </div>
+          <div className="team-hero-stat success">
+            <span>Active</span>
+            <strong>{loading ? "..." : formatNumber(activeUsers)}</strong>
+          </div>
+          <div className="team-hero-stat">
+            <span>Admins</span>
+            <strong>{loading ? "..." : formatNumber(administrators)}</strong>
+          </div>
+          {canManageUsers && (
           <button className="primary-button" onClick={openCreate}>
             <UserPlus size={18} />
             Add User
           </button>
-        ) : null}
-      />
+          )}
+        </div>
+      </div>
 
       {!loading && users.length > 0 && (
         <div className="team-summary" aria-label="Team summary">
@@ -4164,7 +4216,7 @@ function CounselorsPage({
           </footer>
         )}
       </div>
-    </>
+    </section>
   );
 }
 

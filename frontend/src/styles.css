@@ -2940,6 +2940,206 @@ td {
   justify-content: flex-start;
 }
 
+.team-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.team-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 22px;
+  border: 1px solid #dbe3ef;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.045);
+}
+
+.team-hero h1 {
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.04em;
+}
+
+.team-hero p {
+  max-width: 680px;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.team-hero-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(104px, 1fr));
+  gap: 10px;
+  min-width: min(470px, 100%);
+}
+
+.team-hero-actions .primary-button {
+  grid-column: 1 / -1;
+  border-radius: 2px;
+}
+
+.team-hero-stat {
+  display: grid;
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.team-hero-stat span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.team-hero-stat strong {
+  color: #0f172a;
+  font-size: 20px;
+  letter-spacing: -0.04em;
+}
+
+.team-hero-stat.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.team-hero-stat.success strong {
+  color: #15803d;
+}
+
+.team-workspace .team-summary {
+  margin-bottom: 0;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.04);
+}
+
+.team-workspace .team-summary > div {
+  border-right-color: #edf2f7;
+}
+
+.team-workspace .team-summary span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.team-workspace .team-summary strong {
+  color: #0f172a;
+  letter-spacing: -0.04em;
+}
+
+.team-workspace .team-notice {
+  margin-bottom: 0;
+  border-radius: 2px;
+}
+
+.team-workspace .team-toolbar {
+  margin-bottom: 0;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.04);
+}
+
+.team-workspace .team-toolbar > label > span {
+  color: #475569;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.team-workspace .team-toolbar select,
+.team-workspace .team-search {
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.team-workspace .team-search {
+  background: #fff;
+}
+
+.team-workspace .team-toolbar select:focus,
+.team-workspace .team-search:focus-within {
+  outline: 2px solid rgba(37, 99, 235, 0.16);
+  border-color: #2563eb;
+  background: #fff;
+}
+
+.team-workspace .team-clear-filter {
+  border-radius: 2px;
+}
+
+.team-workspace .table-card {
+  overflow: hidden;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.05);
+}
+
+.team-workspace .table-card table {
+  min-width: 960px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.team-workspace .table-card thead th {
+  height: 44px;
+  border-bottom: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.team-workspace .table-card tbody td {
+  height: 72px;
+  border-bottom: 1px solid #edf2f7;
+  color: #334155;
+  font-size: 13px;
+}
+
+.team-workspace .table-card tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.team-workspace .student-cell > span {
+  border-radius: 2px;
+}
+
+.team-workspace .badge,
+.team-workspace .icon-button,
+.team-workspace .table-action-button {
+  border-radius: 2px;
+}
+
+.team-workspace .table-action-button {
+  border: 1px solid #dbe3ef;
+  background: #fff;
+  color: #334155;
+}
+
+.team-workspace .table-action-button:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.team-workspace .team-table-footer {
+  border-top: 1px solid #dbe3ef;
+  background: #f8fafc;
+}
+
 .student-cell {
   display: flex;
   align-items: center;
@@ -5450,6 +5650,14 @@ td {
   .enrollments-hero-actions {
     width: 100%;
   }
+
+  .team-hero {
+    flex-direction: column;
+  }
+
+  .team-hero-actions {
+    width: 100%;
+  }
 }
 
 @media (max-width: 760px) {
@@ -5650,5 +5858,22 @@ td {
   .enrollment-pagination {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .team-hero {
+    padding: 18px;
+  }
+
+  .team-hero-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .team-workspace .team-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .team-workspace .table-card {
+    overflow-x: auto;
   }
 }

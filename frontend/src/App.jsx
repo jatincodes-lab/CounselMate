@@ -745,6 +745,11 @@ function App() {
     return getApplicationDetail(application.id);
   }, successMessage);
 
+  const runApplicationPaymentAction = (application, action, successMessage = "Fee ledger updated.") => runApplicationAction(async () => {
+    await action(application.leadId);
+    return getApplicationDetail(application.id);
+  }, successMessage);
+
   const handleApplicationDocumentDownload = async (application, document) => {
     if (!application?.leadId || !document?.documentId) {
       return;
@@ -1157,8 +1162,29 @@ function App() {
                 "Document deleted.",
               )}
               onDownloadDocument={handleApplicationDocumentDownload}
+              onCreatePayment={(application, payload) => runApplicationPaymentAction(
+                application,
+                (leadId) => createLeadPayment(leadId, payload),
+                "Fee item added.",
+              )}
+              onUpdatePayment={(application, payment, payload) => runApplicationPaymentAction(
+                application,
+                (leadId) => updateLeadPayment(leadId, payment.id, payload),
+                "Fee item updated.",
+              )}
+              onAddPaymentTransaction={(application, payment, payload) => runApplicationPaymentAction(
+                application,
+                (leadId) => addLeadPaymentTransaction(leadId, payment.id, payload),
+                "Payment recorded.",
+              )}
+              onCancelPayment={(application, payment) => runApplicationPaymentAction(
+                application,
+                (leadId) => cancelLeadPayment(leadId, payment.id, { version: payment.version }),
+                "Fee item cancelled.",
+              )}
               currentUser={currentUser}
               canManageLeads={canManageLeads}
+              canManagePayments={canManagePayments}
             />
           )}
           {activePage === "counselors" && (
@@ -4285,8 +4311,13 @@ function ApplicationsPage({
   onRejectDocument,
   onDeleteDocument,
   onDownloadDocument,
+  onCreatePayment,
+  onUpdatePayment,
+  onAddPaymentTransaction,
+  onCancelPayment,
   currentUser,
   canManageLeads,
+  canManagePayments,
 }) {
   const items = applications?.items || [];
   const totalPages = Math.max(1, Math.ceil((applications?.total || 0) / Math.max(applications?.pageSize || 25, 1)));
@@ -4364,8 +4395,13 @@ function ApplicationsPage({
           onRejectDocument={onRejectDocument}
           onDeleteDocument={onDeleteDocument}
           onDownloadDocument={onDownloadDocument}
+          onCreatePayment={onCreatePayment}
+          onUpdatePayment={onUpdatePayment}
+          onAddPaymentTransaction={onAddPaymentTransaction}
+          onCancelPayment={onCancelPayment}
           currentUser={currentUser}
           canManageLeads={canManageLeads}
+          canManagePayments={canManagePayments}
         />
       )}
     </>
@@ -4384,17 +4420,44 @@ function ApplicationDetailPanel({
   onRejectDocument,
   onDeleteDocument,
   onDownloadDocument,
+  onCreatePayment,
+  onUpdatePayment,
+  onAddPaymentTransaction,
+  onCancelPayment,
   currentUser,
   canManageLeads,
+  canManagePayments,
 }) {
   const readiness = application.readiness || {};
   const [documentForms, setDocumentForms] = useState({});
+  const [paymentForm, setPaymentForm] = useState(createDefaultPaymentForm());
+  const [paymentTransactionForms, setPaymentTransactionForms] = useState({});
+  const [editingPaymentId, setEditingPaymentId] = useState("");
+  const [editingPaymentForm, setEditingPaymentForm] = useState(null);
   const documents = application.documents || [];
+  const payments = application.payments || [];
+  const paymentSummary = application.paymentSummary || {
+    totalDue: payments.filter((item) => item.status !== "Cancelled").reduce((sum, item) => sum + Number(item.amountDue || 0), 0),
+    totalPaid: payments.filter((item) => item.status !== "Cancelled").reduce((sum, item) => sum + Number(item.amountPaid || 0), 0),
+    balance: payments.filter((item) => item.status !== "Cancelled").reduce((sum, item) => sum + Number(item.balance || 0), 0),
+    currency: "INR",
+    paymentsReady: true,
+    receiptDocumentVerified: false,
+  };
   const archived = Boolean(application.archivedAt);
   const canUploadDocuments = canManageLeads && !archived && !saving && !["Enrolled", "Cancelled"].includes(application.status);
   const canReviewDocuments = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role) && !archived && !saving && application.status !== "Enrolled";
+  const canManageApplicationPayments = canManagePayments && !archived && !saving && !["Enrolled", "Cancelled"].includes(application.status);
   const missingRequiredDocuments = documents.filter((item) => item.isRequired && !item.documentId).length;
   const pendingRequiredDocuments = documents.filter((item) => item.isRequired && item.documentId && item.status !== "Verified").length;
+
+  useEffect(() => {
+    setDocumentForms({});
+    setPaymentForm(createDefaultPaymentForm());
+    setPaymentTransactionForms({});
+    setEditingPaymentId("");
+    setEditingPaymentForm(null);
+  }, [application.id]);
 
   const updateDocumentForm = (documentTypeId, updates) => {
     setDocumentForms((current) => ({
@@ -4436,6 +4499,100 @@ function ApplicationDetailPanel({
     const updated = await onRejectDocument(application, document, notes.trim());
     if (updated) {
       updateDocumentForm(document.documentTypeId, { rejectNotes: "" });
+    }
+  };
+
+  const openPaymentEdit = (payment) => {
+    setEditingPaymentId(payment.id);
+    setEditingPaymentForm({
+      title: payment.title,
+      amountDue: String(payment.amountDue),
+      dueDate: payment.dueDate ? toDateInputValue(new Date(payment.dueDate)) : "",
+      notes: payment.notes || "",
+    });
+  };
+
+  const handlePaymentCreate = async (event) => {
+    event.preventDefault();
+    if (!canManageApplicationPayments || !paymentForm.title.trim() || !paymentForm.amountDue || Number(paymentForm.amountDue) <= 0) {
+      return;
+    }
+
+    const updated = await onCreatePayment(application, {
+      title: paymentForm.title.trim(),
+      amountDue: Number(paymentForm.amountDue),
+      currency: "INR",
+      dueDate: paymentForm.dueDate ? new Date(`${paymentForm.dueDate}T00:00:00`).toISOString() : null,
+      notes: optionalValue(paymentForm.notes),
+      version: 0,
+    });
+    if (updated) {
+      setPaymentForm(createDefaultPaymentForm());
+    }
+  };
+
+  const handlePaymentUpdate = async (event) => {
+    event.preventDefault();
+    const payment = payments.find((item) => item.id === editingPaymentId);
+    if (!canManageApplicationPayments || !payment || !editingPaymentForm?.title.trim() || !editingPaymentForm.amountDue || Number(editingPaymentForm.amountDue) < Number(payment.amountPaid || 0)) {
+      return;
+    }
+
+    const updated = await onUpdatePayment(application, payment, {
+      title: editingPaymentForm.title.trim(),
+      amountDue: Number(editingPaymentForm.amountDue),
+      currency: "INR",
+      dueDate: editingPaymentForm.dueDate ? new Date(`${editingPaymentForm.dueDate}T00:00:00`).toISOString() : null,
+      notes: optionalValue(editingPaymentForm.notes),
+      version: payment.version,
+    });
+    if (updated) {
+      setEditingPaymentId("");
+      setEditingPaymentForm(null);
+    }
+  };
+
+  const updatePaymentTransactionForm = (paymentId, updates) => {
+    setPaymentTransactionForms((current) => ({
+      ...current,
+      [paymentId]: {
+        amount: "",
+        method: "UPI",
+        referenceNumber: "",
+        receiptNumber: "",
+        paidAt: "",
+        notes: "",
+        ...(current[paymentId] || {}),
+        ...updates,
+      },
+    }));
+  };
+
+  const handlePaymentTransactionCreate = async (event, payment) => {
+    event.preventDefault();
+    const form = paymentTransactionForms[payment.id] || {};
+    const amount = Number(form.amount);
+    if (!canManageApplicationPayments || !amount || amount <= 0 || amount > Number(payment.balance || 0)) {
+      return;
+    }
+
+    const updated = await onAddPaymentTransaction(application, payment, {
+      amount,
+      method: form.method || "UPI",
+      referenceNumber: optionalValue(form.referenceNumber),
+      receiptNumber: optionalValue(form.receiptNumber),
+      paidAt: form.paidAt ? new Date(form.paidAt).toISOString() : null,
+      notes: optionalValue(form.notes),
+      version: payment.version,
+    });
+    if (updated) {
+      updatePaymentTransactionForm(payment.id, {
+        amount: "",
+        referenceNumber: "",
+        receiptNumber: "",
+        paidAt: "",
+        notes: "",
+      });
     }
   };
 
@@ -4573,6 +4730,146 @@ function ApplicationDetailPanel({
                     )}
                     {!canReplaceThisDocument && canUploadDocuments && document.status === "Verified" && (
                       <p className="drawer-permission-note span-2">Only reviewers can replace verified documents.</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+          <section className="drawer-section">
+            <div className="section-heading">
+              <h3>Fee Ledger</h3>
+              <span>{formatCurrency(paymentSummary.balance || 0, paymentSummary.currency || "INR")}</span>
+            </div>
+            <div className="fee-summary-grid">
+              <InfoItem label="Total Due" value={formatCurrency(paymentSummary.totalDue || 0, paymentSummary.currency || "INR")} />
+              <InfoItem label="Paid" value={formatCurrency(paymentSummary.totalPaid || 0, paymentSummary.currency || "INR")} />
+              <InfoItem label="Balance" value={formatCurrency(paymentSummary.balance || 0, paymentSummary.currency || "INR")} />
+              <InfoItem label="Receipt Document" value={paymentSummary.receiptDocumentVerified ? "Verified" : "Not verified"} />
+            </div>
+            {!paymentSummary.paymentsReady && (
+              <div className="application-blocker-note">
+                <strong>Payment readiness blocked</strong>
+                <span>{formatCurrency(paymentSummary.balance || 0, paymentSummary.currency || "INR")} balance remains before approval/enrollment.</span>
+              </div>
+            )}
+            {archived && <p className="drawer-permission-note">Restore this lead before adding or updating payments.</p>}
+            {!canManagePayments && <p className="drawer-permission-note">Payment management is limited to owner, admin, and accountant roles.</p>}
+            {application.status === "Enrolled" && <p className="drawer-permission-note">This application is enrolled. Fee ledger is read-only here.</p>}
+            {canManageApplicationPayments && (
+              <form className="payment-form" onSubmit={handlePaymentCreate}>
+                <Field label="Fee Item" required>
+                  <input value={paymentForm.title} maxLength={160} onChange={(event) => setPaymentForm((current) => ({ ...current, title: event.target.value }))} required />
+                </Field>
+                <Field label="Amount Due" required>
+                  <input type="number" min="0.01" step="0.01" value={paymentForm.amountDue} onChange={(event) => setPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required />
+                </Field>
+                <Field label="Due Date">
+                  <input type="date" value={paymentForm.dueDate} onChange={(event) => setPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} />
+                </Field>
+                <Field label="Notes">
+                  <input value={paymentForm.notes} maxLength={500} onChange={(event) => setPaymentForm((current) => ({ ...current, notes: event.target.value }))} />
+                </Field>
+                <button type="submit" className="primary-button" disabled={!paymentForm.title.trim() || !paymentForm.amountDue || Number(paymentForm.amountDue) <= 0}>
+                  {saving ? "Saving..." : "Add Fee"}
+                </button>
+              </form>
+            )}
+            <div className="payment-list">
+              {payments.length === 0 && <p className="muted-text">No fee items added yet.</p>}
+              {payments.map((payment) => {
+                const transactionForm = paymentTransactionForms[payment.id] || {};
+                const editable = canManageApplicationPayments && payment.status !== "Cancelled";
+                const canReceive = editable && Number(payment.balance || 0) > 0;
+                const canCancel = editable && Number(payment.amountPaid || 0) <= 0;
+                return (
+                  <div className="payment-row" key={payment.id}>
+                    <div className="payment-main">
+                      <div className="document-title-row">
+                        <strong>{payment.title}</strong>
+                        <Badge label={payment.status} muted={payment.status === "Pending"} danger={payment.status === "Overdue"} />
+                      </div>
+                      <div className="payment-amount-grid">
+                        <InfoItem label="Due" value={formatCurrency(payment.amountDue, payment.currency)} />
+                        <InfoItem label="Paid" value={formatCurrency(payment.amountPaid, payment.currency)} />
+                        <InfoItem label="Balance" value={formatCurrency(payment.balance, payment.currency)} />
+                      </div>
+                      {payment.dueDate && <small>Due {formatDate(payment.dueDate)}</small>}
+                      {payment.notes && <small>{payment.notes}</small>}
+                    </div>
+                    <div className="document-actions">
+                      {editable && (
+                        <button type="button" className="ghost-button" disabled={saving} onClick={() => openPaymentEdit(payment)}>
+                          <Pencil size={16} />
+                          Edit
+                        </button>
+                      )}
+                      {canCancel && (
+                        <button type="button" className="ghost-button danger-text" disabled={saving} onClick={() => onCancelPayment(application, payment)}>
+                          <X size={16} />
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                    {editingPaymentId === payment.id && editingPaymentForm && (
+                      <form className="payment-form span-all" onSubmit={handlePaymentUpdate}>
+                        <Field label="Fee Item" required>
+                          <input value={editingPaymentForm.title} maxLength={160} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, title: event.target.value }))} required />
+                        </Field>
+                        <Field label="Amount Due" required>
+                          <input type="number" min={Math.max(Number(payment.amountPaid || 0), 0.01)} step="0.01" value={editingPaymentForm.amountDue} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required />
+                        </Field>
+                        <Field label="Due Date">
+                          <input type="date" value={editingPaymentForm.dueDate} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} />
+                        </Field>
+                        <Field label="Notes">
+                          <input value={editingPaymentForm.notes} maxLength={500} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, notes: event.target.value }))} />
+                        </Field>
+                        <div className="inline-editor-actions">
+                          <button type="button" className="ghost-button" disabled={saving} onClick={() => { setEditingPaymentId(""); setEditingPaymentForm(null); }}>Cancel</button>
+                          <button type="submit" className="primary-button" disabled={saving || !editingPaymentForm.title.trim() || Number(editingPaymentForm.amountDue) < Number(payment.amountPaid || 0)}>Save</button>
+                        </div>
+                      </form>
+                    )}
+                    {canReceive && (
+                      <form className="payment-transaction-form span-all" onSubmit={(event) => handlePaymentTransactionCreate(event, payment)}>
+                        <Field label="Receive Amount" required>
+                          <input type="number" min="0.01" max={payment.balance} step="0.01" value={transactionForm.amount || ""} onChange={(event) => updatePaymentTransactionForm(payment.id, { amount: event.target.value })} required />
+                        </Field>
+                        <Field label="Method">
+                          <select value={transactionForm.method || "UPI"} onChange={(event) => updatePaymentTransactionForm(payment.id, { method: event.target.value })}>
+                            {["UPI", "Cash", "Bank Transfer", "Card", "Cheque", "Other"].map((item) => <option key={item} value={item}>{item}</option>)}
+                          </select>
+                        </Field>
+                        <Field label="Paid At">
+                          <input type="datetime-local" value={transactionForm.paidAt || ""} onChange={(event) => updatePaymentTransactionForm(payment.id, { paidAt: event.target.value })} />
+                        </Field>
+                        <Field label="Reference">
+                          <input value={transactionForm.referenceNumber || ""} maxLength={120} onChange={(event) => updatePaymentTransactionForm(payment.id, { referenceNumber: event.target.value })} />
+                        </Field>
+                        <Field label="Receipt">
+                          <input value={transactionForm.receiptNumber || ""} maxLength={120} placeholder="Auto-generated if blank" onChange={(event) => updatePaymentTransactionForm(payment.id, { receiptNumber: event.target.value })} />
+                        </Field>
+                        <Field label="Notes">
+                          <input value={transactionForm.notes || ""} maxLength={500} onChange={(event) => updatePaymentTransactionForm(payment.id, { notes: event.target.value })} />
+                        </Field>
+                        <button type="submit" className="primary-button" disabled={saving || !transactionForm.amount || Number(transactionForm.amount) <= 0 || Number(transactionForm.amount) > Number(payment.balance || 0)}>
+                          {saving ? "Saving..." : "Record Payment"}
+                        </button>
+                      </form>
+                    )}
+                    {payment.transactions.length > 0 && (
+                      <div className="payment-transactions span-all">
+                        {payment.transactions.map((transaction) => (
+                          <div className="payment-transaction" key={transaction.id}>
+                            <strong>{formatCurrency(transaction.amount, payment.currency)}</strong>
+                            <span>{transaction.method}</span>
+                            <span>{formatFollowUpLabel(transaction.paidAt)}</span>
+                            <span>{transaction.receiptNumber || "No receipt"}</span>
+                            {transaction.referenceNumber && <span>{transaction.referenceNumber}</span>}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 );

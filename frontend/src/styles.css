@@ -2907,6 +2907,12 @@ td {
   font-size: 0.9rem;
 }
 
+.fee-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 260px 1fr;

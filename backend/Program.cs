@@ -5920,6 +5920,8 @@ static async Task<ApplicationDetailResponse> GetApplicationResponseAsync(AppDbCo
                     history.ChangedByUser == null ? "System" : history.ChangedByUser.FullName))
                 .ToArray(),
             Array.Empty<LeadDocumentChecklistItemResponse>(),
+            Array.Empty<LeadPaymentResponse>(),
+            new ApplicationPaymentSummaryResponse(0m, 0m, 0m, "INR", true, false),
             item.Enrollment == null ? null : new EnrollmentResponse(
                 item.Enrollment.EnrollmentNumber,
                 item.Enrollment.Status,
@@ -5934,6 +5936,16 @@ static async Task<ApplicationDetailResponse> GetApplicationResponseAsync(AppDbCo
         .Select(item => item.LeadId)
         .FirstAsync(cancellationToken);
     var documentChecklist = await GetLeadDocumentsResponseAsync(db, tenantId, leadInternalId, cancellationToken);
+    var paymentLedger = await GetLeadPaymentsResponseAsync(db, tenantId, leadInternalId, cancellationToken);
+    var activePayments = paymentLedger.Items.Where(item => item.Status != "Cancelled").ToArray();
+    var totalDue = activePayments.Sum(item => item.AmountDue);
+    var totalPaid = activePayments.Sum(item => item.AmountPaid);
+    var unpaidBalance = activePayments.Sum(item => item.Balance);
+    var currency = activePayments.Select(item => item.Currency).FirstOrDefault(item => !string.IsNullOrWhiteSpace(item)) ?? "INR";
+    var receiptDocumentReady = documentChecklist.Items.Any(item =>
+        item.Name.Contains("Payment Receipt", StringComparison.OrdinalIgnoreCase) &&
+        item.DocumentId is not null &&
+        item.Status == "Verified");
     var requiredDocumentTypes = await db.DocumentTypes.CountAsync(item => item.TenantId == tenantId && item.IsRequired && item.IsActive, cancellationToken);
     var verifiedRequiredDocuments = await db.LeadDocuments.CountAsync(item =>
         item.TenantId == tenantId &&
@@ -5942,13 +5954,17 @@ static async Task<ApplicationDetailResponse> GetApplicationResponseAsync(AppDbCo
         item.DocumentType.IsActive &&
         item.Status == "Verified",
         cancellationToken);
-    var unpaidBalance = await db.LeadPayments
-        .Where(item => item.TenantId == tenantId && item.Lead.LeadNumber == application.LeadId && item.CancelledAt == null)
-        .Select(item => item.AmountDue - item.Transactions.Sum(txn => txn.Amount))
-        .SumAsync(cancellationToken);
     return application with
     {
         Documents = documentChecklist.Items,
+        Payments = paymentLedger.Items,
+        PaymentSummary = new ApplicationPaymentSummaryResponse(
+            totalDue,
+            totalPaid,
+            unpaidBalance,
+            currency,
+            unpaidBalance <= 0,
+            receiptDocumentReady),
         Readiness = new ApplicationReadinessResponse(
             application.ArchivedAt is null,
             requiredDocumentTypes == 0 || verifiedRequiredDocuments >= requiredDocumentTypes,
@@ -6773,7 +6789,7 @@ static async Task<string?> ValidateApplicationReadyForApprovalAsync(AppDbContext
         .Where(item => item.TenantId == application.TenantId && item.LeadId == application.LeadId && item.CancelledAt == null)
         .Select(item => item.AmountDue - item.Transactions.Sum(txn => txn.Amount))
         .SumAsync(cancellationToken);
-    if (unpaidBalance > 0) return "Clear pending admission fees or waive the checklist requirement before approval.";
+    if (unpaidBalance > 0) return $"Payment pending: {FormatMoney(unpaidBalance, "INR")} balance remains. Collect payment or cancel/adjust unpaid fee items before approval.";
     return null;
 }
 
@@ -7243,11 +7259,14 @@ record ApplicationDetailResponse(
     IReadOnlyCollection<ApplicationChecklistItemResponse> Checklist,
     IReadOnlyCollection<ApplicationStatusHistoryResponse> StatusHistory,
     IReadOnlyCollection<LeadDocumentChecklistItemResponse> Documents,
+    IReadOnlyCollection<LeadPaymentResponse> Payments,
+    ApplicationPaymentSummaryResponse PaymentSummary,
     EnrollmentResponse? Enrollment,
     ApplicationReadinessResponse? Readiness = null);
 record ApplicationChecklistItemResponse(Guid Id, string Name, string Category, bool IsRequired, bool IsCompleted, bool IsWaived, string? Notes, int Version, DateTimeOffset? CompletedAt, string? CompletedBy);
 record ApplicationStatusHistoryResponse(string? PreviousStatus, string NewStatus, string? Note, DateTimeOffset ChangedAt, string ChangedBy);
 record EnrollmentResponse(string Id, string Status, string? Intake, DateTimeOffset EnrolledAt, int Version);
+record ApplicationPaymentSummaryResponse(decimal TotalDue, decimal TotalPaid, decimal Balance, string Currency, bool PaymentsReady, bool ReceiptDocumentVerified);
 record ApplicationReadinessResponse(bool LeadActive, bool DocumentsReady, bool PaymentsReady, int RequiredChecklistMissing, int RequiredDocuments, int VerifiedRequiredDocuments, decimal UnpaidBalance);
 
 record LeadImportMappingResult(

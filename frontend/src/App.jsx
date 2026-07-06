@@ -4578,10 +4578,39 @@ function EnrollmentsPage({
   onStatusUpdate,
 }) {
   const items = enrollments?.items || [];
+  const totalEnrollments = enrollments?.total || 0;
+  const activeCount = items.filter((item) => item.status === "Active").length;
+  const deferredCount = items.filter((item) => item.status === "Deferred").length;
+  const pendingDocsCount = items.filter((item) => !item.documentsReady).length;
   const totalPages = Math.max(1, Math.ceil((enrollments?.total || 0) / Math.max(enrollments?.pageSize || 25, 1)));
   return (
-    <>
-      <PageTitle title="Enrolled Students" subtitle="Manage admitted student records, enrollment status, and admission readiness snapshots." />
+    <section className="enrollments-workspace">
+      <div className="enrollments-hero">
+        <div>
+          <span className="eyebrow">Student records</span>
+          <h1>Enrolled Students</h1>
+          <p>Manage admitted students, enrollment status, fee balance, and document readiness in one workspace.</p>
+        </div>
+        <div className="enrollments-hero-actions">
+          <div className="enrollments-hero-stat">
+            <span>Total</span>
+            <strong>{status.loading ? "..." : formatNumber(totalEnrollments)}</strong>
+          </div>
+          <div className="enrollments-hero-stat success">
+            <span>Active</span>
+            <strong>{status.loading ? "..." : formatNumber(activeCount)}</strong>
+          </div>
+          <div className="enrollments-hero-stat">
+            <span>Deferred</span>
+            <strong>{status.loading ? "..." : formatNumber(deferredCount)}</strong>
+          </div>
+          <div className="enrollments-hero-stat warning">
+            <span>Docs Pending</span>
+            <strong>{status.loading ? "..." : formatNumber(pendingDocsCount)}</strong>
+          </div>
+        </div>
+      </div>
+
       <div className="report-filter-panel enrollment-filter-panel">
         <Field label="Search"><input value={filters.search} placeholder="Student, ENR, APP, or lead" onChange={(event) => onFiltersChange({ search: event.target.value })} /></Field>
         <Field label="Status">
@@ -4606,6 +4635,7 @@ function EnrollmentsPage({
         <div className="lead-filter-actions">
           <strong>{status.loading ? "Loading..." : `${enrollments?.total || 0} enrolled students`}</strong>
           <button className="soft-button" type="button" onClick={onRetry} disabled={status.loading}>Refresh</button>
+          <button className="ghost-button" type="button" onClick={() => onFiltersChange({ status: "", search: "", courseId: "", branchId: "", intake: "", page: 1 })} disabled={status.loading || (!filters.status && !filters.search && !filters.courseId && !filters.branchId && !filters.intake)}>Reset</button>
         </div>
       </div>
       {status.error && <div className="form-alert" role="alert">{status.error}</div>}
@@ -4633,16 +4663,16 @@ function EnrollmentsPage({
           </table>
         )}
         <footer className="table-footer">
-          <span>Page {enrollments?.page || 1} of {totalPages}</span>
-          <div>
+          <span>Showing {items.length} of {formatNumber(totalEnrollments)} enrolled students</span>
+          <div className="enrollment-pagination">
             <button className="pager" disabled={(enrollments?.page || 1) <= 1 || status.loading} onClick={() => onFiltersChange({ page: (enrollments?.page || 1) - 1 })}>Prev</button>
-            <button className="pager active" disabled>{enrollments?.page || 1}</button>
+            <span className="pagination-status">Page {enrollments?.page || 1} of {totalPages}</span>
             <button className="pager" disabled={(enrollments?.page || 1) >= totalPages || status.loading} onClick={() => onFiltersChange({ page: (enrollments?.page || 1) + 1 })}>Next</button>
           </div>
         </footer>
       </div>
       {selectedEnrollment && <EnrollmentDetailPanel enrollment={selectedEnrollment} currentUser={currentUser} saving={status.saving} onClose={onCloseDetail} onStatusUpdate={onStatusUpdate} />}
-    </>
+    </section>
   );
 }
 

@@ -15,7 +15,9 @@ public sealed class Enrollment
     public int Version { get; set; } = 1;
     public DateTimeOffset EnrolledAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
     public Guid? CreatedByUserId { get; set; }
+    public Guid? UpdatedByUserId { get; set; }
 
     public Tenant Tenant { get; set; } = null!;
     public AdmissionApplication Application { get; set; } = null!;
@@ -23,4 +25,5 @@ public sealed class Enrollment
     public Course Course { get; set; } = null!;
     public Branch? Branch { get; set; }
     public AppUser? CreatedByUser { get; set; }
+    public AppUser? UpdatedByUser { get; set; }
 }

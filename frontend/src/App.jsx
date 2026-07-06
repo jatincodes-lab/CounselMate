@@ -59,6 +59,8 @@ import {
   getCounsellorWorkInsights,
   getApplicationDetail,
   getApplications,
+  getEnrollmentDetail,
+  getEnrollments,
   getCommunicationTemplates,
   getCurrentTenant,
   getPlatformTenants,
@@ -93,6 +95,7 @@ import {
   transitionApplication,
   updateApplicationChecklistItem,
   enrollApplication,
+  updateEnrollmentStatus,
 } from "./api";
 import counselMateLogo from "./assets/counselmate-logo.png";
 import { activities } from "./data/mockData";
@@ -104,6 +107,7 @@ const navItems = [
   { id: "pipeline", label: "Pipeline", icon: BarChart3 },
   { id: "followups", label: "Follow-ups", icon: CalendarDays },
   { id: "applications", label: "Applications", icon: BookOpen },
+  { id: "enrollments", label: "Enrollments", icon: UserCheck },
   { id: "counselors", label: "Counsellors", icon: Users },
   { id: "reports", label: "Reports", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings },
@@ -168,6 +172,10 @@ function App() {
   const [applicationsData, setApplicationsData] = useState({ items: [], page: 1, pageSize: 25, total: 0 });
   const [applicationStatus, setApplicationStatus] = useState({ loading: false, saving: false, error: "", message: "" });
   const [selectedApplication, setSelectedApplication] = useState(null);
+  const [enrollmentFilters, setEnrollmentFilters] = useState({ status: "", search: "", courseId: "", branchId: "", intake: "", page: 1, pageSize: 25 });
+  const [enrollmentsData, setEnrollmentsData] = useState({ items: [], page: 1, pageSize: 25, total: 0 });
+  const [enrollmentStatus, setEnrollmentStatus] = useState({ loading: false, saving: false, error: "", message: "" });
+  const [selectedEnrollment, setSelectedEnrollment] = useState(null);
   const [selectedLeadId, setSelectedLeadId] = useState("");
   const [leadDetail, setLeadDetail] = useState(null);
   const [leadDetailStatus, setLeadDetailStatus] = useState({
@@ -321,6 +329,22 @@ function App() {
     }
   }, [currentUser, applicationFilters]);
 
+  const loadEnrollments = useCallback(async (filters = enrollmentFilters) => {
+    if (!currentUser) return;
+    setEnrollmentStatus((current) => ({ ...current, loading: true, error: "", message: "" }));
+    try {
+      const response = await getEnrollments(filters);
+      setEnrollmentsData(response);
+      setEnrollmentStatus((current) => ({ ...current, loading: false, error: "" }));
+    } catch (error) {
+      setEnrollmentStatus((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load enrollments.",
+      }));
+    }
+  }, [currentUser, enrollmentFilters]);
+
   useEffect(() => {
     const restoreSession = async () => {
       const { token } = getStoredAuth();
@@ -361,6 +385,12 @@ function App() {
       loadApplications();
     }
   }, [activePage, currentUser, loadApplications]);
+
+  useEffect(() => {
+    if (currentUser && activePage === "enrollments") {
+      loadEnrollments();
+    }
+  }, [activePage, currentUser, loadEnrollments]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -712,6 +742,37 @@ function App() {
     const next = { ...applicationFilters, ...updates, page: updates.page || 1 };
     setApplicationFilters(next);
     await loadApplications(next);
+  };
+
+  const handleEnrollmentFiltersChange = async (updates) => {
+    const next = { ...enrollmentFilters, ...updates, page: updates.page || 1 };
+    setEnrollmentFilters(next);
+    await loadEnrollments(next);
+  };
+
+  const openEnrollmentDetail = async (enrollmentId) => {
+    setEnrollmentStatus((current) => ({ ...current, saving: true, error: "", message: "" }));
+    try {
+      const detail = await getEnrollmentDetail(enrollmentId);
+      setSelectedEnrollment(detail);
+      setEnrollmentStatus((current) => ({ ...current, saving: false, error: "" }));
+    } catch (error) {
+      setEnrollmentStatus((current) => ({ ...current, saving: false, error: error instanceof Error ? error.message : "Unable to load enrollment." }));
+    }
+  };
+
+  const handleEnrollmentStatusUpdate = async (enrollment, status, note) => {
+    setEnrollmentStatus((current) => ({ ...current, saving: true, error: "", message: "" }));
+    try {
+      const detail = await updateEnrollmentStatus(enrollment.id, { status, note: optionalValue(note), version: enrollment.version });
+      setSelectedEnrollment(detail);
+      await loadEnrollments();
+      setEnrollmentStatus((current) => ({ ...current, saving: false, error: "", message: "Enrollment status updated." }));
+      return detail;
+    } catch (error) {
+      setEnrollmentStatus((current) => ({ ...current, saving: false, error: error instanceof Error ? error.message : "Unable to update enrollment.", message: "" }));
+      return null;
+    }
   };
 
   const openApplicationDetail = async (applicationId) => {
@@ -1185,6 +1246,21 @@ function App() {
               currentUser={currentUser}
               canManageLeads={canManageLeads}
               canManagePayments={canManagePayments}
+            />
+          )}
+          {activePage === "enrollments" && (
+            <EnrollmentsPage
+              enrollments={enrollmentsData}
+              filters={enrollmentFilters}
+              options={crmData.leadOptions}
+              status={enrollmentStatus}
+              selectedEnrollment={selectedEnrollment}
+              currentUser={currentUser}
+              onFiltersChange={handleEnrollmentFiltersChange}
+              onRetry={() => loadEnrollments()}
+              onOpen={openEnrollmentDetail}
+              onCloseDetail={() => setSelectedEnrollment(null)}
+              onStatusUpdate={handleEnrollmentStatusUpdate}
             />
           )}
           {activePage === "counselors" && (
@@ -4291,6 +4367,169 @@ function ReportsPage({
         </div>
       )}
     </>
+  );
+}
+
+function EnrollmentsPage({
+  enrollments,
+  filters,
+  options,
+  status,
+  selectedEnrollment,
+  currentUser,
+  onFiltersChange,
+  onRetry,
+  onOpen,
+  onCloseDetail,
+  onStatusUpdate,
+}) {
+  const items = enrollments?.items || [];
+  const totalPages = Math.max(1, Math.ceil((enrollments?.total || 0) / Math.max(enrollments?.pageSize || 25, 1)));
+  return (
+    <>
+      <PageTitle title="Enrolled Students" subtitle="Manage admitted student records, enrollment status, and admission readiness snapshots." />
+      <div className="report-filter-panel enrollment-filter-panel">
+        <Field label="Search"><input value={filters.search} placeholder="Student, ENR, APP, or lead" onChange={(event) => onFiltersChange({ search: event.target.value })} /></Field>
+        <Field label="Status">
+          <select value={filters.status} onChange={(event) => onFiltersChange({ status: event.target.value })}>
+            <option value="">All statuses</option>
+            {["Active", "Deferred", "Completed", "Cancelled"].map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </Field>
+        <Field label="Course">
+          <select value={filters.courseId} onChange={(event) => onFiltersChange({ courseId: event.target.value })}>
+            <option value="">All courses</option>
+            {(options.courses || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Branch">
+          <select value={filters.branchId} onChange={(event) => onFiltersChange({ branchId: event.target.value })}>
+            <option value="">All branches</option>
+            {(options.branches || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Intake"><input value={filters.intake} maxLength={120} placeholder="e.g. July 2026" onChange={(event) => onFiltersChange({ intake: event.target.value })} /></Field>
+        <div className="lead-filter-actions">
+          <strong>{status.loading ? "Loading..." : `${enrollments?.total || 0} enrolled students`}</strong>
+          <button className="soft-button" type="button" onClick={onRetry} disabled={status.loading}>Refresh</button>
+        </div>
+      </div>
+      {status.error && <div className="form-alert" role="alert">{status.error}</div>}
+      {status.message && <div className="form-success" role="status">{status.message}</div>}
+      <div className="table-card">
+        {status.loading && <StatePanel title="Loading enrollments" message="Fetching admitted student records..." />}
+        {!status.loading && items.length === 0 && <StatePanel title="No enrollments" message="Approved applications will appear here after enrollment is completed." />}
+        {!status.loading && items.length > 0 && (
+          <table>
+            <thead><tr><th>Enrollment</th><th>Student</th><th>Course</th><th>Branch</th><th>Status</th><th>Fee Balance</th><th>Documents</th><th>Enrolled</th></tr></thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className="clickable-row" onClick={() => onOpen(item.id)}>
+                  <td><strong>{item.id}</strong><br /><small>{item.applicationId}</small></td>
+                  <td>{item.studentName}<br /><small>{item.leadId}</small></td>
+                  <td>{item.course}{item.intake ? <small> · {item.intake}</small> : null}</td>
+                  <td>{item.branch || "No branch"}</td>
+                  <td><Status status={item.status} /></td>
+                  <td>{formatCurrency(item.feeBalance, "INR")}</td>
+                  <td><Badge label={item.documentsReady ? "Ready" : "Pending"} muted={!item.documentsReady} /></td>
+                  <td>{formatDate(item.enrolledAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <footer className="table-footer">
+          <span>Page {enrollments?.page || 1} of {totalPages}</span>
+          <div>
+            <button className="pager" disabled={(enrollments?.page || 1) <= 1 || status.loading} onClick={() => onFiltersChange({ page: (enrollments?.page || 1) - 1 })}>Prev</button>
+            <button className="pager active" disabled>{enrollments?.page || 1}</button>
+            <button className="pager" disabled={(enrollments?.page || 1) >= totalPages || status.loading} onClick={() => onFiltersChange({ page: (enrollments?.page || 1) + 1 })}>Next</button>
+          </div>
+        </footer>
+      </div>
+      {selectedEnrollment && <EnrollmentDetailPanel enrollment={selectedEnrollment} currentUser={currentUser} saving={status.saving} onClose={onCloseDetail} onStatusUpdate={onStatusUpdate} />}
+    </>
+  );
+}
+
+function EnrollmentDetailPanel({ enrollment, currentUser, saving, onClose, onStatusUpdate }) {
+  const [note, setNote] = useState("");
+  const canManage = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role);
+  const isOwnerOrAdmin = ["Owner", "Admin"].includes(currentUser?.role);
+  const availableStatuses = enrollment.status === "Active"
+    ? ["Deferred", "Cancelled", "Completed"]
+    : enrollment.status === "Deferred"
+      ? ["Active", "Cancelled"]
+      : isOwnerOrAdmin ? ["Active"] : [];
+
+  useEffect(() => setNote(""), [enrollment.id]);
+
+  return (
+    <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
+      <aside className="lead-drawer application-drawer" role="dialog" aria-modal="true" aria-labelledby="enrollment-detail-title">
+        <header className="drawer-header">
+          <div><span className="eyebrow">{enrollment.id}</span><h2 id="enrollment-detail-title">{enrollment.studentName}</h2></div>
+          <button className="icon-button" onClick={onClose} disabled={saving} aria-label="Close enrollment"><X size={20} /></button>
+        </header>
+        <div className="drawer-body">
+          <section className="lead-summary">
+            <div className="lead-avatar">{initials(enrollment.studentName)}</div>
+            <div><h3>{enrollment.course}</h3><p>{enrollment.applicationId} · {enrollment.leadId}</p></div>
+            <Status status={enrollment.status} />
+          </section>
+          {enrollment.archivedAt && <div className="form-alert">The linked lead is archived. Enrollment history remains available.</div>}
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Student Profile</h3></div>
+            <div className="detail-grid">
+              <InfoItem label="Phone" value={enrollment.phone || "Not added"} />
+              <InfoItem label="Email" value={enrollment.email || "Not added"} />
+              <InfoItem label="Guardian" value={enrollment.guardianName || "Not added"} />
+              <InfoItem label="City" value={enrollment.city || "Not added"} />
+              <InfoItem label="Branch" value={enrollment.branch || "No branch"} />
+              <InfoItem label="Intake" value={enrollment.intake || "Not added"} />
+              <InfoItem label="Enrolled" value={formatDate(enrollment.enrolledAt)} />
+              <InfoItem label="Updated" value={formatFollowUpLabel(enrollment.updatedAt)} />
+            </div>
+          </section>
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Admission Snapshot</h3></div>
+            <div className="admission-readiness">
+              <MetricPill label="Application" value={formatApplicationStatus(enrollment.applicationStatus)} />
+              <MetricPill label="Checklist" value={`${enrollment.checklistDone}/${enrollment.checklistTotal}`} tone={enrollment.checklistDone < enrollment.checklistTotal ? "warn" : ""} />
+              <MetricPill label="Documents" value={`${enrollment.verifiedRequiredDocuments}/${enrollment.requiredDocuments}`} tone={enrollment.verifiedRequiredDocuments < enrollment.requiredDocuments ? "warn" : ""} />
+            </div>
+            <div className="fee-summary-grid">
+              <InfoItem label="Total Due" value={formatCurrency(enrollment.totalDue, enrollment.currency)} />
+              <InfoItem label="Total Paid" value={formatCurrency(enrollment.totalPaid, enrollment.currency)} />
+              <InfoItem label="Balance" value={formatCurrency(enrollment.balance, enrollment.currency)} />
+              <InfoItem label="Created By" value={enrollment.createdBy} />
+            </div>
+          </section>
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Status Actions</h3></div>
+            {!canManage && <p className="drawer-permission-note">Only owner, admin, and branch manager roles can change enrollment status.</p>}
+            {canManage && availableStatuses.length === 0 && <p className="drawer-permission-note">This is a final status. Only owners and admins can reopen it.</p>}
+            {canManage && availableStatuses.length > 0 && (
+              <>
+                <Field label="Status Note"><textarea value={note} maxLength={500} disabled={saving} placeholder="Optional reason for this status change" onChange={(event) => setNote(event.target.value)} /></Field>
+                <div className="application-actions">
+                  {availableStatuses.map((nextStatus) => <button key={nextStatus} className={nextStatus === "Cancelled" ? "ghost-button danger-text" : "ghost-button"} disabled={saving} onClick={() => onStatusUpdate(enrollment, nextStatus, note)}>{nextStatus}</button>)}
+                </div>
+              </>
+            )}
+          </section>
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Recent Activity</h3><span>{enrollment.recentActivities.length}</span></div>
+            <div className="timeline">
+              {enrollment.recentActivities.length === 0 && <p className="muted-text">No recent activity.</p>}
+              {enrollment.recentActivities.map((item) => (
+                <div className="timeline-item" key={item.id}><span className="timeline-dot note" /><div><strong>{item.type}</strong><p>{item.description}</p><small>{formatFollowUpLabel(item.createdAt)} · {item.createdBy}</small></div></div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
   );
 }
 

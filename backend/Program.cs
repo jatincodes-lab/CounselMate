@@ -2398,7 +2398,9 @@ api.MapPost("/applications/{applicationNumber}/enroll", async (
         Intake = NormalizeOptionalText(request.Intake) ?? application.Intake,
         EnrolledAt = now,
         CreatedAt = now,
-        CreatedByUserId = currentUser?.UserId
+        UpdatedAt = now,
+        CreatedByUserId = currentUser?.UserId,
+        UpdatedByUserId = currentUser?.UserId
     };
     db.Enrollments.Add(enrollment);
     var previousStatus = application.Status;
@@ -2416,6 +2418,206 @@ api.MapPost("/applications/{applicationNumber}/enroll", async (
     await db.SaveChangesAsync(cancellationToken);
     await transaction.CommitAsync(cancellationToken);
     return Results.Ok(await GetApplicationResponseAsync(db, tenant.TenantId, application.ApplicationNumber, cancellationToken));
+});
+
+api.MapGet("/enrollments", async (
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    var queryValues = httpContext.Request.Query;
+    var pageNumber = int.TryParse(queryValues["page"].FirstOrDefault(), out var parsedPage) ? Math.Max(1, parsedPage) : 1;
+    var take = int.TryParse(queryValues["pageSize"].FirstOrDefault(), out var parsedPageSize) ? Math.Clamp(parsedPageSize, 1, 100) : 25;
+    var search = NormalizeOptionalText(queryValues["search"].FirstOrDefault());
+    var status = NormalizeOptionalText(queryValues["status"].FirstOrDefault());
+    var intake = NormalizeOptionalText(queryValues["intake"].FirstOrDefault());
+    Guid.TryParse(queryValues["courseId"].FirstOrDefault(), out var courseId);
+    Guid.TryParse(queryValues["branchId"].FirstOrDefault(), out var branchId);
+
+    if (search?.Length > 160) return Results.ValidationProblem(new Dictionary<string, string[]> { ["search"] = ["Search must be 160 characters or fewer."] });
+    if (intake?.Length > 120) return Results.ValidationProblem(new Dictionary<string, string[]> { ["intake"] = ["Intake must be 120 characters or fewer."] });
+
+    var query = db.Enrollments
+        .AsNoTracking()
+        .Include(item => item.Lead)
+        .Include(item => item.Application)
+        .Include(item => item.Course)
+        .Include(item => item.Branch)
+        .Where(item => item.TenantId == tenant.TenantId);
+
+    if (!accessScope.CanViewAll)
+    {
+        query = query.Where(item =>
+            currentUser != null &&
+            (item.Lead.AssignedUserId == currentUser.UserId ||
+             (currentUser.Role == nameof(UserRole.BranchManager) && accessScope.BranchId != null && item.Lead.BranchId == accessScope.BranchId)));
+    }
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var term = search.Trim();
+        query = query.Where(item =>
+            EF.Functions.ILike(item.StudentName, $"%{term}%") ||
+            EF.Functions.ILike(item.EnrollmentNumber, $"%{term}%") ||
+            EF.Functions.ILike(item.Lead.LeadNumber, $"%{term}%") ||
+            EF.Functions.ILike(item.Application.ApplicationNumber, $"%{term}%"));
+    }
+
+    if (!string.IsNullOrWhiteSpace(status))
+    {
+        var normalizedStatus = NormalizeEnrollmentStatus(status);
+        if (normalizedStatus == "Invalid")
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = ["Select a valid enrollment status."] });
+        }
+        query = query.Where(item => item.Status == normalizedStatus);
+    }
+
+    if (!string.IsNullOrWhiteSpace(intake))
+    {
+        query = query.Where(item => item.Intake != null && EF.Functions.ILike(item.Intake, $"%{intake}%"));
+    }
+
+    if (courseId != Guid.Empty) query = query.Where(item => item.CourseId == courseId);
+    if (branchId != Guid.Empty) query = query.Where(item => item.BranchId == branchId);
+
+    var total = await query.CountAsync(cancellationToken);
+    var rawItems = await query
+        .OrderByDescending(item => item.UpdatedAt)
+        .ThenByDescending(item => item.EnrolledAt)
+        .Skip((pageNumber - 1) * take)
+        .Take(take)
+        .Select(item => new
+        {
+            item.Id,
+            item.EnrollmentNumber,
+            item.StudentName,
+            LeadId = item.Lead.LeadNumber,
+            ApplicationId = item.Application.ApplicationNumber,
+            Course = item.Course.Name,
+            Branch = item.Branch == null ? null : item.Branch.Name,
+            item.Intake,
+            item.Status,
+            item.Version,
+            item.EnrolledAt,
+            item.UpdatedAt,
+            LeadInternalId = item.LeadId
+        })
+        .ToListAsync(cancellationToken);
+
+    var leadIds = rawItems.Select(item => item.LeadInternalId).Distinct().ToArray();
+    var paymentRows = await db.LeadPayments
+        .AsNoTracking()
+        .Include(item => item.Transactions)
+        .Where(item => item.TenantId == tenant.TenantId && leadIds.Contains(item.LeadId) && item.CancelledAt == null)
+        .ToListAsync(cancellationToken);
+    var paymentBalances = paymentRows
+        .GroupBy(item => item.LeadId)
+        .ToDictionary(
+            group => group.Key,
+            group => group.Sum(payment => Math.Max(0m, payment.AmountDue - payment.Transactions.Sum(transaction => transaction.Amount))));
+    var documentRows = await db.LeadDocuments
+        .AsNoTracking()
+        .Include(item => item.DocumentType)
+        .Where(item => item.TenantId == tenant.TenantId && leadIds.Contains(item.LeadId) && item.DocumentType.IsActive && item.DocumentType.IsRequired)
+        .ToListAsync(cancellationToken);
+    var requiredDocumentCount = await db.DocumentTypes.CountAsync(item => item.TenantId == tenant.TenantId && item.IsActive && item.IsRequired, cancellationToken);
+    var verifiedDocuments = documentRows
+        .Where(item => item.Status == "Verified")
+        .GroupBy(item => item.LeadId)
+        .ToDictionary(group => group.Key, group => group.Select(item => item.DocumentTypeId).Distinct().Count());
+
+    var items = new List<EnrollmentListItemResponse>(rawItems.Count);
+    foreach (var item in rawItems)
+    {
+        paymentBalances.TryGetValue(item.LeadInternalId, out var feeBalance);
+        verifiedDocuments.TryGetValue(item.LeadInternalId, out var verifiedRequiredDocuments);
+        items.Add(new EnrollmentListItemResponse(
+            item.EnrollmentNumber,
+            item.StudentName,
+            item.LeadId,
+            item.ApplicationId,
+            item.Course,
+            item.Branch,
+            item.Intake,
+            item.Status,
+            feeBalance,
+            requiredDocumentCount == 0 || verifiedRequiredDocuments >= requiredDocumentCount,
+            item.Version,
+            item.EnrolledAt,
+            item.UpdatedAt));
+    }
+
+    return Results.Ok(new EnrollmentListResponse(items, pageNumber, take, total));
+});
+
+api.MapGet("/enrollments/{enrollmentNumber}", async (
+    string enrollmentNumber,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    var enrollment = await db.Enrollments
+        .AsNoTracking()
+        .Include(item => item.Lead)
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.EnrollmentNumber == enrollmentNumber, cancellationToken);
+    if (enrollment is null || !CanAccessLead(currentUser, accessScope, enrollment.Lead)) return Results.NotFound(new { message = "Enrollment not found." });
+    return Results.Ok(await GetEnrollmentDetailResponseAsync(db, tenant.TenantId, enrollment.EnrollmentNumber, cancellationToken));
+});
+
+api.MapPatch("/enrollments/{enrollmentNumber}/status", async (
+    string enrollmentNumber,
+    UpdateEnrollmentStatusRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageEnrollmentStatus(currentUser)) return Results.Json(new { message = "Only owner, admin, and branch manager roles can update enrollment status." }, statusCode: StatusCodes.Status403Forbidden);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    var enrollment = await db.Enrollments
+        .Include(item => item.Lead)
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.EnrollmentNumber == enrollmentNumber, cancellationToken);
+    if (enrollment is null || !CanAccessLead(currentUser, accessScope, enrollment.Lead)) return Results.NotFound(new { message = "Enrollment not found." });
+    if (request.Version != enrollment.Version) return Results.Conflict(new { message = "This enrollment changed. Refresh and try again." });
+    if (NormalizeOptionalText(request.Note)?.Length > 500) return Results.ValidationProblem(new Dictionary<string, string[]> { ["note"] = ["Status note must be 500 characters or fewer."] });
+    var nextStatus = NormalizeEnrollmentStatus(request.Status);
+    var transitionError = ValidateEnrollmentStatusTransition(enrollment.Status, nextStatus, currentUser);
+    if (transitionError is not null) return Results.Conflict(new { message = transitionError });
+
+    var now = IndianClock.Now();
+    var previous = enrollment.Status;
+    enrollment.Status = nextStatus;
+    enrollment.UpdatedAt = now;
+    enrollment.UpdatedByUserId = currentUser?.UserId;
+    enrollment.Version += 1;
+    db.Activities.Add(new EducationCrm.Api.Models.Activity
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = enrollment.LeadId,
+        CreatedByUserId = currentUser?.UserId,
+        Type = "EnrollmentStatusChanged",
+        Description = $"Enrollment {enrollment.EnrollmentNumber} moved from {previous} to {nextStatus}.{(string.IsNullOrWhiteSpace(request.Note) ? "" : $" Note: {NormalizeOptionalText(request.Note)}")}",
+        CreatedAt = now
+    });
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This enrollment changed. Refresh and try again." }); }
+    return Results.Ok(await GetEnrollmentDetailResponseAsync(db, tenant.TenantId, enrollment.EnrollmentNumber, cancellationToken));
 });
 
 api.MapPost("/leads", async (
@@ -5976,6 +6178,94 @@ static async Task<ApplicationDetailResponse> GetApplicationResponseAsync(AppDbCo
     };
 }
 
+static async Task<EnrollmentDetailResponse> GetEnrollmentDetailResponseAsync(AppDbContext db, Guid tenantId, string enrollmentNumber, CancellationToken cancellationToken)
+{
+    var enrollment = await db.Enrollments
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenantId && item.EnrollmentNumber == enrollmentNumber)
+        .Select(item => new
+        {
+            item.EnrollmentNumber,
+            item.StudentName,
+            item.Intake,
+            item.Status,
+            item.Version,
+            item.EnrolledAt,
+            item.CreatedAt,
+            item.UpdatedAt,
+            LeadInternalId = item.LeadId,
+            LeadId = item.Lead.LeadNumber,
+            item.Lead.GuardianName,
+            item.Lead.Phone,
+            item.Lead.Email,
+            item.Lead.City,
+            item.Lead.ArchivedAt,
+            ApplicationId = item.Application.ApplicationNumber,
+            ApplicationStatus = item.Application.Status,
+            Course = item.Course.Name,
+            Branch = item.Branch == null ? null : item.Branch.Name,
+            CreatedBy = item.CreatedByUser == null ? "System" : item.CreatedByUser.FullName,
+            UpdatedBy = item.UpdatedByUser == null ? "System" : item.UpdatedByUser.FullName,
+            ChecklistTotal = item.Application.ChecklistItems.Count,
+            ChecklistDone = item.Application.ChecklistItems.Count(check => check.IsCompleted || check.IsWaived)
+        })
+        .FirstAsync(cancellationToken);
+
+    var documents = await GetLeadDocumentsResponseAsync(db, tenantId, enrollment.LeadInternalId, cancellationToken);
+    var payments = await GetLeadPaymentsResponseAsync(db, tenantId, enrollment.LeadInternalId, cancellationToken);
+    var activePayments = payments.Items.Where(item => item.Status != "Cancelled").ToArray();
+    var requiredDocuments = documents.Items.Count(item => item.IsRequired && item.IsActive);
+    var verifiedRequiredDocuments = documents.Items.Count(item => item.IsRequired && item.IsActive && item.Status == "Verified");
+    var totalDue = activePayments.Sum(item => item.AmountDue);
+    var totalPaid = activePayments.Sum(item => item.AmountPaid);
+    var balance = activePayments.Sum(item => item.Balance);
+    var currency = activePayments.Select(item => item.Currency).FirstOrDefault(item => !string.IsNullOrWhiteSpace(item)) ?? "INR";
+    var recentActivities = await db.Activities
+        .AsNoTracking()
+        .Include(item => item.CreatedByUser)
+        .Where(item => item.TenantId == tenantId && item.LeadId == enrollment.LeadInternalId)
+        .OrderByDescending(item => item.CreatedAt)
+        .Take(12)
+        .Select(item => new ActivityResponse(
+            item.Id.ToString(),
+            item.Type,
+            item.Description,
+            item.CreatedByUser == null ? "System" : item.CreatedByUser.FullName,
+            item.CreatedAt))
+        .ToArrayAsync(cancellationToken);
+
+    return new EnrollmentDetailResponse(
+        enrollment.EnrollmentNumber,
+        enrollment.StudentName,
+        enrollment.GuardianName,
+        enrollment.Phone,
+        enrollment.Email,
+        enrollment.City,
+        enrollment.ArchivedAt,
+        enrollment.LeadId,
+        enrollment.ApplicationId,
+        enrollment.Course,
+        enrollment.Branch,
+        enrollment.Intake,
+        enrollment.Status,
+        enrollment.ApplicationStatus,
+        enrollment.ChecklistDone,
+        enrollment.ChecklistTotal,
+        requiredDocuments,
+        verifiedRequiredDocuments,
+        totalDue,
+        totalPaid,
+        balance,
+        currency,
+        enrollment.EnrolledAt,
+        enrollment.CreatedAt,
+        enrollment.UpdatedAt,
+        enrollment.CreatedBy,
+        enrollment.UpdatedBy,
+        enrollment.Version,
+        recentActivities);
+}
+
 static async Task<DateTimeOffset?> CalculateNextScheduledFollowUpAsync(
     AppDbContext db,
     Guid tenantId,
@@ -6722,7 +7012,25 @@ static string NormalizeApplicationStatus(string? value)
     };
 }
 
+static string NormalizeEnrollmentStatus(string? value)
+{
+    var status = NormalizeOptionalText(value)?.Replace(" ", "", StringComparison.OrdinalIgnoreCase) ?? string.Empty;
+    return status switch
+    {
+        "Active" => "Active",
+        "Deferred" => "Deferred",
+        "Cancelled" => "Cancelled",
+        "Completed" => "Completed",
+        _ => "Invalid"
+    };
+}
+
 static bool CanReviewApplications(AuthenticatedUser? user)
+{
+    return user?.Role is nameof(UserRole.Owner) or nameof(UserRole.Admin) or nameof(UserRole.BranchManager);
+}
+
+static bool CanManageEnrollmentStatus(AuthenticatedUser? user)
 {
     return user?.Role is nameof(UserRole.Owner) or nameof(UserRole.Admin) or nameof(UserRole.BranchManager);
 }
@@ -6731,6 +7039,30 @@ static bool CanCounsellorTransition(AuthenticatedUser? user, string targetStatus
 {
     return user?.Role is nameof(UserRole.Counselor) or nameof(UserRole.Telecaller) &&
         targetStatus is "Submitted" or "Withdrawn";
+}
+
+static string? ValidateEnrollmentStatusTransition(string currentStatus, string targetStatus, AuthenticatedUser? currentUser)
+{
+    if (targetStatus == "Invalid") return "Select a valid enrollment status.";
+    if (currentStatus == targetStatus) return "Enrollment is already in this status.";
+
+    var isOwnerOrAdmin = currentUser?.Role is nameof(UserRole.Owner) or nameof(UserRole.Admin);
+    var allowed = currentStatus switch
+    {
+        "Active" => new[] { "Deferred", "Cancelled", "Completed" },
+        "Deferred" => new[] { "Active", "Cancelled" },
+        "Completed" or "Cancelled" => isOwnerOrAdmin ? ["Active"] : Array.Empty<string>(),
+        _ => Array.Empty<string>()
+    };
+
+    if (!allowed.Contains(targetStatus))
+    {
+        return currentStatus is "Completed" or "Cancelled"
+            ? "Only owners and admins can reopen completed or cancelled enrollments."
+            : $"Cannot move enrollment from {currentStatus} to {targetStatus}.";
+    }
+
+    return null;
 }
 
 static async Task<string?> ValidateApplicationTransitionAsync(
@@ -7268,6 +7600,54 @@ record ApplicationStatusHistoryResponse(string? PreviousStatus, string NewStatus
 record EnrollmentResponse(string Id, string Status, string? Intake, DateTimeOffset EnrolledAt, int Version);
 record ApplicationPaymentSummaryResponse(decimal TotalDue, decimal TotalPaid, decimal Balance, string Currency, bool PaymentsReady, bool ReceiptDocumentVerified);
 record ApplicationReadinessResponse(bool LeadActive, bool DocumentsReady, bool PaymentsReady, int RequiredChecklistMissing, int RequiredDocuments, int VerifiedRequiredDocuments, decimal UnpaidBalance);
+
+record EnrollmentListResponse(IReadOnlyCollection<EnrollmentListItemResponse> Items, int Page, int PageSize, int Total);
+record EnrollmentListItemResponse(
+    string Id,
+    string StudentName,
+    string LeadId,
+    string ApplicationId,
+    string Course,
+    string? Branch,
+    string? Intake,
+    string Status,
+    decimal FeeBalance,
+    bool DocumentsReady,
+    int Version,
+    DateTimeOffset EnrolledAt,
+    DateTimeOffset UpdatedAt);
+
+record EnrollmentDetailResponse(
+    string Id,
+    string StudentName,
+    string? GuardianName,
+    string Phone,
+    string Email,
+    string? City,
+    DateTimeOffset? ArchivedAt,
+    string LeadId,
+    string ApplicationId,
+    string Course,
+    string? Branch,
+    string? Intake,
+    string Status,
+    string ApplicationStatus,
+    int ChecklistDone,
+    int ChecklistTotal,
+    int RequiredDocuments,
+    int VerifiedRequiredDocuments,
+    decimal TotalDue,
+    decimal TotalPaid,
+    decimal Balance,
+    string Currency,
+    DateTimeOffset EnrolledAt,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    string CreatedBy,
+    string UpdatedBy,
+    int Version,
+    IReadOnlyCollection<ActivityResponse> RecentActivities);
+record UpdateEnrollmentStatusRequest(string Status, string? Note, int Version);
 
 record LeadImportMappingResult(
     IReadOnlyDictionary<string, string>? Mapping,

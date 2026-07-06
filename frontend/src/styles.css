@@ -2913,6 +2913,10 @@ td {
   gap: 12px;
 }
 
+.enrollment-filter-panel {
+  grid-template-columns: repeat(5, minmax(140px, 1fr)) auto;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -3537,6 +3541,7 @@ td {
   .insight-two-column,
   .outcome-grid,
   .admission-readiness,
+  .fee-summary-grid,
   .application-filter-panel {
     grid-template-columns: 1fr;
   }

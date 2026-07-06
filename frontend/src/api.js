@@ -300,6 +300,25 @@ export async function enrollApplication(applicationId, payload) {
   });
 }
 
+export async function getEnrollments(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") query.set(key, value);
+  });
+  return request(`/enrollments${query.toString() ? `?${query}` : ""}`);
+}
+
+export async function getEnrollmentDetail(enrollmentId) {
+  return request(`/enrollments/${encodeURIComponent(enrollmentId)}`);
+}
+
+export async function updateEnrollmentStatus(enrollmentId, payload) {
+  return request(`/enrollments/${encodeURIComponent(enrollmentId)}/status`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
 export async function getPlatformTenants() {
   return request("/platform/tenants");
 }

@@ -2889,6 +2889,24 @@ td {
   align-items: center;
 }
 
+.application-document-row {
+  align-items: start;
+}
+
+.application-blocker-note {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+}
+
+.application-blocker-note span {
+  font-size: 0.9rem;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 260px 1fr;

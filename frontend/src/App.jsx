@@ -740,6 +740,30 @@ function App() {
     }
   };
 
+  const runApplicationDocumentAction = (application, action, successMessage = "Documents updated.") => runApplicationAction(async () => {
+    await action(application.leadId);
+    return getApplicationDetail(application.id);
+  }, successMessage);
+
+  const handleApplicationDocumentDownload = async (application, document) => {
+    if (!application?.leadId || !document?.documentId) {
+      return;
+    }
+
+    setApplicationStatus((current) => ({ ...current, saving: false, error: "", message: "" }));
+    try {
+      const response = await downloadLeadDocument(application.leadId, document.documentId);
+      downloadFileResponse(response, document.fileName || `${document.name}.pdf`);
+    } catch (error) {
+      setApplicationStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to download document.",
+        message: "",
+      }));
+    }
+  };
+
   const handleCreateApplicationFromLead = async () => {
     if (!selectedLeadId) return null;
     const detail = await runApplicationAction(
@@ -1112,6 +1136,29 @@ function App() {
                 () => enrollApplication(application.id, { version: application.version }),
                 "Enrollment completed.",
               )}
+              onUploadDocument={(application, payload) => runApplicationDocumentAction(
+                application,
+                (leadId) => uploadLeadDocument(leadId, payload),
+                "Document uploaded.",
+              )}
+              onVerifyDocument={(application, document) => runApplicationDocumentAction(
+                application,
+                (leadId) => verifyLeadDocument(leadId, document.documentId, { version: document.version }),
+                "Document verified.",
+              )}
+              onRejectDocument={(application, document, notes) => runApplicationDocumentAction(
+                application,
+                (leadId) => rejectLeadDocument(leadId, document.documentId, { version: document.version, notes }),
+                "Document rejected.",
+              )}
+              onDeleteDocument={(application, document) => runApplicationDocumentAction(
+                application,
+                (leadId) => deleteLeadDocument(leadId, document.documentId, { version: document.version }),
+                "Document deleted.",
+              )}
+              onDownloadDocument={handleApplicationDocumentDownload}
+              currentUser={currentUser}
+              canManageLeads={canManageLeads}
             />
           )}
           {activePage === "counselors" && (
@@ -2451,7 +2498,7 @@ function LeadDetailDrawer({
   const canEditProfile = canManageLeads && !archived && !saving;
   const canUseEngagement = canManageLeads && !archived && !saving;
   const canUploadDocuments = canManageLeads && !archived && !saving;
-  const canReviewDocuments = ["Owner", "Admin"].includes(currentUser?.role) && !archived && !saving;
+  const canReviewDocuments = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role) && !archived && !saving;
   const canManageLeadPayments = canManagePayments && !archived && !saving;
   const hasProfileChanges = lead ? !areLeadProfileFormsEqual(editForm, createLeadUpdateForm(lead)) : false;
   const assigneeLockedToSelf = ["Counselor", "Telecaller"].includes(currentUser?.role);
@@ -2992,7 +3039,7 @@ function LeadDetailDrawer({
                         </button>
                       </form>
                       {!canReplaceThisDocument && canUploadDocuments && document.status === "Verified" && (
-                        <p className="drawer-permission-note">Only owners and admins can replace verified documents.</p>
+                        <p className="drawer-permission-note">Only reviewers can replace verified documents.</p>
                       )}
                     </div>
                   );
@@ -4233,6 +4280,13 @@ function ApplicationsPage({
   onTransition,
   onChecklist,
   onEnroll,
+  onUploadDocument,
+  onVerifyDocument,
+  onRejectDocument,
+  onDeleteDocument,
+  onDownloadDocument,
+  currentUser,
+  canManageLeads,
 }) {
   const items = applications?.items || [];
   const totalPages = Math.max(1, Math.ceil((applications?.total || 0) / Math.max(applications?.pageSize || 25, 1)));
@@ -4305,14 +4359,86 @@ function ApplicationsPage({
           onTransition={onTransition}
           onChecklist={onChecklist}
           onEnroll={onEnroll}
+          onUploadDocument={onUploadDocument}
+          onVerifyDocument={onVerifyDocument}
+          onRejectDocument={onRejectDocument}
+          onDeleteDocument={onDeleteDocument}
+          onDownloadDocument={onDownloadDocument}
+          currentUser={currentUser}
+          canManageLeads={canManageLeads}
         />
       )}
     </>
   );
 }
 
-function ApplicationDetailPanel({ application, saving, onClose, onTransition, onChecklist, onEnroll }) {
+function ApplicationDetailPanel({
+  application,
+  saving,
+  onClose,
+  onTransition,
+  onChecklist,
+  onEnroll,
+  onUploadDocument,
+  onVerifyDocument,
+  onRejectDocument,
+  onDeleteDocument,
+  onDownloadDocument,
+  currentUser,
+  canManageLeads,
+}) {
   const readiness = application.readiness || {};
+  const [documentForms, setDocumentForms] = useState({});
+  const documents = application.documents || [];
+  const archived = Boolean(application.archivedAt);
+  const canUploadDocuments = canManageLeads && !archived && !saving && !["Enrolled", "Cancelled"].includes(application.status);
+  const canReviewDocuments = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role) && !archived && !saving && application.status !== "Enrolled";
+  const missingRequiredDocuments = documents.filter((item) => item.isRequired && !item.documentId).length;
+  const pendingRequiredDocuments = documents.filter((item) => item.isRequired && item.documentId && item.status !== "Verified").length;
+
+  const updateDocumentForm = (documentTypeId, updates) => {
+    setDocumentForms((current) => ({
+      ...current,
+      [documentTypeId]: {
+        file: null,
+        notes: "",
+        rejectNotes: "",
+        ...(current[documentTypeId] || {}),
+        ...updates,
+      },
+    }));
+  };
+
+  const handleDocumentUpload = async (event, document) => {
+    event.preventDefault();
+    const form = documentForms[document.documentTypeId] || {};
+    if (!canUploadDocuments || !form.file) {
+      return;
+    }
+
+    const updated = await onUploadDocument(application, {
+      documentTypeId: document.documentTypeId,
+      file: form.file,
+      version: document.version,
+      notes: optionalValue(form.notes),
+    });
+    if (updated) {
+      updateDocumentForm(document.documentTypeId, { file: null, notes: "" });
+    }
+  };
+
+  const handleDocumentReject = async (document) => {
+    const notes = documentForms[document.documentTypeId]?.rejectNotes || "";
+    if (!canReviewDocuments || !document.documentId || !notes.trim()) {
+      return;
+    }
+
+    const updated = await onRejectDocument(application, document, notes.trim());
+    if (updated) {
+      updateDocumentForm(document.documentTypeId, { rejectNotes: "" });
+    }
+  };
+
   return (
     <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
       <aside className="lead-drawer application-drawer" role="dialog" aria-modal="true" aria-labelledby="application-detail-title">
@@ -4337,6 +4463,15 @@ function ApplicationDetailPanel({ application, saving, onClose, onTransition, on
             <MetricPill label="Documents" value={`${readiness.verifiedRequiredDocuments || 0}/${readiness.requiredDocuments || 0}`} tone={!readiness.documentsReady ? "warn" : ""} />
             <MetricPill label="Fee Balance" value={formatCurrency(readiness.unpaidBalance || 0, "INR")} tone={!readiness.paymentsReady ? "warn" : ""} />
           </div>
+          {(!readiness.documentsReady || missingRequiredDocuments > 0 || pendingRequiredDocuments > 0) && (
+            <div className="application-blocker-note">
+              <strong>Document readiness blocked</strong>
+              <span>
+                {missingRequiredDocuments > 0 ? `${missingRequiredDocuments} required missing` : "No required documents missing"}
+                {pendingRequiredDocuments > 0 ? ` · ${pendingRequiredDocuments} required pending/rejected` : ""}
+              </span>
+            </div>
+          )}
           <section className="drawer-section">
             <div className="section-heading"><h3>Actions</h3></div>
             <div className="application-actions">
@@ -4367,6 +4502,81 @@ function ApplicationDetailPanel({ application, saving, onClose, onTransition, on
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Admission Documents</h3><span>{documents.filter((item) => item.documentId).length}/{documents.length}</span></div>
+            {archived && <p className="drawer-permission-note">Restore this lead before uploading or reviewing documents.</p>}
+            {!canManageLeads && <p className="drawer-permission-note">Read-only users can view and download uploaded documents only.</p>}
+            {documents.length === 0 && <p className="muted-text">No document checklist is configured.</p>}
+            <div className="document-list">
+              {documents.map((document) => {
+                const form = documentForms[document.documentTypeId] || {};
+                const hasFile = Boolean(document.documentId);
+                const canReplaceThisDocument = canUploadDocuments && (!hasFile || document.status !== "Verified" || canReviewDocuments);
+
+                return (
+                  <div className="document-row application-document-row" key={document.documentTypeId}>
+                    <div className="document-main">
+                      <div className="document-title-row">
+                        <strong>{document.name}</strong>
+                        <Badge label={document.status === "Uploaded" ? "Pending Review" : document.status} muted={!hasFile} danger={document.status === "Rejected"} />
+                      </div>
+                      <small>{document.isRequired ? "Required" : "Optional"}{document.fileName ? ` · ${document.fileName}` : ""}</small>
+                      {document.notes && <p>{document.notes}</p>}
+                      {document.uploadedAt && <small>Uploaded {formatFollowUpLabel(document.uploadedAt)}{document.uploadedBy ? ` by ${document.uploadedBy}` : ""}</small>}
+                      {document.reviewedAt && <small>Reviewed {formatFollowUpLabel(document.reviewedAt)}{document.reviewedBy ? ` by ${document.reviewedBy}` : ""}</small>}
+                    </div>
+                    <div className="document-actions">
+                      {hasFile && document.canDownload && (
+                        <button type="button" className="ghost-button" disabled={saving} onClick={() => onDownloadDocument(application, document)}>
+                          <Download size={16} />
+                          Download
+                        </button>
+                      )}
+                      {canReviewDocuments && hasFile && document.status !== "Verified" && (
+                        <button type="button" className="ghost-button" disabled={saving} onClick={() => onVerifyDocument(application, document)}>
+                          <CheckCircle2 size={16} />
+                          Verify
+                        </button>
+                      )}
+                      {canReviewDocuments && hasFile && (
+                        <button type="button" className="ghost-button danger-text" disabled={saving || !form.rejectNotes?.trim()} onClick={() => handleDocumentReject(document)}>
+                          <X size={16} />
+                          Reject
+                        </button>
+                      )}
+                      {canReviewDocuments && hasFile && document.status !== "Verified" && (
+                        <button type="button" className="ghost-button danger-text" disabled={saving} onClick={() => onDeleteDocument(application, document)}>
+                          <UserX size={16} />
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                    {canReviewDocuments && hasFile && (
+                      <Field label="Review Notes" className="span-2">
+                        <input value={form.rejectNotes || ""} maxLength={500} disabled={saving} placeholder="Required when rejecting" onChange={(event) => updateDocumentForm(document.documentTypeId, { rejectNotes: event.target.value })} />
+                      </Field>
+                    )}
+                    {canReplaceThisDocument && (
+                      <form className="document-upload-form span-2" onSubmit={(event) => handleDocumentUpload(event, document)}>
+                        <Field label={hasFile ? "Replace File" : "Upload File"}>
+                          <input type="file" disabled={saving} accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => updateDocumentForm(document.documentTypeId, { file: event.target.files?.[0] || null })} />
+                        </Field>
+                        <Field label="Upload Notes">
+                          <input value={form.notes || ""} maxLength={500} disabled={saving} placeholder="Optional note" onChange={(event) => updateDocumentForm(document.documentTypeId, { notes: event.target.value })} />
+                        </Field>
+                        <button type="submit" className="primary-button" disabled={saving || !form.file}>
+                          {hasFile ? "Replace" : "Upload"}
+                        </button>
+                      </form>
+                    )}
+                    {!canReplaceThisDocument && canUploadDocuments && document.status === "Verified" && (
+                      <p className="drawer-permission-note span-2">Only reviewers can replace verified documents.</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </section>
           <section className="drawer-section">

@@ -3383,7 +3383,7 @@ api.MapPost("/leads/{id}/documents", async (
         existingDocument.Status == "Verified" &&
         !CanReviewLeadDocuments(currentUser))
     {
-        return Results.Conflict(new { message = "Only owners and admins can replace a verified document." });
+        return Results.Conflict(new { message = "Only owners, admins, and branch managers can replace a verified document." });
     }
 
     LeadDocumentUploadResult upload;
@@ -3521,7 +3521,7 @@ api.MapDelete("/leads/{id}/documents/{documentId:guid}", async (
     if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
     var currentUser = TenantResolver.GetCurrentUser(httpContext);
     var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
-    if (!CanReviewLeadDocuments(currentUser)) return Results.Json(new { message = "Only owners and admins can delete documents." }, statusCode: StatusCodes.Status403Forbidden);
+    if (!CanReviewLeadDocuments(currentUser)) return Results.Json(new { message = "Only owners, admins, and branch managers can delete documents." }, statusCode: StatusCodes.Status403Forbidden);
 
     var document = await db.LeadDocuments
         .Include(item => item.Lead)
@@ -4629,7 +4629,8 @@ static bool CanUploadLeadDocuments(AuthenticatedUser? user)
 static bool CanReviewLeadDocuments(AuthenticatedUser? user)
 {
     return user?.Role is nameof(UserRole.Owner)
-        or nameof(UserRole.Admin);
+        or nameof(UserRole.Admin)
+        or nameof(UserRole.BranchManager);
 }
 
 static bool CanManagePayments(AuthenticatedUser? user)
@@ -4825,7 +4826,7 @@ static async Task<IResult> ReviewLeadDocumentAsync(
     if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
     var currentUser = TenantResolver.GetCurrentUser(httpContext);
     var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
-    if (!CanReviewLeadDocuments(currentUser)) return Results.Json(new { message = "Only owners and admins can review documents." }, statusCode: StatusCodes.Status403Forbidden);
+    if (!CanReviewLeadDocuments(currentUser)) return Results.Json(new { message = "Only owners, admins, and branch managers can review documents." }, statusCode: StatusCodes.Status403Forbidden);
 
     var document = await db.LeadDocuments
         .Include(item => item.Lead)
@@ -5918,6 +5919,7 @@ static async Task<ApplicationDetailResponse> GetApplicationResponseAsync(AppDbCo
                     history.ChangedAt,
                     history.ChangedByUser == null ? "System" : history.ChangedByUser.FullName))
                 .ToArray(),
+            Array.Empty<LeadDocumentChecklistItemResponse>(),
             item.Enrollment == null ? null : new EnrollmentResponse(
                 item.Enrollment.EnrollmentNumber,
                 item.Enrollment.Status,
@@ -5926,10 +5928,16 @@ static async Task<ApplicationDetailResponse> GetApplicationResponseAsync(AppDbCo
                 item.Enrollment.Version)))
         .FirstAsync(cancellationToken);
 
+    var leadInternalId = await db.AdmissionApplications
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenantId && item.ApplicationNumber == applicationNumber)
+        .Select(item => item.LeadId)
+        .FirstAsync(cancellationToken);
+    var documentChecklist = await GetLeadDocumentsResponseAsync(db, tenantId, leadInternalId, cancellationToken);
     var requiredDocumentTypes = await db.DocumentTypes.CountAsync(item => item.TenantId == tenantId && item.IsRequired && item.IsActive, cancellationToken);
     var verifiedRequiredDocuments = await db.LeadDocuments.CountAsync(item =>
         item.TenantId == tenantId &&
-        item.Lead.LeadNumber == application.LeadId &&
+        item.LeadId == leadInternalId &&
         item.DocumentType.IsRequired &&
         item.DocumentType.IsActive &&
         item.Status == "Verified",
@@ -5940,6 +5948,7 @@ static async Task<ApplicationDetailResponse> GetApplicationResponseAsync(AppDbCo
         .SumAsync(cancellationToken);
     return application with
     {
+        Documents = documentChecklist.Items,
         Readiness = new ApplicationReadinessResponse(
             application.ArchivedAt is null,
             requiredDocumentTypes == 0 || verifiedRequiredDocuments >= requiredDocumentTypes,
@@ -7233,6 +7242,7 @@ record ApplicationDetailResponse(
     DateTimeOffset? RejectedAt,
     IReadOnlyCollection<ApplicationChecklistItemResponse> Checklist,
     IReadOnlyCollection<ApplicationStatusHistoryResponse> StatusHistory,
+    IReadOnlyCollection<LeadDocumentChecklistItemResponse> Documents,
     EnrollmentResponse? Enrollment,
     ApplicationReadinessResponse? Readiness = null);
 record ApplicationChecklistItemResponse(Guid Id, string Name, string Category, bool IsRequired, bool IsCompleted, bool IsWaived, string? Notes, int Version, DateTimeOffset? CompletedAt, string? CompletedBy);

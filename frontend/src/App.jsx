@@ -3546,58 +3546,97 @@ function Field({ label, error, children, className = "", required = false }) {
 }
 
 function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead, canManageLeads }) {
+  const totalLeads = pipeline.reduce((sum, stage) => sum + Number(stage.count || stage.leads?.length || 0), 0);
+  const activeStages = pipeline.filter((stage) => Number(stage.count || stage.leads?.length || 0) > 0).length;
+  const topStage = pipeline.reduce((current, stage) => {
+    const stageCount = Number(stage.count || stage.leads?.length || 0);
+    const currentCount = Number(current?.count || current?.leads?.length || 0);
+    return stageCount > currentCount ? stage : current;
+  }, pipeline[0]);
+
   return (
-    <>
-      <PageTitle
-        title="Lead Pipeline"
-        subtitle="Manage and track student enrollment progress."
-        action={
+    <section className="pipeline-workspace">
+      <div className="pipeline-hero">
+        <div>
+          <span className="eyebrow">Admission pipeline</span>
+          <h1>Lead Pipeline</h1>
+          <p>Track enquiry movement by stage, prioritize stuck leads, and open student records quickly.</p>
+        </div>
+        <div className="pipeline-hero-actions">
+          <div className="pipeline-hero-stat">
+            <span>Total leads</span>
+            <strong>{loading ? "..." : formatNumber(totalLeads)}</strong>
+          </div>
+          <div className="pipeline-hero-stat">
+            <span>Active stages</span>
+            <strong>{loading ? "..." : formatNumber(activeStages)}</strong>
+          </div>
           <button className="primary-button" onClick={() => onNewLead()} disabled={!canManageLeads}>
             <Plus size={18} />
             Create New Lead
           </button>
-        }
-      />
-      <div className="pipeline-toolbar">
-        <button className="segmented active">Board</button>
-        <button className="segmented">List</button>
-        <button className="soft-button">High Priority</button>
-        <button className="soft-button">Due Today</button>
+        </div>
       </div>
+
+      <div className="pipeline-toolbar">
+        <div>
+          <strong>Board view</strong>
+          <span>{topStage ? `${topStage.name} has the highest current volume` : "No stage volume yet"}</span>
+        </div>
+        <button className="soft-button" onClick={onRetry} disabled={loading}>Refresh</button>
+      </div>
+
       {loading && <StatePanel title="Loading pipeline" message="Fetching live stages from CounselMate API..." />}
       {error && <StatePanel title="Could not load pipeline" message={error} action={onRetry} />}
       {!loading && !error && pipeline.length === 0 && <StatePanel title="No pipeline stages" message="No lead stages are configured for this tenant." />}
       {!loading && !error && pipeline.length > 0 && (
         <div className="kanban">
-          {pipeline.map((stage) => (
+          {pipeline.map((stage, stageIndex) => {
+            const stageLeads = stage.leads || [];
+            const stageCount = Number(stage.count || stageLeads.length || 0);
+            const stageShare = totalLeads ? Math.round((stageCount / totalLeads) * 100) : 0;
+            return (
             <section className="kanban-column" key={stage.name}>
               <header>
-                <h3>{stage.name}</h3>
-                <span>{stage.count}</span>
+                <div>
+                  <h3>{stage.name}</h3>
+                  <p>{stageShare}% of pipeline</p>
+                </div>
+                <span>{formatNumber(stageCount)}</span>
               </header>
-              {stage.leads.map((lead) => (
+              <div className="pipeline-stage-track" aria-hidden="true">
+                <span style={{ width: `${Math.max(stageShare, stageCount > 0 ? 6 : 0)}%` }} />
+              </div>
+              {stageLeads.length === 0 && (
+                <div className="pipeline-empty-stage">
+                  <strong>No leads here</strong>
+                  <p>New leads moved to this stage will appear in this column.</p>
+                </div>
+              )}
+              {stageLeads.map((lead) => (
                 <article className="lead-card" key={lead.id} onClick={() => onOpenLead(lead.id)} role="button" tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpenLead(lead.id)}>
                   <div className="lead-card-top">
                     <Badge label={(lead.course || "Course").split(" ")[0]} />
-                    <MoreVertical size={18} />
+                    <span className="lead-card-index">#{stageIndex + 1}</span>
                   </div>
                   <h4>{lead.studentName}</h4>
                   <p>{lead.course}</p>
                   <footer>
-                    <span className={lead.priority === "High" ? "danger-text" : ""}>{formatFollowUpLabel(lead.nextFollowUpAt)}</span>
+                    <span className={["High", "Urgent"].includes(lead.priority) ? "danger-text" : ""}>{formatFollowUpLabel(lead.nextFollowUpAt)}</span>
                     <span className="mini-avatar">{initials(lead.studentName)}</span>
                   </footer>
                 </article>
               ))}
               <button className="add-card" type="button" onClick={() => onNewLead(stage.name)} disabled={!canManageLeads}>
                 <Plus size={18} />
-                Add Card
+                Add lead to {stage.name}
               </button>
             </section>
-          ))}
+          );
+          })}
         </div>
       )}
-    </>
+    </section>
   );
 }
 

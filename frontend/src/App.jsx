@@ -3716,8 +3716,26 @@ function FollowUpsPage({
   };
 
   return (
-    <>
-      <PageTitle title="Follow-ups" subtitle="Run the daily follow-up queue and close scheduled student tasks." />
+    <section className="followup-page">
+      <div className="followup-hero">
+        <div>
+          <span className="eyebrow">Counsellor queue</span>
+          <h1>Follow-ups</h1>
+          <p>Run today’s admission calls, recover overdue tasks, and keep every student conversation moving.</p>
+        </div>
+        <div className="followup-hero-actions">
+          <div className="followup-hero-stat">
+            <span>Open queue</span>
+            <strong>{loading ? "..." : formatNumber(scheduledCount)}</strong>
+          </div>
+          <div className="followup-hero-stat danger">
+            <span>Overdue</span>
+            <strong>{loading ? "..." : formatNumber(counts.overdue)}</strong>
+          </div>
+          <button className="soft-button" type="button" onClick={onRetry} disabled={loading}>Refresh</button>
+        </div>
+      </div>
+
       <div className="followup-workspace">
         <section>
           <div className="followup-summary">
@@ -3795,7 +3813,7 @@ function FollowUpsPage({
             ))}
           </div>
 
-          <p className="drawer-permission-note">Create new follow-ups from a lead detail drawer so every task stays attached to a lead.</p>
+          <p className="drawer-permission-note followup-note">Create new follow-ups from a lead detail drawer so every task stays attached to a lead.</p>
         </section>
 
         <aside className="right-rail">
@@ -3852,7 +3870,7 @@ function FollowUpsPage({
           </form>
         </div>
       )}
-    </>
+    </section>
   );
 }
 

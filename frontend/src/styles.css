@@ -3515,6 +3515,276 @@ td {
   font-weight: 700;
 }
 
+.followup-page {
+  display: grid;
+  gap: 18px;
+}
+
+.followup-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 22px;
+  border: 1px solid #dbe3ef;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.045);
+}
+
+.followup-hero h1 {
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.04em;
+}
+
+.followup-hero p {
+  max-width: 680px;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.followup-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 500px;
+}
+
+.followup-hero .soft-button,
+.followup-page .soft-button,
+.followup-page .ghost-button,
+.followup-page .primary-button,
+.followup-page .badge,
+.followup-page .status,
+.followup-page .mini-avatar {
+  border-radius: 2px;
+}
+
+.followup-hero-stat {
+  display: grid;
+  min-width: 112px;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+}
+
+.followup-hero-stat span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.followup-hero-stat strong {
+  color: #0f172a;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.followup-hero-stat.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.followup-hero-stat.danger strong {
+  color: #b91c1c;
+}
+
+.followup-page .followup-workspace {
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+}
+
+.followup-page .followup-summary {
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.followup-page .followup-summary > div {
+  padding: 15px;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.035);
+}
+
+.followup-page .followup-summary span {
+  color: #64748b;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+.followup-page .followup-summary strong {
+  color: #0f172a;
+  font-size: 26px;
+  letter-spacing: -0.04em;
+}
+
+.followup-page .followup-toolbar {
+  margin: 14px 0;
+  padding: 14px;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.035);
+}
+
+.followup-page .followup-toolbar > label {
+  color: #475569;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.followup-page .followup-toolbar select,
+.followup-page .lead-search-input {
+  min-height: 40px;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.followup-page .lead-search-input {
+  background: #fff;
+}
+
+.followup-page .followup-toolbar select:focus,
+.followup-page .lead-search-input:focus-within {
+  outline: 2px solid rgba(37, 99, 235, 0.16);
+  border-color: #2563eb;
+  background: #fff;
+}
+
+.followup-page .followup-toolbar .soft-button {
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+}
+
+.followup-page .followup-toolbar .soft-button:disabled {
+  border-color: #dbe3ef;
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.followup-page .followup-tabs {
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.followup-page .followup-tabs button {
+  min-width: auto;
+  height: 38px;
+  padding: 0 12px;
+  border-color: transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: #475569;
+  font-size: 12px;
+}
+
+.followup-page .followup-tabs .active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.followup-page .followup-tabs span {
+  border-radius: 2px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.followup-page .followup-tabs .active span {
+  background: #2563eb;
+  color: #fff;
+}
+
+.followup-page .followup-list {
+  gap: 10px;
+}
+
+.followup-page .followup-row {
+  grid-template-columns: 46px minmax(220px, 1fr) minmax(125px, 0.36fr) minmax(280px, auto);
+  min-height: 108px;
+  padding: 14px;
+  border-color: #dbe3ef;
+  border-left: 3px solid #2563eb;
+  border-radius: 2px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+}
+
+.followup-page .followup-row:hover {
+  background: #f8fafc;
+}
+
+.followup-page .channel-icon {
+  width: 42px;
+  height: 42px;
+  border: 1px solid #bfdbfe;
+  border-radius: 2px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.followup-page .followup-main h3 {
+  color: #0f172a;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.followup-page .followup-main p,
+.followup-page .followup-time p {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.followup-page .followup-time {
+  padding-left: 12px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.followup-page .followup-time strong {
+  color: #0f172a;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.followup-page .followup-actions .ghost-button,
+.followup-page .followup-actions .primary-button {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.followup-page .right-rail .card,
+.followup-page .mini-metrics .metric-card {
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.035);
+}
+
+.followup-page .mini-metrics {
+  grid-template-columns: 1fr;
+}
+
+.followup-note {
+  margin-top: 14px;
+}
+
 .followup-rules {
   display: grid;
   gap: 10px;
@@ -4721,6 +4991,19 @@ td {
     max-width: none;
     justify-content: flex-start;
   }
+
+  .followup-hero {
+    flex-direction: column;
+  }
+
+  .followup-hero-actions {
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .followup-page .followup-workspace {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -4825,5 +5108,45 @@ td {
 
   .pipeline-workspace .kanban-column {
     min-height: auto;
+  }
+
+  .followup-hero {
+    padding: 18px;
+  }
+
+  .followup-hero-actions {
+    width: 100%;
+  }
+
+  .followup-hero-stat {
+    flex: 1 1 calc(50% - 6px);
+  }
+
+  .followup-hero .soft-button {
+    width: 100%;
+  }
+
+  .followup-page .followup-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .followup-page .followup-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .followup-page .followup-time,
+  .followup-page .followup-actions {
+    grid-column: 1 / -1;
+  }
+
+  .followup-page .followup-time {
+    padding: 10px 0 0 58px;
+    border-left: 0;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .followup-page .followup-actions {
+    justify-content: flex-start;
+    padding-left: 58px;
   }
 }

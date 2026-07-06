@@ -31,6 +31,21 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   addLeadActivity,
   addLeadPaymentTransaction,
   applyCommunicationTemplate,
@@ -98,7 +113,6 @@ import {
   updateEnrollmentStatus,
 } from "./api";
 import counselMateLogo from "./assets/counselmate-logo.png";
-import { activities } from "./data/mockData";
 
 const navItems = [
   { id: "platform", label: "Platform", icon: Users, ownerOnly: true },
@@ -1838,76 +1852,176 @@ function PageTitle({ title, subtitle, action }) {
   );
 }
 
-function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, onNewLead, canManageLeads }) {
-  const barHeights = useMemo(() => {
-    const counts = pipeline.map((stage) => stage.count);
-    const max = Math.max(...counts, 1);
-    return counts.length ? counts.map((count) => Math.max(8, Math.round((count / max) * 100))) : [8, 8, 8, 8, 8];
+const DASHBOARD_CHART_COLORS = ["#2563eb", "#0f766e", "#f59e0b", "#7c3aed", "#dc2626", "#64748b"];
+
+function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, onRetry, onNewLead, canManageLeads }) {
+  const now = Date.now();
+  const totalLeads = Number(dashboard?.totalLeads || 0);
+  const newLeadsToday = Number(dashboard?.newLeadsToday || 0);
+  const contacted = Number(dashboard?.contacted || 0);
+  const enrolled = Number(dashboard?.enrolled || 0);
+  const openLeads = Math.max(totalLeads - enrolled, 0);
+  const conversionRate = totalLeads > 0 ? Math.round((enrolled / totalLeads) * 100) : 0;
+  const scheduledFollowUps = followUps.filter((item) => item.status === "Scheduled");
+  const overdueFollowUps = scheduledFollowUps.filter((item) => item.dueAt && new Date(item.dueAt).getTime() < now).length;
+  const highPriorityFollowUps = scheduledFollowUps.filter((item) => ["Urgent", "High"].includes(item.priority)).length;
+
+  const pipelineData = useMemo(() => {
+    return (pipeline || [])
+      .filter((stage) => stage && typeof stage.count !== "undefined")
+      .map((stage, index) => ({
+        name: stage.name || `Stage ${index + 1}`,
+        count: Number(stage.count || 0),
+        fill: DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length],
+      }));
   }, [pipeline]);
+
+  const pipelineTotal = pipelineData.reduce((sum, item) => sum + item.count, 0);
+  const pipelineWithLeads = pipelineData.filter((item) => item.count > 0);
+  const progressData = [
+    { name: "New", value: newLeadsToday },
+    { name: "Contacted", value: contacted },
+    { name: "Open", value: openLeads },
+    { name: "Enrolled", value: enrolled },
+  ];
+  const focusItems = [
+    {
+      title: overdueFollowUps > 0 ? "Recover overdue follow-ups" : "Follow-up discipline is clean",
+      description: overdueFollowUps > 0 ? `${overdueFollowUps} scheduled follow-up${overdueFollowUps === 1 ? "" : "s"} crossed the due time.` : "No overdue scheduled follow-ups in the current queue.",
+      tone: overdueFollowUps > 0 ? "danger" : "success",
+    },
+    {
+      title: highPriorityFollowUps > 0 ? "Call high intent students first" : "No high-priority queue pressure",
+      description: highPriorityFollowUps > 0 ? `${highPriorityFollowUps} urgent/high priority task${highPriorityFollowUps === 1 ? "" : "s"} need attention.` : "Current queue has no urgent or high-priority follow-ups.",
+      tone: highPriorityFollowUps > 0 ? "warning" : "neutral",
+    },
+    {
+      title: conversionRate >= 20 ? "Enrollment conversion looks healthy" : "Improve stage movement",
+      description: `${conversionRate}% of total leads are enrolled. Review stuck stages before adding more cold leads.`,
+      tone: conversionRate >= 20 ? "success" : "neutral",
+    },
+  ];
 
   return (
     <>
-      <PageTitle
-        title="Counsellor Dashboard"
-        subtitle="Overview of lead flow, admissions, follow-ups, and counsellor productivity."
-        action={
+      <section className="dashboard-hero">
+        <div>
+          <span className="eyebrow">Admissions command center</span>
+          <h1>Counsellor Dashboard</h1>
+          <p>Live view of admission workload, lead movement, and follow-up pressure.</p>
+        </div>
+        <div className="dashboard-hero-actions">
+          <span className="dashboard-sync">{loading ? "Refreshing live data..." : "Live CRM data"}</span>
           <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
             <Plus size={18} />
             New Lead
           </button>
-        }
-      />
+        </div>
+      </section>
 
-      <div className="metric-grid">
-        <Metric title="Total Leads" value={formatNumber(dashboard?.totalLeads)} />
-        <Metric title="New Leads" value={formatNumber(dashboard?.newLeadsToday)} warning />
-        <Metric title="Contacted" value={formatNumber(dashboard?.contacted)} />
-        <Metric title="Enrolled" value={formatNumber(dashboard?.enrolled)} />
+      <div className="metric-grid dashboard-metric-grid">
+        <Metric title="Total Leads" value={formatNumber(totalLeads)} trend={`${conversionRate}% enrolled`} />
+        <Metric title="New Today" value={formatNumber(newLeadsToday)} trend="Needs first touch" warning={newLeadsToday > 0} />
+        <Metric title="Contacted" value={formatNumber(contacted)} trend="Active conversations" />
+        <Metric title="Enrolled" value={formatNumber(enrolled)} trend="Converted students" />
       </div>
 
-      <div className="dashboard-grid">
-        <Card title="Conversion Pipeline" className="wide-card">
+      <div className="dashboard-grid dashboard-command-grid">
+        <Card title="Admission Pipeline" badge={`${formatNumber(pipelineTotal)} Leads`} className="wide-card dashboard-chart-card">
           {loading && <StatePanel title="Loading pipeline" message="Fetching live stage counts..." />}
           {error && <StatePanel title="Could not load pipeline" message={error} action={onRetry} />}
+          {!loading && !error && pipelineData.length === 0 && <StatePanel title="No pipeline data" message="Pipeline stages will appear here once leads are available." />}
           {!loading && !error && (
-            <div className="bar-chart">
-              {barHeights.map((height, index) => (
-                <span key={pipeline[index]?.name || index} style={{ height: `${height}%` }} />
-              ))}
+            <div className="chart-shell">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={pipelineData} margin={{ top: 26, right: 10, left: -24, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} interval={0} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                  <Tooltip content={<ChartTooltip unit="leads" />} cursor={{ fill: "rgba(37, 99, 235, 0.06)" }} />
+                  <Bar dataKey="count" radius={[8, 8, 0, 0]} barSize={44}>
+                    {pipelineData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+                    <LabelList dataKey="count" position="top" fill="#0f172a" fontSize={12} fontWeight={700} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </Card>
 
-        <Card title="Today's Schedule" badge={`${followUps.length} Pending`}>
+        <Card title="Today's Schedule" badge={`${formatNumber(scheduledFollowUps.length)} Pending`} className="dashboard-focus-card">
           {loading && <StatePanel title="Loading follow-ups" message="Fetching the live queue..." />}
           {error && <StatePanel title="Could not load follow-ups" message={error} action={onRetry} />}
-          {!loading && !error && followUps.length === 0 && <StatePanel title="No follow-ups" message="There are no scheduled follow-ups for this tenant." />}
-          {!loading && !error && followUps.length > 0 && (
+          {!loading && !error && scheduledFollowUps.length === 0 && <StatePanel title="No follow-ups" message="There are no scheduled follow-ups for this tenant." />}
+          {!loading && !error && scheduledFollowUps.length > 0 && (
             <div className="schedule-list">
-              {followUps.slice(0, 3).map((item) => (
+              {scheduledFollowUps.slice(0, 4).map((item) => (
                 <FollowUpRow key={item.id} item={item} compact />
               ))}
             </div>
           )}
         </Card>
 
-        <Card title="Recent Activity" className="wide-card">
-          <div className="activity-list">
-            {activities.map((activity, index) => (
-              <div className="activity-item" key={activity}>
-                <span className={`activity-icon tone-${index}`} />
-                <div>
-                  <strong>{activity.split(" ")[0]} {activity.split(" ")[1]}</strong>
-                  <p>{activity}</p>
-                  <small>{index + 1} hour{index ? "s" : ""} ago</small>
-                </div>
+        <Card title="Admission Health" className="dashboard-chart-card">
+          <div className="dashboard-health-grid">
+            <div className="chart-shell pie-chart-shell">
+              <ResponsiveContainer width="100%" height={230}>
+                <PieChart>
+                  <Tooltip content={<ChartTooltip unit="leads" />} />
+                  <Pie data={pipelineWithLeads.length ? pipelineWithLeads : [{ name: "No leads", count: 1, fill: "#e2e8f0" }]} dataKey="count" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={3}>
+                    {(pipelineWithLeads.length ? pipelineWithLeads : [{ name: "No leads", fill: "#e2e8f0" }]).map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="chart-center-label">
+                <strong>{conversionRate}%</strong>
+                <span>conversion</span>
               </div>
-            ))}
+            </div>
+            <div className="pipeline-legend">
+              {(pipelineWithLeads.length ? pipelineWithLeads : pipelineData.slice(0, 4)).slice(0, 5).map((item) => (
+                <div key={item.name}>
+                  <span style={{ background: item.fill }} />
+                  <p>{item.name}</p>
+                  <strong>{formatNumber(item.count)}</strong>
+                </div>
+              ))}
+            </div>
           </div>
         </Card>
 
-        <Card title="Top Performing Channels" className="wide-card full-row">
-          <SourceTable />
+        <Card title="Lead Progress Snapshot" className="dashboard-chart-card">
+          <div className="chart-shell">
+            <ResponsiveContainer width="100%" height={230}>
+              <AreaChart data={progressData} margin={{ top: 18, right: 12, left: -24, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="leadProgressFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip unit="leads" />} />
+                <Area type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={3} fill="url(#leadProgressFill)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <Card title="Counsellor Focus" className="full-row dashboard-action-card">
+          <div className="dashboard-action-list">
+            {focusItems.map((item) => (
+              <article className={`dashboard-action-item ${item.tone}`} key={item.title}>
+                <span />
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
         </Card>
       </div>
     </>
@@ -6218,6 +6332,23 @@ function Metric({ title, value, trend, warning }) {
   );
 }
 
+function ChartTooltip({ active, payload, unit }) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const item = payload[0];
+  const name = item.name || item.payload?.name || "";
+  const value = item.value ?? item.payload?.count ?? item.payload?.value ?? 0;
+
+  return (
+    <div className="chart-tooltip">
+      <span>{item.payload?.name || name}</span>
+      <strong>{formatNumber(value)} {unit}</strong>
+    </div>
+  );
+}
+
 function Card({ title, badge, children, className = "" }) {
   return (
     <section className={`card ${className}`}>
@@ -6463,45 +6594,6 @@ function FollowUpRow({ item, compact = false, saving = false, canManageLeads = f
         </div>
       )}
     </article>
-  );
-}
-
-function SourceTable() {
-  return (
-    <table className="source-table">
-      <thead>
-        <tr>
-          <th>Source Channel</th>
-          <th>Leads</th>
-          <th>Conversion</th>
-          <th>Revenue</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {[
-          ["Google Search", 452, "12.5%", "Rs. 14.2L", "Stable"],
-          ["Instagram Ads", 318, "8.2%", "Rs. 8.9L", "Growing"],
-          ["Referral", 184, "24.1%", "Rs. 9.2L", "Strong"],
-        ].map((row) => (
-          <tr key={row[0]}>
-            {row.map((cell, index) => (
-              <td key={cell}>{index === 4 ? <Badge label={cell} /> : cell}</td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function SourceBreakdown() {
-  return (
-    <div className="source-breakdown">
-      {["Google Ads 35%", "Direct Website 25%", "Referrals 20%", "Social Media 20%"].map((item) => (
-        <div key={item}><span />{item}</div>
-      ))}
-    </div>
   );
 }
 

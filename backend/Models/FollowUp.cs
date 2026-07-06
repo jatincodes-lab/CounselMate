@@ -19,4 +19,5 @@ public sealed class FollowUp
     public Tenant Tenant { get; set; } = null!;
     public Lead Lead { get; set; } = null!;
     public AppUser? AssignedUser { get; set; }
+    public ICollection<Notification> Notifications { get; set; } = [];
 }

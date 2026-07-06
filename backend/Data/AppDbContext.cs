@@ -17,6 +17,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Lead> Leads => Set<Lead>();
     public DbSet<FollowUp> FollowUps => Set<FollowUp>();
     public DbSet<CrmActivity> Activities => Set<CrmActivity>();
+    public DbSet<CommunicationTemplate> CommunicationTemplates => Set<CommunicationTemplate>();
+    public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
+    public DbSet<LeadDocument> LeadDocuments => Set<LeadDocument>();
+    public DbSet<LeadPayment> LeadPayments => Set<LeadPayment>();
+    public DbSet<LeadPaymentTransaction> LeadPaymentTransactions => Set<LeadPaymentTransaction>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationDeliveryAttempt> NotificationDeliveryAttempts => Set<NotificationDeliveryAttempt>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<AdmissionApplication> AdmissionApplications => Set<AdmissionApplication>();
+    public DbSet<AdmissionChecklistItem> AdmissionChecklistItems => Set<AdmissionChecklistItem>();
+    public DbSet<AdmissionStatusHistory> AdmissionStatusHistories => Set<AdmissionStatusHistory>();
+    public DbSet<Enrollment> Enrollments => Set<Enrollment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,6 +42,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         ConfigureLeads(modelBuilder);
         ConfigureFollowUps(modelBuilder);
         ConfigureActivities(modelBuilder);
+        ConfigureCommunicationTemplates(modelBuilder);
+        ConfigureDocumentTypes(modelBuilder);
+        ConfigureLeadDocuments(modelBuilder);
+        ConfigureLeadPayments(modelBuilder);
+        ConfigureLeadPaymentTransactions(modelBuilder);
+        ConfigureNotifications(modelBuilder);
+        ConfigureNotificationDeliveryAttempts(modelBuilder);
+        ConfigureNotificationPreferences(modelBuilder);
+        ConfigureAdmissionApplications(modelBuilder);
+        ConfigureAdmissionChecklistItems(modelBuilder);
+        ConfigureAdmissionStatusHistories(modelBuilder);
+        ConfigureEnrollments(modelBuilder);
         SeedDemoTenant(modelBuilder);
     }
 
@@ -72,6 +96,27 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(item => item.Slug).IsUnique();
             entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
             entity.Property(item => item.Slug).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.ContactEmail).HasMaxLength(240);
+            entity.Property(item => item.ContactPhone).HasMaxLength(40);
+            entity.Property(item => item.WebsiteUrl).HasMaxLength(500);
+            entity.Property(item => item.AddressLine1).HasMaxLength(200);
+            entity.Property(item => item.AddressLine2).HasMaxLength(200);
+            entity.Property(item => item.City).HasMaxLength(120);
+            entity.Property(item => item.State).HasMaxLength(120);
+            entity.Property(item => item.PostalCode).HasMaxLength(20);
+            entity.Property(item => item.Country).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.TimeZone).HasMaxLength(100).IsRequired();
+            entity.Property(item => item.LogoUrl).HasMaxLength(500);
+            entity.Property(item => item.BrandColor).HasMaxLength(7).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.DefaultBranch)
+                .WithMany()
+                .HasForeignKey(item => item.DefaultBranchId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.DefaultAssigneeUser)
+                .WithMany()
+                .HasForeignKey(item => item.DefaultAssigneeUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 
@@ -284,6 +329,332 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         });
     }
 
+    private static void ConfigureCommunicationTemplates(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<CommunicationTemplate>(entity =>
+        {
+            entity.ToTable("communication_templates");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.NormalizedName }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.IsActive, item.Channel });
+            entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.NormalizedName).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Channel).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Category).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.Body).HasMaxLength(2000).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant)
+                .WithMany(item => item.CommunicationTemplates)
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureDocumentTypes(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DocumentType>(entity =>
+        {
+            entity.ToTable("document_types");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.NormalizedName }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.SortOrder }).IsUnique();
+            entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.NormalizedName).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant)
+                .WithMany(item => item.DocumentTypes)
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureLeadDocuments(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LeadDocument>(entity =>
+        {
+            entity.ToTable("lead_documents");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.LeadId, item.DocumentTypeId }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.Status });
+            entity.HasIndex(item => new { item.TenantId, item.CloudinaryPublicId });
+            entity.Property(item => item.OriginalFileName).HasMaxLength(240).IsRequired();
+            entity.Property(item => item.ContentType).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.CloudinaryAssetId).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.CloudinaryPublicId).HasMaxLength(500).IsRequired();
+            entity.Property(item => item.CloudinaryResourceType).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.CloudinaryDeliveryType).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.CloudinarySecureUrl).HasMaxLength(1000);
+            entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Notes).HasMaxLength(500);
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant)
+                .WithMany()
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Lead)
+                .WithMany(item => item.Documents)
+                .HasForeignKey(item => item.LeadId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.DocumentType)
+                .WithMany(item => item.LeadDocuments)
+                .HasForeignKey(item => item.DocumentTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.UploadedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.ReviewedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.ReviewedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureLeadPayments(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LeadPayment>(entity =>
+        {
+            entity.ToTable("lead_payments");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.LeadId });
+            entity.HasIndex(item => new { item.TenantId, item.Status });
+            entity.HasIndex(item => new { item.TenantId, item.DueDate });
+            entity.Property(item => item.Title).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.AmountDue).HasPrecision(12, 2);
+            entity.Property(item => item.Currency).HasMaxLength(3).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Notes).HasMaxLength(500);
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant)
+                .WithMany()
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Lead)
+                .WithMany(item => item.Payments)
+                .HasForeignKey(item => item.LeadId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.CancelledByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CancelledByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureLeadPaymentTransactions(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LeadPaymentTransaction>(entity =>
+        {
+            entity.ToTable("lead_payment_transactions");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.LeadPaymentId });
+            entity.HasIndex(item => new { item.TenantId, item.ReceiptNumber })
+                .HasFilter("\"ReceiptNumber\" IS NOT NULL")
+                .IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.ReferenceNumber });
+            entity.Property(item => item.Amount).HasPrecision(12, 2);
+            entity.Property(item => item.Method).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.ReferenceNumber).HasMaxLength(120);
+            entity.Property(item => item.ReceiptNumber).HasMaxLength(120);
+            entity.Property(item => item.Notes).HasMaxLength(500);
+            entity.HasOne(item => item.Tenant)
+                .WithMany()
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.LeadPayment)
+                .WithMany(item => item.Transactions)
+                .HasForeignKey(item => item.LeadPaymentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureNotifications(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.ToTable("notifications");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.RecipientUserId, item.DeduplicationKey }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.RecipientUserId, item.DismissedAt, item.ReadAt, item.CreatedAt });
+            entity.HasIndex(item => new { item.TenantId, item.FollowUpId });
+            entity.HasIndex(item => new { item.TenantId, item.LeadPaymentId });
+            entity.HasIndex(item => item.ExpiresAt);
+            entity.Property(item => item.Type).HasMaxLength(60).IsRequired();
+            entity.Property(item => item.Title).HasMaxLength(180).IsRequired();
+            entity.Property(item => item.Message).HasMaxLength(600).IsRequired();
+            entity.Property(item => item.Severity).HasMaxLength(20).IsRequired();
+            entity.Property(item => item.DeduplicationKey).HasMaxLength(240).IsRequired();
+            entity.HasOne(item => item.Tenant)
+                .WithMany(item => item.Notifications)
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.RecipientUser)
+                .WithMany(item => item.Notifications)
+                .HasForeignKey(item => item.RecipientUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.Lead)
+                .WithMany(item => item.Notifications)
+                .HasForeignKey(item => item.LeadId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.FollowUp)
+                .WithMany(item => item.Notifications)
+                .HasForeignKey(item => item.FollowUpId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.LeadPayment)
+                .WithMany(item => item.Notifications)
+                .HasForeignKey(item => item.LeadPaymentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureNotificationDeliveryAttempts(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<NotificationDeliveryAttempt>(entity =>
+        {
+            entity.ToTable("notification_delivery_attempts");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.NotificationId, item.Channel, item.AttemptNumber }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.Status, item.AttemptedAt });
+            entity.Property(item => item.Channel).HasMaxLength(30).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(30).IsRequired();
+            entity.Property(item => item.ProviderMessageId).HasMaxLength(240);
+            entity.Property(item => item.ErrorCode).HasMaxLength(80);
+            entity.Property(item => item.ErrorMessage).HasMaxLength(500);
+            entity.HasOne(item => item.Tenant)
+                .WithMany()
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Notification)
+                .WithMany(item => item.DeliveryAttempts)
+                .HasForeignKey(item => item.NotificationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureNotificationPreferences(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<NotificationPreference>(entity =>
+        {
+            entity.ToTable("notification_preferences");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.UserId }).IsUnique();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant)
+                .WithMany(item => item.NotificationPreferences)
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.User)
+                .WithOne(item => item.NotificationPreference)
+                .HasForeignKey<NotificationPreference>(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureAdmissionApplications(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AdmissionApplication>(entity =>
+        {
+            entity.ToTable("admission_applications");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.ApplicationNumber }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.LeadId, item.CourseId, item.Intake }).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.Status, item.UpdatedAt });
+            entity.HasIndex(item => new { item.TenantId, item.AssignedReviewerUserId });
+            entity.Property(item => item.ApplicationNumber).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Intake).HasMaxLength(120);
+            entity.Property(item => item.InternalNotes).HasMaxLength(1000);
+            entity.Property(item => item.DecisionReason).HasMaxLength(500);
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant).WithMany(item => item.AdmissionApplications).HasForeignKey(item => item.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Lead).WithMany(item => item.AdmissionApplications).HasForeignKey(item => item.LeadId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.Course).WithMany().HasForeignKey(item => item.CourseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Branch).WithMany().HasForeignKey(item => item.BranchId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.AssignedReviewerUser).WithMany().HasForeignKey(item => item.AssignedReviewerUserId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.CreatedByUser).WithMany().HasForeignKey(item => item.CreatedByUserId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.UpdatedByUser).WithMany().HasForeignKey(item => item.UpdatedByUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureAdmissionChecklistItems(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AdmissionChecklistItem>(entity =>
+        {
+            entity.ToTable("admission_checklist_items");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.ApplicationId, item.SortOrder });
+            entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Category).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.Notes).HasMaxLength(500);
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant).WithMany().HasForeignKey(item => item.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Application).WithMany(item => item.ChecklistItems).HasForeignKey(item => item.ApplicationId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.CompletedByUser).WithMany().HasForeignKey(item => item.CompletedByUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureAdmissionStatusHistories(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AdmissionStatusHistory>(entity =>
+        {
+            entity.ToTable("admission_status_history");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.ApplicationId, item.ChangedAt });
+            entity.Property(item => item.PreviousStatus).HasMaxLength(40);
+            entity.Property(item => item.NewStatus).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Note).HasMaxLength(500);
+            entity.HasOne(item => item.Tenant).WithMany().HasForeignKey(item => item.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Application).WithMany(item => item.StatusHistory).HasForeignKey(item => item.ApplicationId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.ChangedByUser).WithMany().HasForeignKey(item => item.ChangedByUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureEnrollments(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Enrollment>(entity =>
+        {
+            entity.ToTable("enrollments");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.EnrollmentNumber }).IsUnique();
+            entity.HasIndex(item => item.ApplicationId).IsUnique();
+            entity.HasIndex(item => new { item.TenantId, item.LeadId });
+            entity.Property(item => item.EnrollmentNumber).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.StudentName).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Intake).HasMaxLength(120);
+            entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant).WithMany(item => item.Enrollments).HasForeignKey(item => item.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Application).WithOne(item => item.Enrollment).HasForeignKey<Enrollment>(item => item.ApplicationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Lead).WithMany(item => item.Enrollments).HasForeignKey(item => item.LeadId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Course).WithMany().HasForeignKey(item => item.CourseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Branch).WithMany().HasForeignKey(item => item.BranchId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.CreatedByUser).WithMany().HasForeignKey(item => item.CreatedByUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
     private static void SeedDemoTenant(ModelBuilder modelBuilder)
     {
         var createdAt = new DateTimeOffset(2026, 6, 25, 0, 0, 0, TimeSpan.Zero);
@@ -314,6 +685,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         var lead3Id = Guid.Parse("70000000-0000-0000-0000-000000000003");
         var lead4Id = Guid.Parse("70000000-0000-0000-0000-000000000004");
         var lead5Id = Guid.Parse("70000000-0000-0000-0000-000000000005");
+        var template1Id = Guid.Parse("90000000-0000-0000-0000-000000000001");
+        var template2Id = Guid.Parse("90000000-0000-0000-0000-000000000002");
+        var template3Id = Guid.Parse("90000000-0000-0000-0000-000000000003");
+        var template4Id = Guid.Parse("90000000-0000-0000-0000-000000000004");
+        var idProofDocumentTypeId = Guid.Parse("a0000000-0000-0000-0000-000000000001");
+        var addressProofDocumentTypeId = Guid.Parse("a0000000-0000-0000-0000-000000000002");
+        var academicMarksheetDocumentTypeId = Guid.Parse("a0000000-0000-0000-0000-000000000003");
+        var admissionFormDocumentTypeId = Guid.Parse("a0000000-0000-0000-0000-000000000004");
+        var paymentReceiptDocumentTypeId = Guid.Parse("a0000000-0000-0000-0000-000000000005");
         const string demoPasswordHash = "v1.100000.Mt8GC3coU3xegrVi+C2aAw==.i10uchOOE1k5pG2zdL/PW+FxQ7wZ9yM+MW/hwgowbPM=";
 
         modelBuilder.Entity<Tenant>().HasData(new Tenant
@@ -321,7 +701,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             Id = tenantId,
             Name = "Demo Academy",
             Slug = "demo-academy",
+            ContactEmail = "admissions@demo-academy.test",
+            ContactPhone = "+91 11 4000 0000",
+            City = "New Delhi",
+            State = "Delhi",
+            Country = "India",
+            TimeZone = "Asia/Kolkata",
+            BrandColor = "#2171D3",
+            DefaultBranchId = branchId,
+            DefaultAssigneeUserId = vermaId,
             IsActive = true,
+            Version = 1,
             CreatedAt = createdAt
         });
 
@@ -382,6 +772,21 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000001"), TenantId = tenantId, LeadId = lead1Id, AssignedUserId = rahulId, Type = "Call", Priority = "High", Status = "Scheduled", Version = 1, DueAt = createdAt.AddMinutes(45), CreatedAt = createdAt, UpdatedAt = createdAt },
             new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000002"), TenantId = tenantId, LeadId = lead2Id, AssignedUserId = vermaId, Type = "WhatsApp", Priority = "Medium", Status = "Scheduled", Version = 1, DueAt = createdAt.AddHours(2), CreatedAt = createdAt, UpdatedAt = createdAt },
             new FollowUp { Id = Guid.Parse("80000000-0000-0000-0000-000000000003"), TenantId = tenantId, LeadId = lead3Id, AssignedUserId = khannaId, Type = "Email", Priority = "Low", Status = "Scheduled", Version = 1, DueAt = createdAt.AddHours(4), CreatedAt = createdAt, UpdatedAt = createdAt }
+        );
+
+        modelBuilder.Entity<CommunicationTemplate>().HasData(
+            new CommunicationTemplate { Id = template1Id, TenantId = tenantId, Name = "Initial inquiry WhatsApp", NormalizedName = "INITIAL INQUIRY WHATSAPP", Channel = "WhatsApp", Category = "Initial Follow-up", Body = "Hi {{studentName}}, thank you for your interest in {{course}} at {{tenantName}}. Our counsellor will help you with the next steps. Reply here or call us for any questions.", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new CommunicationTemplate { Id = template2Id, TenantId = tenantId, Name = "Demo reminder", NormalizedName = "DEMO REMINDER", Channel = "WhatsApp", Category = "Demo Reminder", Body = "Hi {{studentName}}, this is a reminder for your {{course}} demo. Please keep your questions ready. Your counsellor: {{counsellor}}.", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new CommunicationTemplate { Id = template3Id, TenantId = tenantId, Name = "Application follow-up email", NormalizedName = "APPLICATION FOLLOW-UP EMAIL", Channel = "Email", Category = "Application Follow-up", Body = "Dear {{studentName}}, we are following up on your {{course}} admission application. Current stage: {{stage}}. Please share any pending details so we can proceed.", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new CommunicationTemplate { Id = template4Id, TenantId = tenantId, Name = "Document reminder", NormalizedName = "DOCUMENT REMINDER", Channel = "WhatsApp", Category = "Document Reminder", Body = "Hi {{studentName}}, please share the pending documents for your {{course}} admission process. Lead ID: {{leadNumber}}.", IsActive = true, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt }
+        );
+
+        modelBuilder.Entity<DocumentType>().HasData(
+            new DocumentType { Id = idProofDocumentTypeId, TenantId = tenantId, Name = "ID Proof", NormalizedName = "ID PROOF", IsRequired = true, IsActive = true, SortOrder = 10, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new DocumentType { Id = addressProofDocumentTypeId, TenantId = tenantId, Name = "Address Proof", NormalizedName = "ADDRESS PROOF", IsRequired = true, IsActive = true, SortOrder = 20, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new DocumentType { Id = academicMarksheetDocumentTypeId, TenantId = tenantId, Name = "Academic Marksheet", NormalizedName = "ACADEMIC MARKSHEET", IsRequired = true, IsActive = true, SortOrder = 30, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new DocumentType { Id = admissionFormDocumentTypeId, TenantId = tenantId, Name = "Admission Form", NormalizedName = "ADMISSION FORM", IsRequired = true, IsActive = true, SortOrder = 40, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt },
+            new DocumentType { Id = paymentReceiptDocumentTypeId, TenantId = tenantId, Name = "Payment Receipt", NormalizedName = "PAYMENT RECEIPT", IsRequired = false, IsActive = true, SortOrder = 50, Version = 1, CreatedAt = createdAt, UpdatedAt = createdAt }
         );
     }
 }

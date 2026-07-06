@@ -4,6 +4,107 @@
 
 The project has been started and the first working foundation is in place. The product name is now CounselMate, and the planned architecture is multi-tenant so the CRM can serve multiple client institutes.
 
+### 2026-07-06 - Bulk Lead Actions
+
+- Added an atomic `POST /api/leads/bulk-actions` workflow for bulk assignment/unassignment, stage changes, archive, and restore operations.
+- Limited each operation to 100 unique leads and restricted access to Owner, Admin, and Branch Manager roles.
+- Added tenant/access-scope enforcement, active target validation, branch-compatible assignment rules, archived-state restrictions, optimistic concurrency checks, and safe no-op handling.
+- Added an activity timeline record for every changed lead and ensured all changes commit in one EF Core transaction.
+- Added current-page selection, select-all/indeterminate behavior, selected count, contextual targets, destructive-action confirmation, duplicate-submit prevention, responsive controls, and accessible checkbox labels to the Leads table.
+- Verified:
+  - Backend Release build passed with zero warnings and errors.
+  - Frontend Vite production build passed with 1,577 modules transformed.
+  - `git diff --check` reported no whitespace errors.
+- Pending:
+  - Manual Owner/Admin/Branch Manager browser and API role QA with concurrent-edit and mixed archived-state scenarios.
+
+### 2026-07-06 - Counsellor My Work Insights
+
+- Added a counsellor/telecaller-only reporting API scoped to the authenticated user's current portfolio and tenant.
+- Added actionable attention groups for overdue and due-today follow-ups, untouched leads, stale leads, high-priority leads without a next action, and all open leads without a next action.
+- Added pipeline health with seven-day review warnings, follow-up completion/on-time/late/overdue metrics, admission outcomes, and concise course/source breakdowns.
+- Replaced the generic Reports experience for counsellor roles with a responsive `My Work Insights` workspace; Owner/Admin reports and exports remain unchanged.
+- Added direct lead-drawer actions from attention lists, priority-first ordering, empty/loading/error states, date/course/source filters, metric definitions, and conservative legacy stage-aging behavior.
+- Verified:
+  - Backend Release build passed with zero warnings before runtime verification.
+  - Frontend production build passed with 1,577 modules transformed.
+  - Live API health and counsellor authentication passed against the configured database.
+  - Runtime verification identified an EF ordering translation issue; the query was rewritten to order lead entities before projection.
+- Pending:
+  - Rerun the live endpoint after restarting the temporary local API process, then perform the deferred browser QA pass.
+
+### 2026-07-06 - Application and Enrollment Management
+
+- Added dedicated admission application, checklist item, immutable status history, and enrollment entities.
+- Added EF configuration and migration `20260706084943_AddApplicationsEnrollment` for application/enrollment persistence, tenant indexes, unique application/enrollment numbers, checklist concurrency, and relationship constraints.
+- Added application APIs for paginated list, create-from-lead, detail, status transitions, checklist review, and atomic enrollment.
+- Added server-owned transition rules for Draft, Submitted, Under Review, Changes Required, Approved, Rejected, Withdrawn, Cancelled, and Enrolled states.
+- Added approval gates for active lead/course/branch, completed or waived checklist items, verified required documents, and cleared payment balance.
+- Added atomic enrollment transaction that creates the enrollment, marks the application enrolled, moves the lead to the tenant won stage, records immutable history, and writes the lead activity timeline.
+- Added Applications navigation workspace with filters, status/checklist visibility, application detail drawer, reviewer checklist actions, transition actions, and enrollment action.
+- Added lead drawer admission application creation entry point.
+- Verified:
+  - Backend compiled successfully with zero warnings/errors using an isolated output folder because the normal Release executable was locked by a running local API process.
+  - Frontend production build passed with 1,577 modules transformed.
+- Pending:
+  - Apply the new EF migration to the target database when ready.
+  - Manual browser/API role QA for Owner/Admin/Branch Manager/Counsellor/Accountant/Read-only.
+  - Add configurable tenant-level admission requirement templates and intake/batch master data in a later refinement.
+
+### 2026-07-01 - Automation Foundation and In-App Notifications
+
+- Added Hangfire background jobs with isolated PostgreSQL storage, bounded workers, notification/default queues, recurring five-minute scans, distributed concurrency locking, and bounded retries.
+- Added tenant-scoped notifications, immutable delivery attempts, user preferences, deterministic deduplication keys, retention fields, indexes, and migration `20260701070939_AddNotificationsAutomation`.
+- Added follow-up due/overdue and payment due/overdue reminder production with current-state revalidation for reschedules, completion, cancellation, payment, archived leads, inactive users, changed roles, changed lead access, and disabled preferences.
+- Added bounded scan batches and stale-notification dismissal to prevent unbounded memory use and inaccessible deep links.
+- Added authenticated paginated inbox, unread count, mark-one/all-read, preference concurrency, Owner/Admin automation status, and protected manual reminder scan APIs.
+- Replaced the decorative frontend bell with an in-app notification panel, unread badge, pagination, error/loading/empty states, read actions, polling, and lead deep links.
+- External email and WhatsApp delivery remain disabled until their provider credentials, consent rules, and templates are configured in later phases.
+- Fixed .NET 10 endpoint discovery for document deletion by explicitly binding its DELETE request body.
+- Verified:
+  - Backend Release build passed with zero warnings and errors.
+  - Neon application migration applied and Hangfire PostgreSQL schema initialized.
+  - API health, authentication, inbox, unread count, preference save/stale conflict, invalid pagination, Owner status/manual queue, unauthenticated 401, and Counsellor 403 boundaries passed.
+- Pending:
+  - Final frontend production build rerun is blocked by the local Windows Node execution boundary; the previous frontend build passed before this UI increment.
+  - Manual browser QA and a live due-record reminder creation test using disposable test data.
+
+### 2026-07-01 - Payments Module Implementation
+
+- Added tenant-scoped lead fee and immutable payment transaction records using INR.
+- Added payment creation, editing, transaction recording, cancellation, balance calculation, receipt generation, and status derivation for Pending, Partially Paid, Paid, Overdue, and Cancelled states.
+- Added Owner/Admin/Accountant payment management permissions while retaining read-only visibility for other users with lead access.
+- Added production validation for positive amounts, overpayments, payment methods, receipt uniqueness, archived leads, stale versions, tenant boundaries, and cancellation after transactions.
+- Added payment activity timeline events and a Payments section in the lead detail drawer with fee, collection, balance, transaction history, edit, and cancellation workflows.
+- Added and applied Neon migration `20260701060830_AddLeadPayments` on 2026-07-01.
+- Verified:
+  - Backend build passed: `dotnet build backend/EducationCrm.Api.csproj --no-restore`
+  - Frontend production build passed: `npm run build`
+- Pending:
+  - Manual browser and API role QA, which will be completed during the requested later testing pass.
+
+### 2026-07-01 - Documents Module Implementation
+
+- Added lead document tracking with Cloudinary-backed storage and PostgreSQL metadata.
+- Added `document_types` and `lead_documents` EF models, indexes, relationships, and migration `20260701045657_AddLeadDocuments`.
+- Seeded the default checklist for the demo tenant:
+  - ID Proof
+  - Address Proof
+  - Academic Marksheet
+  - Admission Form
+  - Payment Receipt
+- Added permission-gated APIs for document checklist, upload/replace, verify, reject, delete, and download proxy.
+- Added production validation for allowed formats, max 10 MB file size, empty files, stale versions, inactive document types, archived leads, verified replacement rules, and cross-tenant/inaccessible lead boundaries.
+- Added a Documents section in the lead detail drawer with upload/replace, download, Owner/Admin review actions, and role-aware disabled states.
+- Verified:
+  - Backend build passed: `dotnet build backend/EducationCrm.Api.csproj --no-restore`
+  - Frontend production build passed: `npm run build`
+- Pending:
+  - Cloudinary credentials were configured locally through ASP.NET user-secrets; production hosting still needs environment variables.
+  - Manual browser QA for Owner/Admin/Counsellor/Read-only document workflows.
+- Neon migration status:
+  - `20260701045657_AddLeadDocuments` applied successfully to the Neon database on 2026-07-01.
+
 ## Completed
 
 ### Planning

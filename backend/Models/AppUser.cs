@@ -18,6 +18,8 @@ public sealed class AppUser
     public Branch? Branch { get; set; }
     public ICollection<Lead> AssignedLeads { get; set; } = [];
     public ICollection<FollowUp> AssignedFollowUps { get; set; } = [];
+    public ICollection<Notification> Notifications { get; set; } = [];
+    public NotificationPreference? NotificationPreference { get; set; }
 }
 
 public enum UserRole

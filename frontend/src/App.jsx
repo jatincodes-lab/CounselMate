@@ -29,26 +29,48 @@ import {
   Users,
   X,
 } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addLeadActivity,
+  addLeadPaymentTransaction,
+  applyCommunicationTemplate,
   archiveLead,
-  assignLead,
   cancelLeadFollowUp,
+  cancelLeadPayment,
   changePassword,
+  createCommunicationTemplate,
+  commitLeadImport,
   completeLeadFollowUp,
   createLead,
+  createLeadApplication,
   createLeadFollowUp,
+  createLeadPayment,
+  deleteLeadDocument,
+  downloadLeadDocument,
+  downloadLeadImportTemplate,
+  exportLeads,
+  exportReports,
   forgotPassword,
   getCrmData,
   getCurrentUser,
   getLeadDetail,
   getLeads,
+  getReports,
+  getCounsellorWorkInsights,
+  getApplicationDetail,
+  getApplications,
+  getCommunicationTemplates,
+  getCurrentTenant,
   getPlatformTenants,
   getStoredAuth,
   getUsers,
+  getNotifications,
+  getNotificationUnreadCount,
   login,
   logout,
+  markAllNotificationsRead,
+  markNotificationRead,
+  previewLeadImport,
   createUser,
   createPlatformTenant,
   createMasterRecord,
@@ -56,14 +78,24 @@ import {
   reorderLeadStages,
   resetUserPassword,
   rescheduleLeadFollowUp,
+  rejectLeadDocument,
   updateMasterRecord,
+  updateCurrentTenant,
+  updateCommunicationTemplate,
+  updateStoredUser,
   updateUser,
   updateLead,
-  updateLeadStage,
+  updateLeadPayment,
+  uploadLeadDocument,
+  verifyLeadDocument,
   restoreLead,
+  runBulkLeadAction,
+  transitionApplication,
+  updateApplicationChecklistItem,
+  enrollApplication,
 } from "./api";
 import counselMateLogo from "./assets/counselmate-logo.png";
-import { activities, counselors } from "./data/mockData";
+import { activities } from "./data/mockData";
 
 const navItems = [
   { id: "platform", label: "Platform", icon: Users, ownerOnly: true },
@@ -71,6 +103,7 @@ const navItems = [
   { id: "leads", label: "Leads", icon: Search },
   { id: "pipeline", label: "Pipeline", icon: BarChart3 },
   { id: "followups", label: "Follow-ups", icon: CalendarDays },
+  { id: "applications", label: "Applications", icon: BookOpen },
   { id: "counselors", label: "Counsellors", icon: Users },
   { id: "reports", label: "Reports", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings },
@@ -105,6 +138,7 @@ function App() {
     pipeline: [],
     followUps: [],
     leadOptions: emptyLeadOptions(),
+    communicationTemplates: [],
   });
   const [leadFilters, setLeadFilters] = useState(() => defaultLeadFilters());
   const [crmStatus, setCrmStatus] = useState({
@@ -112,11 +146,28 @@ function App() {
     error: "",
   });
   const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const [leadImportOpen, setLeadImportOpen] = useState(false);
+  const [leadModalDefaults, setLeadModalDefaults] = useState({});
   const [createStatus, setCreateStatus] = useState({
     saving: false,
     error: "",
     fieldErrors: {},
   });
+  const [leadExportStatus, setLeadExportStatus] = useState({
+    exporting: "",
+    error: "",
+  });
+  const [reportsData, setReportsData] = useState(null);
+  const [reportFilters, setReportFilters] = useState(() => defaultReportFilters());
+  const [reportsStatus, setReportsStatus] = useState({
+    loading: false,
+    error: "",
+    exporting: "",
+  });
+  const [applicationFilters, setApplicationFilters] = useState({ status: "", search: "", page: 1, pageSize: 25 });
+  const [applicationsData, setApplicationsData] = useState({ items: [], page: 1, pageSize: 25, total: 0 });
+  const [applicationStatus, setApplicationStatus] = useState({ loading: false, saving: false, error: "", message: "" });
+  const [selectedApplication, setSelectedApplication] = useState(null);
   const [selectedLeadId, setSelectedLeadId] = useState("");
   const [leadDetail, setLeadDetail] = useState(null);
   const [leadDetailStatus, setLeadDetailStatus] = useState({
@@ -125,6 +176,11 @@ function App() {
   });
   const [leadActionStatus, setLeadActionStatus] = useState({
     saving: false,
+    error: "",
+    fieldErrors: {},
+  });
+  const [followUpQueueStatus, setFollowUpQueueStatus] = useState({
+    savingId: "",
     error: "",
     fieldErrors: {},
   });
@@ -143,7 +199,48 @@ function App() {
     fieldErrors: {},
     message: "",
   });
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationData, setNotificationData] = useState({ items: [], total: 0, unreadCount: 0, page: 1 });
+  const [notificationStatus, setNotificationStatus] = useState({ loading: false, error: "", saving: false });
   const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
+
+  const loadNotifications = useCallback(async ({ page = 1, append = false, silent = false } = {}) => {
+    if (!currentUser) {
+      return;
+    }
+
+    if (!silent) {
+      setNotificationStatus((current) => ({ ...current, loading: true, error: "" }));
+    }
+    try {
+      const response = await getNotifications({ page, pageSize: 15 });
+      setNotificationData((current) => ({
+        ...response,
+        items: append ? [...current.items, ...response.items] : response.items,
+      }));
+      setNotificationStatus((current) => ({ ...current, loading: false, error: "" }));
+    } catch (error) {
+      if (!silent) {
+        setNotificationStatus((current) => ({
+          ...current,
+          loading: false,
+          error: error instanceof Error ? error.message : "Unable to load notifications.",
+        }));
+      }
+    }
+  }, [currentUser]);
+
+  const refreshUnreadCount = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
+    try {
+      const response = await getNotificationUnreadCount();
+      setNotificationData((current) => ({ ...current, unreadCount: response.count }));
+    } catch {
+      // Polling failures stay silent; opening the inbox exposes actionable errors.
+    }
+  }, [currentUser]);
 
   const loadCrmData = useCallback(async () => {
     if (!currentUser) {
@@ -187,6 +284,43 @@ function App() {
     }
   }, [currentUser, leadFilters]);
 
+  const loadReports = useCallback(async (filters = reportFilters) => {
+    if (!currentUser) {
+      return;
+    }
+
+    setReportsStatus((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const reports = ["Counselor", "Telecaller"].includes(currentUser.role)
+        ? await getCounsellorWorkInsights(filters)
+        : await getReports(filters);
+      setReportsData(reports);
+      setReportsStatus((current) => ({ ...current, loading: false, error: "" }));
+    } catch (error) {
+      setReportsStatus((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load reports.",
+      }));
+    }
+  }, [currentUser, reportFilters]);
+
+  const loadApplications = useCallback(async (filters = applicationFilters) => {
+    if (!currentUser) return;
+    setApplicationStatus((current) => ({ ...current, loading: true, error: "", message: "" }));
+    try {
+      const response = await getApplications(filters);
+      setApplicationsData(response);
+      setApplicationStatus((current) => ({ ...current, loading: false, error: "" }));
+    } catch (error) {
+      setApplicationStatus((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load applications.",
+      }));
+    }
+  }, [currentUser, applicationFilters]);
+
   useEffect(() => {
     const restoreSession = async () => {
       const { token } = getStoredAuth();
@@ -197,6 +331,7 @@ function App() {
 
       try {
         const user = await getCurrentUser();
+        updateStoredUser(user);
         setCurrentUser(user);
         setAuthStatus({ loading: false, error: "", signingIn: false });
       } catch {
@@ -214,6 +349,85 @@ function App() {
       loadCrmData();
     }
   }, [loadCrmData]);
+
+  useEffect(() => {
+    if (currentUser && activePage === "reports") {
+      loadReports();
+    }
+  }, [activePage, currentUser, loadReports]);
+
+  useEffect(() => {
+    if (currentUser && activePage === "applications") {
+      loadApplications();
+    }
+  }, [activePage, currentUser, loadApplications]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setNotificationOpen(false);
+      setNotificationData({ items: [], total: 0, unreadCount: 0, page: 1 });
+      return undefined;
+    }
+
+    refreshUnreadCount();
+    const timer = window.setInterval(refreshUnreadCount, 60000);
+    return () => window.clearInterval(timer);
+  }, [currentUser, refreshUnreadCount]);
+
+  const toggleNotifications = () => {
+    setNotificationOpen((open) => {
+      if (!open) {
+        loadNotifications();
+      }
+      return !open;
+    });
+  };
+
+  const handleNotificationClick = async (notification) => {
+    if (!notification.readAt) {
+      try {
+        await markNotificationRead(notification.id);
+        setNotificationData((current) => ({
+          ...current,
+          unreadCount: Math.max(0, current.unreadCount - 1),
+          items: current.items.map((item) => item.id === notification.id
+            ? { ...item, readAt: new Date().toISOString() }
+            : item),
+        }));
+      } catch (error) {
+        setNotificationStatus((current) => ({
+          ...current,
+          error: error instanceof Error ? error.message : "Unable to update notification.",
+        }));
+        return;
+      }
+    }
+
+    setNotificationOpen(false);
+    if (notification.leadId) {
+      await openLeadDetail(notification.leadId);
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    setNotificationStatus((current) => ({ ...current, saving: true, error: "" }));
+    try {
+      await markAllNotificationsRead();
+      const readAt = new Date().toISOString();
+      setNotificationData((current) => ({
+        ...current,
+        unreadCount: 0,
+        items: current.items.map((item) => ({ ...item, readAt: item.readAt || readAt })),
+      }));
+      setNotificationStatus((current) => ({ ...current, saving: false }));
+    } catch (error) {
+      setNotificationStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to mark notifications as read.",
+      }));
+    }
+  };
 
   const handleLogin = async (payload) => {
     setAuthStatus({ loading: false, error: "", signingIn: true });
@@ -281,15 +495,21 @@ function App() {
     setPasswordDialogOpen(false);
     setPasswordStatus({ saving: false, error: "", fieldErrors: {}, message: "" });
     setLeadModalOpen(false);
+    setLeadImportOpen(false);
     setSelectedLeadId("");
     setLeadDetail(null);
     setLeadFilters(defaultLeadFilters());
+    setLeadExportStatus({ exporting: "", error: "" });
+    setReportsData(null);
+    setReportFilters(defaultReportFilters());
+    setReportsStatus({ loading: false, error: "", exporting: "" });
     setCrmData({
       dashboard: null,
       leads: emptyLeadList(),
       pipeline: [],
       followUps: [],
       leadOptions: emptyLeadOptions(),
+      communicationTemplates: [],
     });
   };
 
@@ -419,11 +639,42 @@ function App() {
     setUsersStatus((current) => ({ ...current, error: "", fieldErrors: {}, message: "" }));
   };
 
+  const handleTenantProfileChanged = (profile) => {
+    setCurrentUser((user) => {
+      if (!user) {
+        return user;
+      }
+      const updatedUser = {
+        ...user,
+        tenantName: profile.name,
+        tenantLogoUrl: profile.logoUrl,
+        tenantBrandColor: profile.brandColor,
+      };
+      updateStoredUser(updatedUser);
+      return updatedUser;
+    });
+  };
+
+  const openCreateLeadModal = (stageName = "") => {
+    const defaults = {};
+    if (stageName) {
+      defaults.leadStageId = findOptionId(crmData.leadOptions.stages, stageName) || "";
+    }
+    if (["Counselor", "Telecaller"].includes(currentUser.role)) {
+      defaults.branchId = "";
+      defaults.assignedUserId = currentUser.userId;
+    }
+    setLeadModalDefaults(defaults);
+    setCreateStatus({ saving: false, error: "", fieldErrors: {} });
+    setLeadModalOpen(true);
+  };
+
   const handleCreateLead = async (payload) => {
     setCreateStatus({ saving: true, error: "", fieldErrors: {} });
     try {
       await createLead(payload);
       setLeadModalOpen(false);
+      setLeadModalDefaults({});
       setActivePage("leads");
       await loadCrmData();
       await loadLeadList();
@@ -435,6 +686,77 @@ function App() {
         fieldErrors: error?.errors || {},
       });
     }
+  };
+
+  const handleExportLeads = async (format) => {
+    setLeadExportStatus({ exporting: format, error: "" });
+    try {
+      const response = await exportLeads(leadFilters, format);
+      downloadFileResponse(response, `leads.${format}`);
+      setLeadExportStatus({ exporting: "", error: "" });
+    } catch (error) {
+      setLeadExportStatus({
+        exporting: "",
+        error: error instanceof Error ? error.message : "Unable to export leads.",
+      });
+    }
+  };
+
+  const handleLeadImportFinished = async () => {
+    setActivePage("leads");
+    await loadCrmData();
+    await loadLeadList();
+  };
+
+  const handleApplicationFiltersChange = async (updates) => {
+    const next = { ...applicationFilters, ...updates, page: updates.page || 1 };
+    setApplicationFilters(next);
+    await loadApplications(next);
+  };
+
+  const openApplicationDetail = async (applicationId) => {
+    setApplicationStatus((current) => ({ ...current, saving: true, error: "", message: "" }));
+    try {
+      const detail = await getApplicationDetail(applicationId);
+      setSelectedApplication(detail);
+      setApplicationStatus((current) => ({ ...current, saving: false, error: "" }));
+    } catch (error) {
+      setApplicationStatus((current) => ({ ...current, saving: false, error: error instanceof Error ? error.message : "Unable to load application." }));
+    }
+  };
+
+  const runApplicationAction = async (action, successMessage = "Application updated.") => {
+    setApplicationStatus((current) => ({ ...current, saving: true, error: "", message: "" }));
+    try {
+      const detail = await action();
+      setSelectedApplication(detail);
+      await loadApplications();
+      await loadCrmData();
+      setApplicationStatus((current) => ({ ...current, saving: false, error: "", message: successMessage }));
+      return detail;
+    } catch (error) {
+      setApplicationStatus((current) => ({ ...current, saving: false, error: error instanceof Error ? error.message : "Unable to update application.", message: "" }));
+      return null;
+    }
+  };
+
+  const handleCreateApplicationFromLead = async () => {
+    if (!selectedLeadId) return null;
+    const detail = await runApplicationAction(
+      () => createLeadApplication(selectedLeadId, {}),
+      "Application created.",
+    );
+    if (detail) {
+      setActivePage("applications");
+    }
+    return detail;
+  };
+
+  const handleBulkLeadAction = async (payload) => {
+    const response = await runBulkLeadAction(payload);
+    await loadCrmData();
+    await loadLeadList();
+    return response;
   };
 
   const openLeadDetail = async (leadId) => {
@@ -476,12 +798,58 @@ function App() {
       await loadCrmData();
       await loadLeadList();
       setLeadActionStatus({ saving: false, error: "", fieldErrors: {} });
+      return detail;
     } catch (error) {
       setLeadActionStatus({
         saving: false,
         error: error instanceof Error ? error.message : "Unable to update lead.",
         fieldErrors: error?.errors || {},
       });
+      return null;
+    }
+  };
+
+  const runLeadDocumentAction = (action) => runLeadAction(async (leadId) => {
+    await action(leadId);
+    return getLeadDetail(leadId);
+  });
+
+  const handleLeadDocumentDownload = async (document) => {
+    if (!selectedLeadId || !document?.documentId) {
+      return;
+    }
+
+    setLeadActionStatus({ saving: false, error: "", fieldErrors: {} });
+    try {
+      const response = await downloadLeadDocument(selectedLeadId, document.documentId);
+      downloadFileResponse(response, document.fileName || `${document.name}.pdf`);
+    } catch (error) {
+      setLeadActionStatus({
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to download document.",
+        fieldErrors: error?.errors || {},
+      });
+    }
+  };
+
+  const runFollowUpQueueAction = async (followUp, action) => {
+    setFollowUpQueueStatus({ savingId: followUp.id, error: "", fieldErrors: {} });
+    try {
+      const detail = await action();
+      await loadCrmData();
+      await loadLeadList();
+      if (selectedLeadId && detail?.id === selectedLeadId) {
+        setLeadDetail(detail);
+      }
+      setFollowUpQueueStatus({ savingId: "", error: "", fieldErrors: {} });
+      return detail;
+    } catch (error) {
+      setFollowUpQueueStatus({
+        savingId: "",
+        error: error instanceof Error ? error.message : "Unable to update follow-up.",
+        fieldErrors: error?.errors || {},
+      });
+      return null;
     }
   };
 
@@ -498,6 +866,33 @@ function App() {
     const nextFilters = defaultLeadFilters();
     setLeadFilters(nextFilters);
     await loadLeadList(nextFilters);
+  };
+
+  const handleReportFiltersChange = async (updates) => {
+    const nextFilters = { ...reportFilters, ...updates };
+    setReportFilters(nextFilters);
+    await loadReports(nextFilters);
+  };
+
+  const handleReportFiltersReset = async () => {
+    const nextFilters = defaultReportFilters();
+    setReportFilters(nextFilters);
+    await loadReports(nextFilters);
+  };
+
+  const handleExportReports = async (format) => {
+    setReportsStatus((current) => ({ ...current, exporting: format, error: "" }));
+    try {
+      const response = await exportReports(reportFilters, format);
+      downloadFileResponse(response, `reports.${format}`);
+      setReportsStatus((current) => ({ ...current, exporting: "", error: "" }));
+    } catch (error) {
+      setReportsStatus((current) => ({
+        ...current,
+        exporting: "",
+        error: error instanceof Error ? error.message : "Unable to export reports.",
+      }));
+    }
   };
 
   if (authStatus.loading) {
@@ -528,14 +923,17 @@ function App() {
   }
 
   const canManageLeads = ["Owner", "Admin", "BranchManager", "Counselor", "Telecaller"].includes(currentUser.role);
+  const canArchiveLeads = ["Owner", "Admin", "BranchManager"].includes(currentUser.role);
   const canManageUsers = ["Owner", "Admin"].includes(currentUser.role);
+  const canManagePayments = ["Owner", "Admin", "Accountant"].includes(currentUser.role);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={{ "--tenant-brand": currentUser.tenantBrandColor || "#2171D3" }}>
       <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
         <div className="brand">
           <img src={counselMateLogo} alt="CounselMate CRM" />
         </div>
+        <TenantIdentity user={currentUser} />
 
         <nav className="nav-list">
           {navItems.filter((item) => !item.ownerOnly || currentUser.role === "Owner").map((item) => {
@@ -556,7 +954,7 @@ function App() {
           })}
         </nav>
 
-        <button className="sidebar-action" onClick={() => setLeadModalOpen(true)} disabled={!canManageLeads}>
+        <button className="sidebar-action" onClick={() => openCreateLeadModal()} disabled={!canManageLeads}>
           <Plus size={18} />
           New Lead
         </button>
@@ -572,10 +970,30 @@ function App() {
             <input placeholder={`Search ${activeLabel.toLowerCase()}, leads, or tasks...`} />
           </div>
           <div className="topbar-actions">
-            <button className="icon-button">
+            <button
+              className="icon-button"
+              onClick={toggleNotifications}
+              aria-label="Notifications"
+              aria-expanded={notificationOpen}
+            >
               <Bell size={20} />
-              <span className="dot" />
+              {notificationData.unreadCount > 0 && (
+                <span className="notification-badge">
+                  {notificationData.unreadCount > 99 ? "99+" : notificationData.unreadCount}
+                </span>
+              )}
             </button>
+            {notificationOpen && (
+              <NotificationPanel
+                data={notificationData}
+                status={notificationStatus}
+                onClose={() => setNotificationOpen(false)}
+                onItemClick={handleNotificationClick}
+                onMarkAllRead={handleMarkAllNotificationsRead}
+                onRetry={() => loadNotifications()}
+                onLoadMore={() => loadNotifications({ page: notificationData.page + 1, append: true })}
+              />
+            )}
             <div className="profile">
               <div>
                 <strong>{currentUser.fullName}</strong>
@@ -612,7 +1030,7 @@ function App() {
               loading={crmStatus.loading}
               error={crmStatus.error}
               onRetry={loadCrmData}
-              onNewLead={() => setLeadModalOpen(true)}
+              onNewLead={() => openCreateLeadModal()}
               canManageLeads={canManageLeads}
             />
           )}
@@ -626,9 +1044,16 @@ function App() {
               onRetry={() => loadLeadList()}
               onFiltersChange={handleLeadFiltersChange}
               onResetFilters={handleLeadFiltersReset}
-              onNewLead={() => setLeadModalOpen(true)}
+              onNewLead={() => openCreateLeadModal()}
+              onImport={() => setLeadImportOpen(true)}
+              onExport={handleExportLeads}
               onOpenLead={openLeadDetail}
+              onBulkAction={handleBulkLeadAction}
               canManageLeads={canManageLeads}
+              canArchiveLeads={canArchiveLeads}
+              currentUser={currentUser}
+              canImportExportLeads={canManageUsers}
+              exportStatus={leadExportStatus}
             />
           )}
           {activePage === "pipeline" && (
@@ -637,7 +1062,7 @@ function App() {
               loading={crmStatus.loading}
               error={crmStatus.error}
               onRetry={loadCrmData}
-              onNewLead={() => setLeadModalOpen(true)}
+              onNewLead={openCreateLeadModal}
               onOpenLead={openLeadDetail}
               canManageLeads={canManageLeads}
             />
@@ -647,7 +1072,46 @@ function App() {
               followUps={crmData.followUps}
               loading={crmStatus.loading}
               error={crmStatus.error}
+              actionStatus={followUpQueueStatus}
               onRetry={loadCrmData}
+              onOpenLead={openLeadDetail}
+              onComplete={(followUp) => runFollowUpQueueAction(
+                followUp,
+                () => completeLeadFollowUp(followUp.leadId, followUp.id, { version: followUp.version }),
+              )}
+              onCancel={(followUp) => runFollowUpQueueAction(
+                followUp,
+                () => cancelLeadFollowUp(followUp.leadId, followUp.id, { version: followUp.version }),
+              )}
+              onReschedule={(followUp, payload) => runFollowUpQueueAction(
+                followUp,
+                () => rescheduleLeadFollowUp(followUp.leadId, followUp.id, payload),
+              )}
+              canManageLeads={canManageLeads}
+            />
+          )}
+          {activePage === "applications" && (
+            <ApplicationsPage
+              applications={applicationsData}
+              filters={applicationFilters}
+              status={applicationStatus}
+              selectedApplication={selectedApplication}
+              onFiltersChange={handleApplicationFiltersChange}
+              onRetry={() => loadApplications()}
+              onOpen={openApplicationDetail}
+              onCloseDetail={() => setSelectedApplication(null)}
+              onTransition={(application, nextStatus, note) => runApplicationAction(
+                () => transitionApplication(application.id, { status: nextStatus, note, version: application.version }),
+                "Application status updated.",
+              )}
+              onChecklist={(application, item, updates) => runApplicationAction(
+                () => updateApplicationChecklistItem(application.id, item.id, { ...updates, version: item.version }),
+                "Checklist updated.",
+              )}
+              onEnroll={(application) => runApplicationAction(
+                () => enrollApplication(application.id, { version: application.version }),
+                "Enrollment completed.",
+              )}
             />
           )}
           {activePage === "counselors" && (
@@ -668,9 +1132,27 @@ function App() {
               onResetPassword={handleResetUserPassword}
             />
           )}
-          {activePage === "reports" && <ReportsPage />}
+          {activePage === "reports" && (
+            <ReportsPage
+              reports={reportsData}
+              options={crmData.leadOptions}
+              filters={reportFilters}
+              status={reportsStatus}
+              canExportReports={canManageUsers}
+              onFiltersChange={handleReportFiltersChange}
+              onResetFilters={handleReportFiltersReset}
+              onExport={handleExportReports}
+              onRetry={() => loadReports()}
+              currentUser={currentUser}
+              onOpenLead={openLeadDetail}
+            />
+          )}
           {activePage === "settings" && (
-            <SettingsPage currentUser={currentUser} onMasterDataChanged={loadCrmData} />
+            <SettingsPage
+              currentUser={currentUser}
+              onMasterDataChanged={loadCrmData}
+              onTenantProfileChanged={handleTenantProfileChanged}
+            />
           )}
         </section>
       </main>
@@ -678,16 +1160,25 @@ function App() {
       {leadModalOpen && canManageLeads && (
         <AddLeadModal
           options={crmData.leadOptions}
+          initialValues={leadModalDefaults}
           saving={createStatus.saving}
           error={createStatus.error}
           fieldErrors={createStatus.fieldErrors}
           onClose={() => {
             if (!createStatus.saving) {
               setLeadModalOpen(false);
+              setLeadModalDefaults({});
               setCreateStatus({ saving: false, error: "", fieldErrors: {} });
             }
           }}
           onSubmit={handleCreateLead}
+        />
+      )}
+
+      {leadImportOpen && canManageUsers && (
+        <LeadImportModal
+          onClose={() => setLeadImportOpen(false)}
+          onImported={handleLeadImportFinished}
         />
       )}
 
@@ -696,22 +1187,35 @@ function App() {
           leadId={selectedLeadId}
           lead={leadDetail}
           options={crmData.leadOptions}
+          communicationTemplates={crmData.communicationTemplates}
           loading={leadDetailStatus.loading}
           error={leadDetailStatus.error}
           actionStatus={leadActionStatus}
+          currentUser={currentUser}
           onClose={closeLeadDetail}
           onRetry={() => openLeadDetail(selectedLeadId)}
           onUpdate={(payload) => runLeadAction((leadId) => updateLead(leadId, payload))}
-          onAssign={(payload) => runLeadAction((leadId) => assignLead(leadId, payload))}
-          onStageChange={(payload) => runLeadAction((leadId) => updateLeadStage(leadId, payload))}
           onArchive={(payload) => runLeadAction((leadId) => archiveLead(leadId, payload))}
           onRestore={(payload) => runLeadAction((leadId) => restoreLead(leadId, payload))}
           onAddActivity={(payload) => runLeadAction((leadId) => addLeadActivity(leadId, payload))}
+          onApplyTemplate={(payload) => runLeadAction((leadId) => applyCommunicationTemplate(leadId, payload))}
           onCreateFollowUp={(payload) => runLeadAction((leadId) => createLeadFollowUp(leadId, payload))}
           onRescheduleFollowUp={(followUpId, payload) => runLeadAction((leadId) => rescheduleLeadFollowUp(leadId, followUpId, payload))}
           onCancelFollowUp={(followUpId, payload) => runLeadAction((leadId) => cancelLeadFollowUp(leadId, followUpId, payload))}
           onCompleteFollowUp={(followUpId, payload) => runLeadAction((leadId) => completeLeadFollowUp(leadId, followUpId, payload))}
+          onUploadDocument={(payload) => runLeadDocumentAction((leadId) => uploadLeadDocument(leadId, payload))}
+          onVerifyDocument={(document) => runLeadDocumentAction((leadId) => verifyLeadDocument(leadId, document.documentId, { version: document.version }))}
+          onRejectDocument={(document, notes) => runLeadDocumentAction((leadId) => rejectLeadDocument(leadId, document.documentId, { version: document.version, notes }))}
+          onDeleteDocument={(document) => runLeadDocumentAction((leadId) => deleteLeadDocument(leadId, document.documentId, { version: document.version }))}
+          onDownloadDocument={handleLeadDocumentDownload}
+          onCreatePayment={(payload) => runLeadDocumentAction((leadId) => createLeadPayment(leadId, payload))}
+          onUpdatePayment={(payment, payload) => runLeadDocumentAction((leadId) => updateLeadPayment(leadId, payment.id, payload))}
+          onAddPaymentTransaction={(payment, payload) => runLeadDocumentAction((leadId) => addLeadPaymentTransaction(leadId, payment.id, payload))}
+          onCancelPayment={(payment) => runLeadDocumentAction((leadId) => cancelLeadPayment(leadId, payment.id, { version: payment.version }))}
+          onCreateApplication={handleCreateApplicationFromLead}
           canManageLeads={canManageLeads}
+          canArchiveLeads={canArchiveLeads}
+          canManagePayments={canManagePayments}
         />
       )}
 
@@ -727,6 +1231,28 @@ function App() {
           onSubmit={handleChangePassword}
         />
       )}
+    </div>
+  );
+}
+
+function TenantIdentity({ user }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [user.tenantLogoUrl]);
+
+  return (
+    <div className="tenant-identity">
+      <div className="tenant-identity-mark" aria-hidden="true">
+        {user.tenantLogoUrl && !imageFailed
+          ? <img src={user.tenantLogoUrl} alt="" onError={() => setImageFailed(true)} />
+          : <span>{initials(user.tenantName).slice(0, 2)}</span>}
+      </div>
+      <div>
+        <strong title={user.tenantName}>{user.tenantName}</strong>
+        <span>Institute workspace</span>
+      </div>
     </div>
   );
 }
@@ -1239,21 +1765,125 @@ function Dashboard({ dashboard, followUps, pipeline, loading, error, onRetry, on
   );
 }
 
-function LeadsPage({ leads, options, filters, loading, error, onRetry, onFiltersChange, onResetFilters, onNewLead, onOpenLead, canManageLeads }) {
+function LeadsPage({
+  leads,
+  options,
+  filters,
+  loading,
+  error,
+  onRetry,
+  onFiltersChange,
+  onResetFilters,
+  onNewLead,
+  onImport,
+  onExport,
+  onOpenLead,
+  onBulkAction,
+  canManageLeads,
+  canArchiveLeads,
+  currentUser,
+  canImportExportLeads,
+  exportStatus,
+}) {
   const items = leads?.items || [];
   const total = leads?.total || 0;
+  const [selected, setSelected] = useState({});
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkTarget, setBulkTarget] = useState("");
+  const [bulkStatus, setBulkStatus] = useState({ saving: false, error: "", message: "" });
+  const selectionKey = `${filters.search}|${filters.branchId}|${filters.courseId}|${filters.sourceId}|${filters.stageId}|${filters.assignedUserId}|${filters.priority}|${filters.archive}|${filters.sort}|${filters.page}|${filters.pageSize}`;
+  const selectedItems = items.filter((item) => selected[item.id]);
+
+  useEffect(() => {
+    setSelected({});
+    setBulkAction("");
+    setBulkTarget("");
+    setBulkStatus({ saving: false, error: "", message: "" });
+  }, [selectionKey]);
+
+  const toggleLead = (lead) => {
+    if (bulkStatus.saving) return;
+    setSelected((current) => ({ ...current, [lead.id]: !current[lead.id] }));
+    setBulkStatus((current) => ({ ...current, error: "", message: "" }));
+  };
+
+  const togglePage = () => {
+    if (bulkStatus.saving) return;
+    const shouldSelect = selectedItems.length !== items.length;
+    setSelected(shouldSelect ? Object.fromEntries(items.map((item) => [item.id, true])) : {});
+    setBulkStatus((current) => ({ ...current, error: "", message: "" }));
+  };
+
+  const applyBulkAction = async () => {
+    if (selectedItems.length === 0 || !bulkAction || bulkStatus.saving) return;
+    if ((bulkAction === "assign" || bulkAction === "changeStage") && !bulkTarget && bulkAction !== "assign") {
+      setBulkStatus({ saving: false, error: "Select a target before applying this action.", message: "" });
+      return;
+    }
+
+    const destructive = bulkAction === "archive" || bulkAction === "restore";
+    if (destructive && !window.confirm(`${bulkAction === "archive" ? "Archive" : "Restore"} ${selectedItems.length} selected lead(s)?`)) return;
+
+    setBulkStatus({ saving: true, error: "", message: "" });
+    try {
+      const payload = {
+        action: bulkAction,
+        items: selectedItems.map((item) => ({ leadId: item.id, version: item.version })),
+        assignedUserId: bulkAction === "assign" ? (bulkTarget || null) : null,
+        leadStageId: bulkAction === "changeStage" ? bulkTarget : null,
+      };
+      const response = await onBulkAction(payload);
+      setSelected({});
+      setBulkAction("");
+      setBulkTarget("");
+      setBulkStatus({ saving: false, error: "", message: response.message || `${response.updated} lead(s) updated.` });
+    } catch (error) {
+      setBulkStatus({ saving: false, error: error instanceof Error ? error.message : "Unable to update selected leads.", message: "" });
+    }
+  };
+
+  const changeBulkAction = (value) => {
+    setBulkAction(value);
+    setBulkTarget("");
+    setBulkStatus((current) => ({ ...current, error: "", message: "" }));
+  };
+
+  const counselorOptions = ["Counselor", "Telecaller"].includes(currentUser?.role)
+    ? options.counselors.filter((item) => item.id === currentUser.userId)
+    : options.counselors;
   return (
     <>
       <PageTitle
         title="Leads Management"
         subtitle="Review and manage student admission pipelines."
         action={
-          <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
-            <Plus size={18} />
-            Add Lead
-          </button>
+          <div className="page-actions">
+            <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
+              <Plus size={18} />
+              Add Lead
+            </button>
+            {canImportExportLeads && (
+              <>
+                <button className="secondary-button" onClick={onImport}>
+                  <FileText size={18} />
+                  Import
+                </button>
+                <button className="secondary-button" onClick={() => onExport("csv")} disabled={Boolean(exportStatus.exporting)}>
+                  <Download size={18} />
+                  {exportStatus.exporting === "csv" ? "Exporting..." : "CSV"}
+                </button>
+                <button className="secondary-button" onClick={() => onExport("xlsx")} disabled={Boolean(exportStatus.exporting)}>
+                  <Download size={18} />
+                  {exportStatus.exporting === "xlsx" ? "Exporting..." : "XLSX"}
+                </button>
+              </>
+            )}
+          </div>
         }
       />
+      {exportStatus.error && <div className="form-alert">{exportStatus.error}</div>}
+      {bulkStatus.error && <div className="form-alert" role="alert">{bulkStatus.error}</div>}
+      {bulkStatus.message && <div className="form-success" role="status">{bulkStatus.message}</div>}
       <FilterBar
         filters={filters}
         options={options}
@@ -1272,26 +1902,52 @@ function LeadsPage({ leads, options, filters, loading, error, onRetry, onFilters
         onRetry={onRetry}
         onOpenLead={onOpenLead}
         onPageChange={(page) => onFiltersChange({ page })}
+        canSelect={canArchiveLeads}
+        selected={selected}
+        onToggleLead={toggleLead}
+        onTogglePage={togglePage}
       />
+      {canArchiveLeads && selectedItems.length > 0 && (
+        <div className="bulk-action-bar" role="region" aria-label="Bulk lead actions">
+          <strong>{selectedItems.length} selected</strong>
+          <select value={bulkAction} onChange={(event) => changeBulkAction(event.target.value)} disabled={bulkStatus.saving} aria-label="Bulk action">
+            <option value="">Choose action</option>
+            <option value="assign">Assign counsellor</option>
+            <option value="changeStage">Change stage</option>
+            {canArchiveLeads && filters.archive !== "archived" && <option value="archive">Archive</option>}
+            {canArchiveLeads && filters.archive !== "active" && <option value="restore">Restore</option>}
+          </select>
+          {bulkAction === "assign" && (
+            <select value={bulkTarget} onChange={(event) => setBulkTarget(event.target.value)} disabled={bulkStatus.saving} aria-label="Counsellor">
+              <option value="">Unassigned</option>
+              {counselorOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          )}
+          {bulkAction === "changeStage" && (
+            <select value={bulkTarget} onChange={(event) => setBulkTarget(event.target.value)} disabled={bulkStatus.saving} aria-label="Stage">
+              <option value="">Select stage</option>
+              {options.stages.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          )}
+          <button className="primary-button" onClick={applyBulkAction} disabled={!bulkAction || (bulkAction === "changeStage" && !bulkTarget) || bulkStatus.saving}>
+            {bulkStatus.saving ? "Updating..." : "Apply"}
+          </button>
+          <button className="ghost-button" onClick={() => setSelected({})} disabled={bulkStatus.saving}>Clear</button>
+        </div>
+      )}
     </>
   );
 }
 
-function AddLeadModal({ options, saving, error, fieldErrors, onClose, onSubmit }) {
-  const [form, setForm] = useState(() => createDefaultLeadForm(options));
+function AddLeadModal({ options, initialValues = {}, saving, error, fieldErrors, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => createDefaultLeadForm(options, initialValues));
   const [clientErrors, setClientErrors] = useState({});
   const hasRequiredOptions = options.courses.length > 0 && options.sources.length > 0 && options.stages.length > 0;
 
   useEffect(() => {
-    setForm((current) => ({
-      ...current,
-      courseId: current.courseId || options.courses[0]?.id || "",
-      leadSourceId: current.leadSourceId || options.sources[0]?.id || "",
-      leadStageId: current.leadStageId || findOptionId(options.stages, "New Inquiry") || options.stages[0]?.id || "",
-      branchId: current.branchId || options.branches[0]?.id || "",
-      assignedUserId: current.assignedUserId || options.counselors[0]?.id || "",
-    }));
-  }, [options]);
+    setForm(createDefaultLeadForm(options, initialValues));
+    setClientErrors({});
+  }, [options, initialValues]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -1445,37 +2101,337 @@ function AddLeadModal({ options, saving, error, fieldErrors, onClose, onSubmit }
   );
 }
 
+function LeadImportModal({ onClose, onImported }) {
+  const [file, setFile] = useState(null);
+  const [duplicateMode, setDuplicateMode] = useState("skip");
+  const [mapping, setMapping] = useState({});
+  const [preview, setPreview] = useState(null);
+  const [previewStale, setPreviewStale] = useState(false);
+  const [status, setStatus] = useState({
+    loading: "",
+    error: "",
+    message: "",
+  });
+
+  const busy = Boolean(status.loading);
+  const importableRows = (preview?.createRows || 0) + (preview?.updateRows || 0);
+  const canCommit = preview && !previewStale && preview.errorCount === 0 && importableRows > 0 && !busy;
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !busy) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [busy, onClose]);
+
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files?.[0] || null;
+    setFile(selectedFile);
+    setMapping({});
+    setPreview(null);
+    setPreviewStale(false);
+    setStatus({ loading: "", error: "", message: "" });
+  };
+
+  const handleDuplicateModeChange = (value) => {
+    setDuplicateMode(value);
+    if (preview) {
+      setPreviewStale(true);
+    }
+  };
+
+  const updateMapping = (key, value) => {
+    setMapping((current) => {
+      const next = { ...current };
+      if (value) {
+        next[key] = value;
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
+    if (preview) {
+      setPreviewStale(true);
+    }
+  };
+
+  const downloadTemplate = async (format) => {
+    setStatus({ loading: `template-${format}`, error: "", message: "" });
+    try {
+      const response = await downloadLeadImportTemplate(format);
+      downloadFileResponse(response, `lead-import-template.${format}`);
+      setStatus({ loading: "", error: "", message: "" });
+    } catch (error) {
+      setStatus({
+        loading: "",
+        error: error instanceof Error ? error.message : "Unable to download import template.",
+        message: "",
+      });
+    }
+  };
+
+  const runPreview = async () => {
+    if (!file) {
+      setStatus({ loading: "", error: "Select a CSV or XLSX file first.", message: "" });
+      return;
+    }
+
+    setStatus({ loading: "preview", error: "", message: "" });
+    try {
+      const response = await previewLeadImport({ file, mapping, duplicateMode });
+      setPreview(response);
+      setMapping(response.mapping || {});
+      setPreviewStale(false);
+      setStatus({
+        loading: "",
+        error: "",
+        message: response.errorCount > 0 ? "Preview completed with errors." : "Preview completed.",
+      });
+    } catch (error) {
+      setStatus({
+        loading: "",
+        error: error instanceof Error ? error.message : "Unable to preview import file.",
+        message: "",
+      });
+    }
+  };
+
+  const commitImport = async () => {
+    if (!canCommit) {
+      return;
+    }
+
+    setStatus({ loading: "commit", error: "", message: "" });
+    try {
+      const response = await commitLeadImport({
+        file,
+        mapping,
+        duplicateMode,
+        fingerprint: preview.fingerprint,
+      });
+      setStatus({ loading: "", error: "", message: response.message || "Lead import completed." });
+      await onImported();
+    } catch (error) {
+      if (error?.data?.preview) {
+        setPreview(error.data.preview);
+        setMapping(error.data.preview.mapping || {});
+        setPreviewStale(false);
+      }
+      setStatus({
+        loading: "",
+        error: error instanceof Error ? error.message : "Unable to commit lead import.",
+        message: "",
+      });
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
+      <section className="modal wide-modal" role="dialog" aria-modal="true" aria-labelledby="lead-import-title">
+        <header className="modal-header">
+          <div>
+            <h2 id="lead-import-title">Import Leads</h2>
+            <p>Upload CSV or XLSX files, preview validation results, then commit the clean rows.</p>
+          </div>
+          <button className="icon-button" onClick={onClose} disabled={busy} aria-label="Close lead import">
+            <X size={20} />
+          </button>
+        </header>
+
+        {status.error && <div className="form-alert">{status.error}</div>}
+        {status.message && <div className={preview?.errorCount ? "form-alert" : "form-success"}>{status.message}</div>}
+
+        <div className="import-toolbar">
+          <Field label="Lead File" required>
+            <input type="file" accept=".csv,.xlsx" onChange={handleFileChange} disabled={busy} />
+          </Field>
+          <Field label="Existing Phone">
+            <select value={duplicateMode} onChange={(event) => handleDuplicateModeChange(event.target.value)} disabled={busy}>
+              <option value="skip">Skip existing leads</option>
+              <option value="update">Update existing leads</option>
+            </select>
+          </Field>
+          <div className="template-actions" aria-label="Download import template">
+            <button type="button" className="secondary-button" onClick={() => downloadTemplate("xlsx")} disabled={busy}>
+              <Download size={18} />
+              Template XLSX
+            </button>
+            <button type="button" className="secondary-button" onClick={() => downloadTemplate("csv")} disabled={busy}>
+              <Download size={18} />
+              Template CSV
+            </button>
+          </div>
+        </div>
+
+        {preview && (
+          <>
+            <div className="import-summary">
+              <MetricPill label="Rows" value={preview.totalRows} />
+              <MetricPill label="Create" value={preview.createRows} />
+              <MetricPill label="Update" value={preview.updateRows} />
+              <MetricPill label="Skip" value={preview.skipRows} />
+              <MetricPill label="Errors" value={preview.errorCount} tone={preview.errorCount ? "danger" : ""} />
+              <MetricPill label="Warnings" value={preview.warningCount} tone={preview.warningCount ? "warn" : ""} />
+            </div>
+
+            <div className="mapping-panel">
+              <div className="section-heading">
+                <h3>Column Mapping</h3>
+                {previewStale && <span className="inline-warning">Preview again after mapping changes.</span>}
+              </div>
+              <div className="mapping-grid">
+                {preview.columns.map((column) => (
+                  <label key={column.key} className="mapping-row">
+                    <span>
+                      {column.label}
+                      {column.required && <em>Required</em>}
+                    </span>
+                    <select value={mapping[column.key] || ""} onChange={(event) => updateMapping(column.key, event.target.value)} disabled={busy}>
+                      <option value="">Not mapped</option>
+                      {preview.headers.map((header) => (
+                        <option key={header} value={header}>{header}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {preview.issues.length > 0 && (
+              <div className="issues-panel">
+                <div className="section-heading">
+                  <h3>Validation Issues</h3>
+                  {preview.issuesTruncated && <span className="inline-warning">Showing first 500 issues.</span>}
+                </div>
+                <div className="issues-list">
+                  {preview.issues.slice(0, 12).map((issue, index) => (
+                    <div className={`issue-row ${issue.severity}`} key={`${issue.rowNumber}-${issue.field}-${index}`}>
+                      <strong>{issue.rowNumber ? `Row ${issue.rowNumber}` : "File"}</strong>
+                      <span>{issue.field}</span>
+                      <p>{issue.message}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="import-preview-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Row</th>
+                    <th>Action</th>
+                    <th>Student</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Issues</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row) => (
+                    <tr key={row.rowNumber}>
+                      <td>{row.rowNumber}</td>
+                      <td><Badge label={row.action} muted={row.action === "skip"} /></td>
+                      <td>{mappedPreviewValue(row, preview.mapping, "studentName") || "-"}</td>
+                      <td>{mappedPreviewValue(row, preview.mapping, "email") || "-"}</td>
+                      <td>{mappedPreviewValue(row, preview.mapping, "phone") || "-"}</td>
+                      <td>{row.issues.length ? `${row.issues.length} issue${row.issues.length === 1 ? "" : "s"}` : "Clean"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        <footer className="modal-actions">
+          <button type="button" className="ghost-button" onClick={onClose} disabled={busy}>Close</button>
+          <button type="button" className="secondary-button" onClick={runPreview} disabled={busy || !file}>
+            <RotateCcw size={18} />
+            {status.loading === "preview" ? "Previewing..." : preview ? "Preview Again" : "Preview"}
+          </button>
+          <button type="button" className="primary-button" onClick={commitImport} disabled={!canCommit}>
+            <CheckCircle2 size={18} />
+            {status.loading === "commit" ? "Importing..." : "Commit Import"}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function MetricPill({ label, value, tone = "" }) {
+  return (
+    <div className={`metric-pill ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
 function LeadDetailDrawer({
   leadId,
   lead,
   options,
+  communicationTemplates,
   loading,
   error,
   actionStatus,
+  currentUser,
   onClose,
   onRetry,
   onUpdate,
-  onAssign,
-  onStageChange,
   onArchive,
   onRestore,
   onAddActivity,
+  onApplyTemplate,
   onCreateFollowUp,
   onRescheduleFollowUp,
   onCancelFollowUp,
   onCompleteFollowUp,
+  onUploadDocument,
+  onVerifyDocument,
+  onRejectDocument,
+  onDeleteDocument,
+  onDownloadDocument,
+  onCreatePayment,
+  onUpdatePayment,
+  onAddPaymentTransaction,
+  onCancelPayment,
+  onCreateApplication,
   canManageLeads,
+  canArchiveLeads,
+  canManagePayments,
 }) {
   const [editForm, setEditForm] = useState(() => createLeadUpdateForm(lead));
   const [noteForm, setNoteForm] = useState({ type: "Note", description: "" });
+  const [templateForm, setTemplateForm] = useState({ templateId: "", note: "" });
   const [followUpForm, setFollowUpForm] = useState(() => createDefaultFollowUpForm(lead));
   const [rescheduleForm, setRescheduleForm] = useState(null);
+  const [documentForms, setDocumentForms] = useState({});
+  const [paymentForm, setPaymentForm] = useState(createDefaultPaymentForm());
+  const [paymentTransactionForms, setPaymentTransactionForms] = useState({});
+  const [editingPaymentId, setEditingPaymentId] = useState("");
+  const [editingPaymentForm, setEditingPaymentForm] = useState(null);
 
   useEffect(() => {
     setEditForm(createLeadUpdateForm(lead));
     setFollowUpForm(createDefaultFollowUpForm(lead));
+    setTemplateForm((current) => ({
+      templateId: communicationTemplates.find((item) => item.isActive)?.id || current.templateId || "",
+      note: "",
+    }));
     setRescheduleForm(null);
-  }, [lead]);
+    setDocumentForms({});
+    setPaymentForm(createDefaultPaymentForm());
+    setPaymentTransactionForms({});
+    setEditingPaymentId("");
+    setEditingPaymentForm(null);
+  }, [lead, communicationTemplates]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -1491,15 +2447,33 @@ function LeadDetailDrawer({
   const getFieldError = (field) => firstError(actionStatus.fieldErrors[field]);
   const canSave = Boolean(lead && editForm.studentName.trim() && editForm.email.trim() && editForm.phone.trim() && editForm.courseId && editForm.leadSourceId && editForm.leadStageId);
   const archived = Boolean(lead?.archivedAt);
+  const saving = actionStatus.saving;
+  const canEditProfile = canManageLeads && !archived && !saving;
+  const canUseEngagement = canManageLeads && !archived && !saving;
+  const canUploadDocuments = canManageLeads && !archived && !saving;
+  const canReviewDocuments = ["Owner", "Admin"].includes(currentUser?.role) && !archived && !saving;
+  const canManageLeadPayments = canManagePayments && !archived && !saving;
+  const hasProfileChanges = lead ? !areLeadProfileFormsEqual(editForm, createLeadUpdateForm(lead)) : false;
+  const assigneeLockedToSelf = ["Counselor", "Telecaller"].includes(currentUser?.role);
+  const profileBlockedMessage = archived
+    ? "Restore this lead before editing profile, activities, or follow-ups."
+    : !canManageLeads
+      ? "Read-only users cannot make changes."
+      : !canSave
+        ? "Complete the required profile fields before saving."
+        : "";
   const stageOptions = includeCurrentOption(options.stages, lead?.leadStageId, lead?.stage);
   const courseOptions = includeCurrentOption(options.courses, lead?.courseId, lead?.course);
   const sourceOptions = includeCurrentOption(options.sources, lead?.leadSourceId, lead?.source);
   const branchOptions = includeCurrentOption(options.branches, lead?.branchId, lead?.branch);
   const counselorOptions = includeCurrentOption(options.counselors, lead?.assignedUserId, lead?.counselor === "Unassigned" ? "" : lead?.counselor);
+  const activeTemplates = communicationTemplates.filter((item) => item.isActive);
+  const documents = lead?.documents || [];
+  const payments = lead?.payments || [];
 
   const handleUpdateSubmit = async (event) => {
     event.preventDefault();
-    if (!canSave) {
+    if (!canEditProfile || !canSave) {
       return;
     }
 
@@ -1523,30 +2497,49 @@ function LeadDetailDrawer({
 
   const handleNoteSubmit = async (event) => {
     event.preventDefault();
-    if (!noteForm.description.trim()) {
+    if (!canUseEngagement || !noteForm.description.trim()) {
       return;
     }
 
-    await onAddActivity({
+    const updatedLead = await onAddActivity({
       type: noteForm.type,
       description: noteForm.description.trim(),
     });
-    setNoteForm({ type: "Note", description: "" });
+    if (updatedLead) {
+      setNoteForm({ type: "Note", description: "" });
+    }
   };
 
   const handleFollowUpSubmit = async (event) => {
     event.preventDefault();
-    if (!followUpForm.dueAt) {
+    if (!canUseEngagement || !followUpForm.dueAt) {
       return;
     }
 
-    await onCreateFollowUp({
+    const updatedLead = await onCreateFollowUp({
       type: followUpForm.type,
       priority: followUpForm.priority,
       assignedUserId: optionalValue(followUpForm.assignedUserId),
       dueAt: new Date(followUpForm.dueAt).toISOString(),
     });
-    setFollowUpForm(createDefaultFollowUpForm(lead));
+    if (updatedLead) {
+      setFollowUpForm(createDefaultFollowUpForm(updatedLead));
+    }
+  };
+
+  const handleTemplateSubmit = async (event) => {
+    event.preventDefault();
+    if (!canUseEngagement || !templateForm.templateId) {
+      return;
+    }
+
+    const updatedLead = await onApplyTemplate({
+      templateId: templateForm.templateId,
+      note: optionalValue(templateForm.note),
+    });
+    if (updatedLead) {
+      setTemplateForm((current) => ({ ...current, note: "" }));
+    }
   };
 
   const openRescheduleForm = (followUp) => {
@@ -1562,18 +2555,156 @@ function LeadDetailDrawer({
 
   const handleRescheduleSubmit = async (event) => {
     event.preventDefault();
-    if (!rescheduleForm?.id || !rescheduleForm.dueAt) {
+    if (!canUseEngagement || !rescheduleForm?.id || !rescheduleForm.dueAt) {
       return;
     }
 
-    await onRescheduleFollowUp(rescheduleForm.id, {
+    const updatedLead = await onRescheduleFollowUp(rescheduleForm.id, {
       type: rescheduleForm.type,
       priority: rescheduleForm.priority,
       assignedUserId: optionalValue(rescheduleForm.assignedUserId),
       dueAt: new Date(rescheduleForm.dueAt).toISOString(),
       version: rescheduleForm.version,
     });
-    setRescheduleForm(null);
+    if (updatedLead) {
+      setRescheduleForm(null);
+    }
+  };
+
+  const updateDocumentForm = (documentTypeId, updates) => {
+    setDocumentForms((current) => ({
+      ...current,
+      [documentTypeId]: {
+        file: null,
+        notes: "",
+        rejectNotes: "",
+        ...(current[documentTypeId] || {}),
+        ...updates,
+      },
+    }));
+  };
+
+  const handleDocumentUpload = async (event, document) => {
+    event.preventDefault();
+    const form = documentForms[document.documentTypeId] || {};
+    if (!canUploadDocuments || !form.file) {
+      return;
+    }
+
+    const updatedLead = await onUploadDocument({
+      documentTypeId: document.documentTypeId,
+      file: form.file,
+      version: document.version,
+      notes: optionalValue(form.notes),
+    });
+    if (updatedLead) {
+      updateDocumentForm(document.documentTypeId, { file: null, notes: "" });
+    }
+  };
+
+  const handleDocumentReject = async (document) => {
+    const notes = documentForms[document.documentTypeId]?.rejectNotes || "";
+    if (!canReviewDocuments || !document.documentId || !notes.trim()) {
+      return;
+    }
+
+    const updatedLead = await onRejectDocument(document, notes.trim());
+    if (updatedLead) {
+      updateDocumentForm(document.documentTypeId, { rejectNotes: "" });
+    }
+  };
+
+  const handlePaymentCreate = async (event) => {
+    event.preventDefault();
+    if (!canManageLeadPayments || !paymentForm.title.trim() || !paymentForm.amountDue) {
+      return;
+    }
+
+    const updatedLead = await onCreatePayment({
+      title: paymentForm.title.trim(),
+      amountDue: Number(paymentForm.amountDue),
+      currency: "INR",
+      dueDate: paymentForm.dueDate ? new Date(`${paymentForm.dueDate}T00:00:00`).toISOString() : null,
+      notes: optionalValue(paymentForm.notes),
+      version: 0,
+    });
+    if (updatedLead) {
+      setPaymentForm(createDefaultPaymentForm());
+    }
+  };
+
+  const openPaymentEdit = (payment) => {
+    setEditingPaymentId(payment.id);
+    setEditingPaymentForm({
+      title: payment.title,
+      amountDue: String(payment.amountDue),
+      dueDate: payment.dueDate ? toDateInputValue(new Date(payment.dueDate)) : "",
+      notes: payment.notes || "",
+    });
+  };
+
+  const handlePaymentUpdate = async (event) => {
+    event.preventDefault();
+    const payment = payments.find((item) => item.id === editingPaymentId);
+    if (!canManageLeadPayments || !payment || !editingPaymentForm?.title.trim() || !editingPaymentForm.amountDue) {
+      return;
+    }
+
+    const updatedLead = await onUpdatePayment(payment, {
+      title: editingPaymentForm.title.trim(),
+      amountDue: Number(editingPaymentForm.amountDue),
+      currency: "INR",
+      dueDate: editingPaymentForm.dueDate ? new Date(`${editingPaymentForm.dueDate}T00:00:00`).toISOString() : null,
+      notes: optionalValue(editingPaymentForm.notes),
+      version: payment.version,
+    });
+    if (updatedLead) {
+      setEditingPaymentId("");
+      setEditingPaymentForm(null);
+    }
+  };
+
+  const updatePaymentTransactionForm = (paymentId, updates) => {
+    setPaymentTransactionForms((current) => ({
+      ...current,
+      [paymentId]: {
+        amount: "",
+        method: "UPI",
+        referenceNumber: "",
+        receiptNumber: "",
+        paidAt: "",
+        notes: "",
+        ...(current[paymentId] || {}),
+        ...updates,
+      },
+    }));
+  };
+
+  const handlePaymentTransactionCreate = async (event, payment) => {
+    event.preventDefault();
+    const form = paymentTransactionForms[payment.id] || {};
+    if (!canManageLeadPayments || !form.amount || Number(form.amount) <= 0) {
+      return;
+    }
+
+    const updatedLead = await onAddPaymentTransaction(payment, {
+      amount: Number(form.amount),
+      method: form.method || "UPI",
+      referenceNumber: optionalValue(form.referenceNumber),
+      receiptNumber: optionalValue(form.receiptNumber),
+      paidAt: form.paidAt ? new Date(form.paidAt).toISOString() : null,
+      notes: optionalValue(form.notes),
+      version: payment.version,
+    });
+    if (updatedLead) {
+      updatePaymentTransactionForm(payment.id, {
+        amount: "",
+        referenceNumber: "",
+        receiptNumber: "",
+        paidAt: "",
+        notes: "",
+      });
+    }
   };
 
   return (
@@ -1619,107 +2750,138 @@ function LeadDetailDrawer({
               <div className="section-heading">
                 <h3>Lead Profile</h3>
                 <div className="detail-list-actions">
-                  {archived ? (
-                    <button type="button" className="ghost-button" disabled={!canManageLeads || actionStatus.saving} onClick={() => onRestore({ version: lead.version })}>
+                  {canArchiveLeads && archived && (
+                    <button type="button" className="ghost-button" disabled={saving} onClick={() => onRestore({ version: lead.version })}>
                       <RotateCcw size={16} />
-                      Restore
-                    </button>
-                  ) : (
-                    <button type="button" className="ghost-button danger-text" disabled={!canManageLeads || actionStatus.saving} onClick={() => onArchive({ version: lead.version })}>
-                      <UserX size={16} />
-                      Archive
+                      Restore Lead
                     </button>
                   )}
-                  <button type="submit" className="primary-button" disabled={!canManageLeads || !canSave || actionStatus.saving || archived}>
-                    {actionStatus.saving ? "Saving..." : "Save Changes"}
+                  {canArchiveLeads && !archived && (
+                    <button type="button" className="ghost-button danger-text" disabled={saving} onClick={() => onArchive({ version: lead.version })}>
+                      <UserX size={16} />
+                      Archive Lead
+                    </button>
+                  )}
+                  <button type="submit" className="primary-button" disabled={!canEditProfile || !canSave || !hasProfileChanges}>
+                    {saving ? "Saving..." : "Save Lead Profile"}
                   </button>
                 </div>
               </div>
-              {archived && <p className="muted-text">Archived leads are read-only until restored.</p>}
+              {profileBlockedMessage && <p className="drawer-permission-note">{profileBlockedMessage}</p>}
+              {!profileBlockedMessage && !hasProfileChanges && <p className="drawer-permission-note">No unsaved profile changes.</p>}
+              {!canArchiveLeads && <p className="drawer-permission-note">Archive and restore actions are limited to owner, admin, and branch manager roles.</p>}
               <div className="form-grid compact">
                 <Field label="Student Name" error={getFieldError("studentName")} required>
-                  <input value={editForm.studentName} maxLength={160} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, studentName: event.target.value }))} required />
+                  <input value={editForm.studentName} maxLength={160} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, studentName: event.target.value }))} required />
                 </Field>
                 <Field label="Guardian Name" error={getFieldError("guardianName")}>
-                  <input value={editForm.guardianName} maxLength={160} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, guardianName: event.target.value }))} />
+                  <input value={editForm.guardianName} maxLength={160} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, guardianName: event.target.value }))} />
                 </Field>
                 <Field label="Email" error={getFieldError("email")} required>
-                  <input type="email" value={editForm.email} maxLength={240} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))} required />
+                  <input type="email" value={editForm.email} maxLength={240} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))} required />
                 </Field>
                 <Field label="Phone" error={getFieldError("phone")} required>
-                  <input value={editForm.phone} maxLength={40} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, phone: event.target.value }))} required />
+                  <input value={editForm.phone} maxLength={40} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, phone: event.target.value }))} required />
                 </Field>
                 <Field label="City" error={getFieldError("city")}>
-                  <input value={editForm.city} maxLength={120} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, city: event.target.value }))} />
+                  <input value={editForm.city} maxLength={120} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, city: event.target.value }))} />
                 </Field>
                 <Field label="Course" error={getFieldError("courseId")} required>
-                  <select value={editForm.courseId} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, courseId: event.target.value }))} required>
+                  <select value={editForm.courseId} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, courseId: event.target.value }))} required>
                     {courseOptions.map((item) => <option key={item.id} value={item.id} disabled={item.inactive}>{item.name}{item.inactive ? " (inactive)" : ""}</option>)}
                   </select>
                 </Field>
                 <Field label="Source" error={getFieldError("leadSourceId")} required>
-                  <select value={editForm.leadSourceId} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, leadSourceId: event.target.value }))} required>
+                  <select value={editForm.leadSourceId} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, leadSourceId: event.target.value }))} required>
                     {sourceOptions.map((item) => <option key={item.id} value={item.id} disabled={item.inactive}>{item.name}{item.inactive ? " (inactive)" : ""}</option>)}
                   </select>
                 </Field>
                 <Field label="Stage" error={getFieldError("leadStageId")} required>
-                  <select value={editForm.leadStageId} disabled={archived} onChange={(event) => {
+                  <select value={editForm.leadStageId} disabled={!canEditProfile} onChange={(event) => {
                     const nextStageId = event.target.value;
                     setEditForm((current) => ({ ...current, leadStageId: nextStageId }));
-                    if (canManageLeads && nextStageId !== lead.leadStageId) {
-                      onStageChange({ leadStageId: nextStageId, status: editForm.status, version: lead.version });
-                    }
                   }} required>
                     {stageOptions.map((item) => <option key={item.id} value={item.id} disabled={item.inactive}>{item.name}{item.inactive ? " (inactive)" : ""}</option>)}
                   </select>
                 </Field>
                 <Field label="Branch" error={getFieldError("branchId")}>
-                  <select value={editForm.branchId} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, branchId: event.target.value }))}>
+                  <select value={editForm.branchId} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, branchId: event.target.value }))}>
                     <option value="">No branch</option>
                     {branchOptions.map((item) => <option key={item.id} value={item.id} disabled={item.inactive}>{item.name}{item.inactive ? " (inactive)" : ""}</option>)}
                   </select>
                 </Field>
                 <Field label="Status" error={getFieldError("status")}>
-                  <select value={editForm.status} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}>
+                  <select value={editForm.status} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}>
                     {["New Lead", "Interested", "Follow Up", "Enrolled", "Dropped"].map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </Field>
                 <Field label="Priority" error={getFieldError("priority")}>
-                  <select value={editForm.priority} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, priority: event.target.value }))}>
+                  <select value={editForm.priority} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, priority: event.target.value }))}>
                     {["Low", "Medium", "High", "Urgent"].map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </Field>
                 <Field label="Counsellor" error={getFieldError("assignedUserId")}>
-                  <select value={editForm.assignedUserId} disabled={archived} onChange={(event) => {
+                  <select value={editForm.assignedUserId} disabled={!canEditProfile || assigneeLockedToSelf} onChange={(event) => {
                     const assignedUserId = event.target.value;
                     setEditForm((current) => ({ ...current, assignedUserId }));
-                    onAssign({ assignedUserId: optionalValue(assignedUserId), version: lead.version });
                   }}>
                     <option value="">Unassigned</option>
                     {counselorOptions.map((item) => <option key={item.id} value={item.id} disabled={item.inactive}>{item.name}{item.inactive ? " (inactive)" : ""}</option>)}
                   </select>
+                  {assigneeLockedToSelf && <small className="field-hint">Counsellors can only keep leads assigned to themselves.</small>}
                 </Field>
                 <Field label="Next Follow-up" error={getFieldError("nextFollowUpAt")} className="span-2">
-                  <input type="datetime-local" value={editForm.nextFollowUpAt} disabled={archived} onChange={(event) => setEditForm((current) => ({ ...current, nextFollowUpAt: event.target.value }))} />
+                  <input type="datetime-local" value={editForm.nextFollowUpAt} disabled={!canEditProfile} onChange={(event) => setEditForm((current) => ({ ...current, nextFollowUpAt: event.target.value }))} />
                 </Field>
               </div>
+            </form>
+
+            <form className="drawer-section" onSubmit={handleTemplateSubmit}>
+              <div className="section-heading">
+                <h3>Use Communication Template</h3>
+                <button type="submit" className="primary-button" disabled={!canUseEngagement || !templateForm.templateId}>
+                  {saving ? "Saving..." : "Apply Template"}
+                </button>
+              </div>
+              {profileBlockedMessage && <p className="drawer-permission-note">{profileBlockedMessage}</p>}
+              {activeTemplates.length === 0 && <p className="drawer-permission-note">No active communication templates are available. Owners and admins can add templates from Settings.</p>}
+              <div className="form-grid compact">
+                <Field label="Template" error={getFieldError("templateId")} className="span-2" required>
+                  <select value={templateForm.templateId} disabled={!canUseEngagement || activeTemplates.length === 0} onChange={(event) => setTemplateForm((current) => ({ ...current, templateId: event.target.value }))} required>
+                    <option value="">Select template</option>
+                    {activeTemplates.map((item) => (
+                      <option key={item.id} value={item.id}>{item.channel} - {item.name}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Internal Note" error={getFieldError("note")} className="span-2">
+                  <textarea value={templateForm.note} maxLength={500} disabled={!canUseEngagement || activeTemplates.length === 0} placeholder="Optional note stored with the rendered template activity." onChange={(event) => setTemplateForm((current) => ({ ...current, note: event.target.value }))} />
+                </Field>
+              </div>
+              {templateForm.templateId && (
+                <div className="template-preview">
+                  <span>Template body</span>
+                  <p>{activeTemplates.find((item) => item.id === templateForm.templateId)?.body || ""}</p>
+                </div>
+              )}
             </form>
 
             <form className="drawer-section" onSubmit={handleNoteSubmit}>
               <div className="section-heading">
                 <h3>Add Activity</h3>
-                <button type="submit" className="primary-button" disabled={!canManageLeads || !noteForm.description.trim() || actionStatus.saving}>
-                  Add Note
+                <button type="submit" className="primary-button" disabled={!canUseEngagement || !noteForm.description.trim()}>
+                  {saving ? "Saving..." : "Add Activity Note"}
                 </button>
               </div>
+              {profileBlockedMessage && <p className="drawer-permission-note">{profileBlockedMessage}</p>}
               <div className="form-grid compact">
                 <Field label="Type" error={getFieldError("type")}>
-                  <select value={noteForm.type} onChange={(event) => setNoteForm((current) => ({ ...current, type: event.target.value }))}>
+                  <select value={noteForm.type} disabled={!canUseEngagement} onChange={(event) => setNoteForm((current) => ({ ...current, type: event.target.value }))}>
                     {["Note", "Call", "WhatsApp", "Email", "Meeting"].map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </Field>
                 <Field label="Description" error={getFieldError("description")} className="span-2" required>
-                  <textarea value={noteForm.description} maxLength={500} onChange={(event) => setNoteForm((current) => ({ ...current, description: event.target.value }))} required />
+                  <textarea value={noteForm.description} maxLength={500} disabled={!canUseEngagement} onChange={(event) => setNoteForm((current) => ({ ...current, description: event.target.value }))} required />
                 </Field>
               </div>
             </form>
@@ -1727,32 +2889,256 @@ function LeadDetailDrawer({
             <form className="drawer-section" onSubmit={handleFollowUpSubmit}>
               <div className="section-heading">
                 <h3>Schedule Follow-up</h3>
-                <button type="submit" className="primary-button" disabled={!canManageLeads || archived || !followUpForm.dueAt || actionStatus.saving}>
-                  Schedule
+                <button type="submit" className="primary-button" disabled={!canUseEngagement || !followUpForm.dueAt}>
+                  {saving ? "Saving..." : "Schedule Follow-up"}
                 </button>
               </div>
+              {profileBlockedMessage && <p className="drawer-permission-note">{profileBlockedMessage}</p>}
               <div className="form-grid compact">
                 <Field label="Type" error={getFieldError("type")}>
-                  <select value={followUpForm.type} onChange={(event) => setFollowUpForm((current) => ({ ...current, type: event.target.value }))}>
+                  <select value={followUpForm.type} disabled={!canUseEngagement} onChange={(event) => setFollowUpForm((current) => ({ ...current, type: event.target.value }))}>
                     {["Call", "WhatsApp", "Email", "Walk-in"].map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </Field>
                 <Field label="Priority" error={getFieldError("priority")}>
-                  <select value={followUpForm.priority} onChange={(event) => setFollowUpForm((current) => ({ ...current, priority: event.target.value }))}>
+                  <select value={followUpForm.priority} disabled={!canUseEngagement} onChange={(event) => setFollowUpForm((current) => ({ ...current, priority: event.target.value }))}>
                     {["Low", "Medium", "High", "Urgent"].map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </Field>
                 <Field label="Counsellor" error={getFieldError("assignedUserId")}>
-                  <select value={followUpForm.assignedUserId} onChange={(event) => setFollowUpForm((current) => ({ ...current, assignedUserId: event.target.value }))}>
+                  <select value={followUpForm.assignedUserId} disabled={!canUseEngagement || assigneeLockedToSelf} onChange={(event) => setFollowUpForm((current) => ({ ...current, assignedUserId: event.target.value }))}>
                     <option value="">Current owner</option>
                     {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
+                  {assigneeLockedToSelf && <small className="field-hint">Counsellors can schedule follow-ups for their assigned lead owner.</small>}
                 </Field>
                 <Field label="Due At" error={getFieldError("dueAt")} required>
-                  <input type="datetime-local" value={followUpForm.dueAt} onChange={(event) => setFollowUpForm((current) => ({ ...current, dueAt: event.target.value }))} required />
+                  <input type="datetime-local" value={followUpForm.dueAt} disabled={!canUseEngagement} onChange={(event) => setFollowUpForm((current) => ({ ...current, dueAt: event.target.value }))} required />
                 </Field>
               </div>
             </form>
+
+            <section className="drawer-section">
+              <div className="section-heading">
+                <h3>Documents</h3>
+                <span>{documents.filter((item) => item.documentId).length}/{documents.length}</span>
+              </div>
+              {archived && <p className="drawer-permission-note">Restore this lead before uploading or reviewing documents.</p>}
+              {!canManageLeads && <p className="drawer-permission-note">Read-only users can view and download uploaded documents only.</p>}
+              <div className="document-list">
+                {documents.length === 0 && <p className="muted-text">No document checklist is configured.</p>}
+                {documents.map((document) => {
+                  const form = documentForms[document.documentTypeId] || {};
+                  const hasFile = Boolean(document.documentId);
+                  const canReplaceThisDocument = canUploadDocuments && (!hasFile || document.status !== "Verified" || canReviewDocuments);
+
+                  return (
+                    <div className="document-row" key={document.documentTypeId}>
+                      <div className="document-main">
+                        <div className="document-title-row">
+                          <strong>{document.name}</strong>
+                          <Badge label={document.isRequired ? "Required" : "Optional"} muted={!document.isRequired} />
+                          <Badge label={document.status} muted={document.status === "Pending"} />
+                        </div>
+                        {hasFile ? (
+                          <p>{document.fileName} - {formatFileSize(document.fileSizeBytes)}</p>
+                        ) : (
+                          <p>No file uploaded.</p>
+                        )}
+                        {document.notes && <small>{document.notes}</small>}
+                        {document.uploadedAt && <small>Uploaded {formatFollowUpLabel(document.uploadedAt)}{document.uploadedBy ? ` by ${document.uploadedBy}` : ""}</small>}
+                        {document.reviewedAt && <small>Reviewed {formatFollowUpLabel(document.reviewedAt)}{document.reviewedBy ? ` by ${document.reviewedBy}` : ""}</small>}
+                      </div>
+                      <div className="document-actions">
+                        {hasFile && document.canDownload && (
+                          <button type="button" className="ghost-button" disabled={saving} onClick={() => onDownloadDocument(document)}>
+                            <Download size={16} />
+                            Download
+                          </button>
+                        )}
+                        {canReviewDocuments && hasFile && document.status !== "Verified" && (
+                          <button type="button" className="ghost-button" disabled={saving} onClick={() => onVerifyDocument(document)}>
+                            <CheckCircle2 size={16} />
+                            Verify
+                          </button>
+                        )}
+                        {canReviewDocuments && hasFile && (
+                          <button type="button" className="ghost-button danger-text" disabled={saving || !form.rejectNotes?.trim()} onClick={() => handleDocumentReject(document)}>
+                            <X size={16} />
+                            Reject
+                          </button>
+                        )}
+                        {canReviewDocuments && hasFile && document.status !== "Verified" && (
+                          <button type="button" className="ghost-button danger-text" disabled={saving} onClick={() => onDeleteDocument(document)}>
+                            <UserX size={16} />
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                      {canReviewDocuments && hasFile && (
+                        <Field label="Review Notes" className="span-2" error={getFieldError("notes")}>
+                          <input value={form.rejectNotes || ""} maxLength={500} disabled={saving} placeholder="Required when rejecting" onChange={(event) => updateDocumentForm(document.documentTypeId, { rejectNotes: event.target.value })} />
+                        </Field>
+                      )}
+                      <form className="document-upload-form" onSubmit={(event) => handleDocumentUpload(event, document)}>
+                        <Field label={hasFile ? "Replacement File" : "Upload File"} error={getFieldError("file")}>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" disabled={!canReplaceThisDocument} onChange={(event) => updateDocumentForm(document.documentTypeId, { file: event.target.files?.[0] || null })} />
+                        </Field>
+                        <Field label="Upload Notes" error={getFieldError("notes")}>
+                          <input value={form.notes || ""} maxLength={500} disabled={!canReplaceThisDocument} onChange={(event) => updateDocumentForm(document.documentTypeId, { notes: event.target.value })} />
+                        </Field>
+                        <button type="submit" className="primary-button" disabled={!canReplaceThisDocument || !form.file}>
+                          {saving ? "Saving..." : hasFile ? "Replace" : "Upload"}
+                        </button>
+                      </form>
+                      {!canReplaceThisDocument && canUploadDocuments && document.status === "Verified" && (
+                        <p className="drawer-permission-note">Only owners and admins can replace verified documents.</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="drawer-section">
+              <div className="section-heading">
+                <h3>Payments</h3>
+                <span>{formatCurrency(payments.reduce((total, item) => total + Number(item.balance || 0), 0), "INR")}</span>
+              </div>
+              {archived && <p className="drawer-permission-note">Restore this lead before adding or updating payments.</p>}
+              {!canManagePayments && <p className="drawer-permission-note">Payment management is limited to owner, admin, and accountant roles.</p>}
+              {canManageLeadPayments && (
+                <form className="payment-form" onSubmit={handlePaymentCreate}>
+                  <Field label="Fee Item" error={getFieldError("title")} required>
+                    <input value={paymentForm.title} maxLength={160} onChange={(event) => setPaymentForm((current) => ({ ...current, title: event.target.value }))} required />
+                  </Field>
+                  <Field label="Amount Due" error={getFieldError("amountDue")} required>
+                    <input type="number" min="0.01" step="0.01" value={paymentForm.amountDue} onChange={(event) => setPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required />
+                  </Field>
+                  <Field label="Due Date" error={getFieldError("dueDate")}>
+                    <input type="date" value={paymentForm.dueDate} onChange={(event) => setPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} />
+                  </Field>
+                  <Field label="Notes" error={getFieldError("notes")}>
+                    <input value={paymentForm.notes} maxLength={500} onChange={(event) => setPaymentForm((current) => ({ ...current, notes: event.target.value }))} />
+                  </Field>
+                  <button type="submit" className="primary-button" disabled={!paymentForm.title.trim() || !paymentForm.amountDue}>
+                    {saving ? "Saving..." : "Add Fee"}
+                  </button>
+                </form>
+              )}
+              <div className="payment-list">
+                {payments.length === 0 && <p className="muted-text">No payment items added.</p>}
+                {payments.map((payment) => {
+                  const transactionForm = paymentTransactionForms[payment.id] || {};
+                  const editable = canManageLeadPayments && payment.status !== "Cancelled";
+                  const canReceive = editable && payment.balance > 0;
+                  const canCancel = editable && payment.amountPaid <= 0;
+                  return (
+                    <div className="payment-row" key={payment.id}>
+                      <div className="payment-main">
+                        <div className="document-title-row">
+                          <strong>{payment.title}</strong>
+                          <Badge label={payment.status} muted={payment.status === "Pending"} />
+                        </div>
+                        <div className="payment-amount-grid">
+                          <InfoItem label="Due" value={formatCurrency(payment.amountDue, payment.currency)} />
+                          <InfoItem label="Paid" value={formatCurrency(payment.amountPaid, payment.currency)} />
+                          <InfoItem label="Balance" value={formatCurrency(payment.balance, payment.currency)} />
+                        </div>
+                        {payment.dueDate && <small>Due {formatDate(payment.dueDate)}</small>}
+                        {payment.notes && <small>{payment.notes}</small>}
+                      </div>
+                      <div className="document-actions">
+                        {editable && (
+                          <button type="button" className="ghost-button" disabled={saving} onClick={() => openPaymentEdit(payment)}>
+                            <Pencil size={16} />
+                            Edit
+                          </button>
+                        )}
+                        {canCancel && (
+                          <button type="button" className="ghost-button danger-text" disabled={saving} onClick={() => onCancelPayment(payment)}>
+                            <X size={16} />
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                      {editingPaymentId === payment.id && editingPaymentForm && (
+                        <form className="payment-form span-all" onSubmit={handlePaymentUpdate}>
+                          <Field label="Fee Item" error={getFieldError("title")} required>
+                            <input value={editingPaymentForm.title} maxLength={160} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, title: event.target.value }))} required />
+                          </Field>
+                          <Field label="Amount Due" error={getFieldError("amountDue")} required>
+                            <input type="number" min={payment.amountPaid || 0.01} step="0.01" value={editingPaymentForm.amountDue} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required />
+                          </Field>
+                          <Field label="Due Date" error={getFieldError("dueDate")}>
+                            <input type="date" value={editingPaymentForm.dueDate} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} />
+                          </Field>
+                          <Field label="Notes" error={getFieldError("notes")}>
+                            <input value={editingPaymentForm.notes} maxLength={500} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, notes: event.target.value }))} />
+                          </Field>
+                          <div className="inline-editor-actions">
+                            <button type="button" className="ghost-button" disabled={saving} onClick={() => { setEditingPaymentId(""); setEditingPaymentForm(null); }}>Cancel</button>
+                            <button type="submit" className="primary-button" disabled={saving}>Save</button>
+                          </div>
+                        </form>
+                      )}
+                      {canReceive && (
+                        <form className="payment-transaction-form span-all" onSubmit={(event) => handlePaymentTransactionCreate(event, payment)}>
+                          <Field label="Receive Amount" error={getFieldError("amount")} required>
+                            <input type="number" min="0.01" max={payment.balance} step="0.01" value={transactionForm.amount || ""} onChange={(event) => updatePaymentTransactionForm(payment.id, { amount: event.target.value })} required />
+                          </Field>
+                          <Field label="Method" error={getFieldError("method")}>
+                            <select value={transactionForm.method || "UPI"} onChange={(event) => updatePaymentTransactionForm(payment.id, { method: event.target.value })}>
+                              {["UPI", "Cash", "Bank Transfer", "Card", "Cheque", "Other"].map((item) => <option key={item} value={item}>{item}</option>)}
+                            </select>
+                          </Field>
+                          <Field label="Paid At" error={getFieldError("paidAt")}>
+                            <input type="datetime-local" value={transactionForm.paidAt || ""} onChange={(event) => updatePaymentTransactionForm(payment.id, { paidAt: event.target.value })} />
+                          </Field>
+                          <Field label="Reference" error={getFieldError("referenceNumber")}>
+                            <input value={transactionForm.referenceNumber || ""} maxLength={120} onChange={(event) => updatePaymentTransactionForm(payment.id, { referenceNumber: event.target.value })} />
+                          </Field>
+                          <Field label="Receipt" error={getFieldError("receiptNumber")}>
+                            <input value={transactionForm.receiptNumber || ""} maxLength={120} placeholder="Auto-generated if blank" onChange={(event) => updatePaymentTransactionForm(payment.id, { receiptNumber: event.target.value })} />
+                          </Field>
+                          <Field label="Notes" error={getFieldError("notes")}>
+                            <input value={transactionForm.notes || ""} maxLength={500} onChange={(event) => updatePaymentTransactionForm(payment.id, { notes: event.target.value })} />
+                          </Field>
+                          <button type="submit" className="primary-button" disabled={saving || !transactionForm.amount}>
+                            {saving ? "Saving..." : "Record Payment"}
+                          </button>
+                        </form>
+                      )}
+                      {payment.transactions.length > 0 && (
+                        <div className="payment-transactions span-all">
+                          {payment.transactions.map((transaction) => (
+                            <div className="payment-transaction" key={transaction.id}>
+                              <strong>{formatCurrency(transaction.amount, payment.currency)}</strong>
+                              <span>{transaction.method}</span>
+                              <span>{formatFollowUpLabel(transaction.paidAt)}</span>
+                              <span>{transaction.receiptNumber || "No receipt"}</span>
+                              {transaction.referenceNumber && <span>{transaction.referenceNumber}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="drawer-section">
+              <div className="section-heading">
+                <h3>Admission Application</h3>
+                <span>Formal review</span>
+              </div>
+              <p className="drawer-permission-note">Create an admission application when the lead is ready for document/payment readiness review and enrollment approval.</p>
+              <button type="button" className="primary-button" disabled={!canManageLeads || archived || saving} onClick={onCreateApplication}>
+                <BookOpen size={16} />
+                Create Application
+              </button>
+            </section>
 
             <section className="drawer-section">
               <div className="section-heading">
@@ -1762,27 +3148,27 @@ function LeadDetailDrawer({
               {rescheduleForm && (
                 <form className="inline-editor" onSubmit={handleRescheduleSubmit}>
                   <Field label="Type" error={getFieldError("type")}>
-                    <select value={rescheduleForm.type} onChange={(event) => setRescheduleForm((current) => ({ ...current, type: event.target.value }))}>
+                    <select value={rescheduleForm.type} disabled={!canUseEngagement} onChange={(event) => setRescheduleForm((current) => ({ ...current, type: event.target.value }))}>
                       {["Call", "WhatsApp", "Email", "Walk-in"].map((item) => <option key={item} value={item}>{item}</option>)}
                     </select>
                   </Field>
                   <Field label="Priority" error={getFieldError("priority")}>
-                    <select value={rescheduleForm.priority} onChange={(event) => setRescheduleForm((current) => ({ ...current, priority: event.target.value }))}>
+                    <select value={rescheduleForm.priority} disabled={!canUseEngagement} onChange={(event) => setRescheduleForm((current) => ({ ...current, priority: event.target.value }))}>
                       {["Low", "Medium", "High", "Urgent"].map((item) => <option key={item} value={item}>{item}</option>)}
                     </select>
                   </Field>
                   <Field label="Counsellor" error={getFieldError("assignedUserId")}>
-                    <select value={rescheduleForm.assignedUserId} onChange={(event) => setRescheduleForm((current) => ({ ...current, assignedUserId: event.target.value }))}>
+                    <select value={rescheduleForm.assignedUserId} disabled={!canUseEngagement || assigneeLockedToSelf} onChange={(event) => setRescheduleForm((current) => ({ ...current, assignedUserId: event.target.value }))}>
                       <option value="">Current owner</option>
                       {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
                   </Field>
                   <Field label="Due At" error={getFieldError("dueAt")} required>
-                    <input type="datetime-local" value={rescheduleForm.dueAt} onChange={(event) => setRescheduleForm((current) => ({ ...current, dueAt: event.target.value }))} required />
+                    <input type="datetime-local" value={rescheduleForm.dueAt} disabled={!canUseEngagement} onChange={(event) => setRescheduleForm((current) => ({ ...current, dueAt: event.target.value }))} required />
                   </Field>
                   <div className="inline-editor-actions">
-                    <button type="button" className="ghost-button" onClick={() => setRescheduleForm(null)} disabled={actionStatus.saving}>Cancel</button>
-                    <button type="submit" className="primary-button" disabled={actionStatus.saving || !rescheduleForm.dueAt}>{actionStatus.saving ? "Saving..." : "Reschedule"}</button>
+                    <button type="button" className="ghost-button" onClick={() => setRescheduleForm(null)} disabled={saving}>Cancel</button>
+                    <button type="submit" className="primary-button" disabled={!canUseEngagement || !rescheduleForm.dueAt}>{saving ? "Saving..." : "Reschedule Follow-up"}</button>
                   </div>
                 </form>
               )}
@@ -1799,17 +3185,17 @@ function LeadDetailDrawer({
                     </div>
                     <div className="detail-list-actions">
                       <Badge label={item.status} muted={item.status !== "Completed"} />
-                      {canManageLeads && item.status === "Scheduled" && !archived && (
+                      {canUseEngagement && item.status === "Scheduled" && (
                         <>
-                          <button type="button" className="ghost-button" onClick={() => openRescheduleForm(item)} disabled={actionStatus.saving}>
+                          <button type="button" className="ghost-button" onClick={() => openRescheduleForm(item)} disabled={saving}>
                             <CalendarDays size={16} />
                             Reschedule
                           </button>
-                          <button type="button" className="ghost-button danger-text" onClick={() => onCancelFollowUp(item.id, { version: item.version })} disabled={actionStatus.saving}>
+                          <button type="button" className="ghost-button danger-text" onClick={() => onCancelFollowUp(item.id, { version: item.version })} disabled={saving}>
                             <X size={16} />
                             Cancel
                           </button>
-                          <button type="button" className="ghost-button" onClick={() => onCompleteFollowUp(item.id, { version: item.version })} disabled={actionStatus.saving}>
+                          <button type="button" className="ghost-button" onClick={() => onCompleteFollowUp(item.id, { version: item.version })} disabled={saving}>
                             <CheckCircle2 size={16} />
                             Complete
                           </button>
@@ -1880,7 +3266,7 @@ function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead
         title="Lead Pipeline"
         subtitle="Manage and track student enrollment progress."
         action={
-          <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
+          <button className="primary-button" onClick={() => onNewLead()} disabled={!canManageLeads}>
             <Plus size={18} />
             Create New Lead
           </button>
@@ -1917,7 +3303,7 @@ function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead
                   </footer>
                 </article>
               ))}
-              <button className="add-card">
+              <button className="add-card" type="button" onClick={() => onNewLead(stage.name)} disabled={!canManageLeads}>
                 <Plus size={18} />
                 Add Card
               </button>
@@ -1929,47 +3315,218 @@ function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead
   );
 }
 
-function FollowUpsPage({ followUps, loading, error, onRetry }) {
+function FollowUpsPage({
+  followUps,
+  loading,
+  error,
+  actionStatus,
+  onRetry,
+  onOpenLead,
+  onComplete,
+  onCancel,
+  onReschedule,
+  canManageLeads,
+}) {
+  const [activeTab, setActiveTab] = useState("today");
+  const [query, setQuery] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [rescheduling, setRescheduling] = useState(null);
+
+  const counts = useMemo(() => getFollowUpQueueCounts(followUps), [followUps]);
+  const filteredFollowUps = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return followUps
+      .filter((item) => followUpMatchesQueue(item, activeTab))
+      .filter((item) => priorityFilter === "all" || item.priority === priorityFilter)
+      .filter((item) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+        return `${item.studentName} ${item.leadId} ${item.assignedTo} ${item.type}`.toLocaleLowerCase().includes(normalizedQuery);
+      })
+      .sort(compareFollowUpsForQueue);
+  }, [activeTab, followUps, priorityFilter, query]);
+
+  const scheduledCount = followUps.filter((item) => item.status === "Scheduled").length;
+  const completedToday = followUps.filter((item) => item.status === "Completed" && isToday(item.completedAt || item.updatedAt)).length;
+  const rescheduleFieldErrors = rescheduling ? actionStatus.fieldErrors || {} : {};
+
+  const startReschedule = (item) => {
+    setRescheduling({
+      id: item.id,
+      leadId: item.leadId,
+      type: item.type || "Call",
+      priority: item.priority || "Medium",
+      assignedUserId: "",
+      dueAt: toDateTimeLocalValue(item.dueAt) || defaultFutureDateTimeLocal(),
+      version: item.version,
+    });
+  };
+
+  const submitReschedule = async (event) => {
+    event.preventDefault();
+    if (!rescheduling?.dueAt) {
+      return;
+    }
+    const dueDate = new Date(rescheduling.dueAt);
+    if (Number.isNaN(dueDate.getTime())) {
+      return;
+    }
+
+    const updated = await onReschedule(rescheduling, {
+      type: rescheduling.type,
+      priority: rescheduling.priority,
+      assignedUserId: optionalValue(rescheduling.assignedUserId),
+      dueAt: dueDate.toISOString(),
+      version: rescheduling.version,
+    });
+    if (updated) {
+      setRescheduling(null);
+    }
+  };
+
+  const clearFilters = () => {
+    setQuery("");
+    setPriorityFilter("all");
+  };
+
   return (
     <>
-      <PageTitle title="Follow-ups" subtitle="Manage your daily student engagement pipeline." />
-      <div className="two-column">
-        <div>
-          <div className="tabs">
-            <button className="active">Today <span>{followUps.length}</span></button>
-            <button>Upcoming</button>
-            <button>Overdue</button>
+      <PageTitle title="Follow-ups" subtitle="Run the daily follow-up queue and close scheduled student tasks." />
+      <div className="followup-workspace">
+        <section>
+          <div className="followup-summary">
+            <div>
+              <span>Scheduled</span>
+              <strong>{formatNumber(scheduledCount)}</strong>
+            </div>
+            <div>
+              <span>Overdue</span>
+              <strong>{formatNumber(counts.overdue)}</strong>
+            </div>
+            <div>
+              <span>Due Today</span>
+              <strong>{formatNumber(counts.today)}</strong>
+            </div>
+            <div>
+              <span>Completed Today</span>
+              <strong>{formatNumber(completedToday)}</strong>
+            </div>
           </div>
+
+          {actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}
+
+          <div className="followup-toolbar">
+            <label className="lead-search-field">
+              <span>Search</span>
+              <div className="lead-search-input">
+                <Search size={16} />
+                <input value={query} type="search" placeholder="Student, lead ID, owner, type" onChange={(event) => setQuery(event.target.value)} />
+              </div>
+            </label>
+            <label>
+              <span>Priority</span>
+              <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+                <option value="all">All priorities</option>
+                {["Urgent", "High", "Medium", "Low"].map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <button className="soft-button" type="button" onClick={clearFilters} disabled={!query && priorityFilter === "all"}>Clear</button>
+          </div>
+
+          <div className="tabs followup-tabs">
+            {[
+              ["overdue", "Overdue", counts.overdue],
+              ["today", "Today", counts.today],
+              ["upcoming", "Upcoming", counts.upcoming],
+              ["completed", "Completed", counts.completed],
+              ["cancelled", "Cancelled", counts.cancelled],
+              ["all", "All", followUps.length],
+            ].map(([id, label, count]) => (
+              <button key={id} type="button" className={activeTab === id ? "active" : ""} onClick={() => setActiveTab(id)}>
+                {label} <span>{formatNumber(count)}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="followup-list">
             {loading && <StatePanel title="Loading follow-ups" message="Fetching live scheduled tasks..." />}
             {error && <StatePanel title="Could not load follow-ups" message={error} action={onRetry} />}
-            {!loading && !error && followUps.length === 0 && <StatePanel title="No follow-ups" message="No scheduled follow-ups were found." />}
-            {!loading && !error && followUps.map((item) => (
-              <FollowUpRow key={item.id} item={item} />
+            {!loading && !error && followUps.length === 0 && <StatePanel title="No follow-ups" message="No follow-ups were found for your current access scope." />}
+            {!loading && !error && followUps.length > 0 && filteredFollowUps.length === 0 && (
+              <StatePanel title="No matching follow-ups" message="Change the queue tab or clear the current filters." action={clearFilters} actionLabel="Clear filters" />
+            )}
+            {!loading && !error && filteredFollowUps.map((item) => (
+              <FollowUpRow
+                key={item.id}
+                item={item}
+                saving={actionStatus.savingId === item.id}
+                canManageLeads={canManageLeads}
+                onOpenLead={onOpenLead}
+                onComplete={onComplete}
+                onCancel={onCancel}
+                onReschedule={startReschedule}
+              />
             ))}
-            <button className="empty-dropzone">
-              <Plus size={22} />
-              Schedule another follow-up for today
-            </button>
           </div>
-        </div>
+
+          <p className="drawer-permission-note">Create new follow-ups from a lead detail drawer so every task stays attached to a lead.</p>
+        </section>
+
         <aside className="right-rail">
-          <Card title="Date Navigator">
-            <div className="calendar-card">
-              <h3>October 2026</h3>
-              <div className="calendar-grid">
-                {Array.from({ length: 28 }, (_, index) => (
-                  <span key={index} className={index === 17 ? "selected" : ""}>{index + 1}</span>
-                ))}
-              </div>
+          <Card title="Queue Rules">
+            <div className="followup-rules">
+              <p><strong>Overdue:</strong> scheduled follow-ups before now.</p>
+              <p><strong>Today:</strong> scheduled follow-ups due before midnight.</p>
+              <p><strong>Upcoming:</strong> scheduled follow-ups after today.</p>
+              <p><strong>Completed/cancelled:</strong> read-only history.</p>
             </div>
           </Card>
           <div className="mini-metrics">
-            <Metric title="Conversion" value="24%" />
-            <Metric title="Avg Response" value="1.2h" />
+            <Metric title="Queue" value={formatNumber(filteredFollowUps.length)} />
+            <Metric title="All Tasks" value={formatNumber(followUps.length)} />
           </div>
         </aside>
       </div>
+
+      {rescheduling && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !actionStatus.savingId && setRescheduling(null)}>
+          <form className="team-modal password-modal" onSubmit={submitReschedule} role="dialog" aria-modal="true" aria-labelledby="followup-reschedule-title">
+            <header className="modal-header">
+              <div>
+                <h2 id="followup-reschedule-title">Reschedule Follow-up</h2>
+                <p>{rescheduling.leadId}</p>
+              </div>
+              <button type="button" className="icon-button modal-close" onClick={() => setRescheduling(null)} disabled={Boolean(actionStatus.savingId)} aria-label="Close">
+                <X size={20} />
+              </button>
+            </header>
+            <div className="team-modal-body">
+              <div className="form-grid compact">
+                <Field label="Type" error={firstError(rescheduleFieldErrors.type)}>
+                  <select value={rescheduling.type} onChange={(event) => setRescheduling((current) => ({ ...current, type: event.target.value }))}>
+                    {["Call", "WhatsApp", "Email", "Walk-in"].map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Priority" error={firstError(rescheduleFieldErrors.priority)}>
+                  <select value={rescheduling.priority} onChange={(event) => setRescheduling((current) => ({ ...current, priority: event.target.value }))}>
+                    {["Low", "Medium", "High", "Urgent"].map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Due At" error={firstError(rescheduleFieldErrors.dueAt)} className="span-2" required>
+                  <input type="datetime-local" value={rescheduling.dueAt} onChange={(event) => setRescheduling((current) => ({ ...current, dueAt: event.target.value }))} required />
+                </Field>
+              </div>
+            </div>
+            <footer className="team-modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setRescheduling(null)} disabled={Boolean(actionStatus.savingId)}>Cancel</button>
+              <button type="submit" className="primary-button" disabled={Boolean(actionStatus.savingId) || !rescheduling.dueAt}>
+                {actionStatus.savingId ? "Saving..." : "Reschedule Follow-up"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
     </>
   );
 }
@@ -2491,49 +4048,495 @@ function ResetPasswordPanel({ user, saving, error, fieldErrors, onCancel, onSubm
   );
 }
 
-function ReportsPage() {
+function ReportsPage({
+  reports,
+  options,
+  filters,
+  status,
+  canExportReports,
+  onFiltersChange,
+  onResetFilters,
+  onExport,
+  onRetry,
+  currentUser,
+  onOpenLead,
+}) {
+  if (["Counselor", "Telecaller"].includes(currentUser?.role)) {
+    return (
+      <CounsellorWorkInsights
+        reports={reports}
+        options={options}
+        filters={filters}
+        status={status}
+        onFiltersChange={onFiltersChange}
+        onResetFilters={onResetFilters}
+        onRetry={onRetry}
+        onOpenLead={onOpenLead}
+      />
+    );
+  }
+
+  const summary = reports?.summary || {};
+  const hasFilters = JSON.stringify(filters) !== JSON.stringify(defaultReportFilters());
+
   return (
     <>
       <PageTitle
         title="Admissions Reports"
-        subtitle="Real-time performance metrics and conversion insights."
+        subtitle={reports ? `${reports.access.scope} | ${reports.startDate} to ${reports.endDate}` : "Performance metrics and conversion insights."}
         action={
-          <button className="primary-button">
-            <Download size={18} />
-            Export Report
-          </button>
+          canExportReports && (
+            <div className="page-actions">
+              <button className="secondary-button" onClick={() => onExport("csv")} disabled={Boolean(status.exporting)}>
+                <Download size={18} />
+                {status.exporting === "csv" ? "Exporting..." : "CSV"}
+              </button>
+              <button className="primary-button" onClick={() => onExport("xlsx")} disabled={Boolean(status.exporting)}>
+                <Download size={18} />
+                {status.exporting === "xlsx" ? "Exporting..." : "XLSX"}
+              </button>
+            </div>
+          )
         }
       />
-      <div className="reports-grid">
-        <div className="metric-stack">
-          <Metric title="Total Inquiries" value="2,840" trend="+12.5%" />
-          <Metric title="Conversion Rate" value="18.4%" trend="+4.2%" />
-          <Metric title="Avg. Acquisition Cost" value="Rs. 142" trend="-2.1%" warning />
+
+      <div className="report-filter-panel">
+        <Field label="Start Date">
+          <input type="date" value={filters.startDate} onChange={(event) => onFiltersChange({ startDate: event.target.value })} />
+        </Field>
+        <Field label="End Date">
+          <input type="date" value={filters.endDate} onChange={(event) => onFiltersChange({ endDate: event.target.value })} />
+        </Field>
+        <Field label="Branch">
+          <select value={filters.branchId} onChange={(event) => onFiltersChange({ branchId: event.target.value })}>
+            <option value="">All branches</option>
+            {options.branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Course">
+          <select value={filters.courseId} onChange={(event) => onFiltersChange({ courseId: event.target.value })}>
+            <option value="">All courses</option>
+            {options.courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Source">
+          <select value={filters.sourceId} onChange={(event) => onFiltersChange({ sourceId: event.target.value })}>
+            <option value="">All sources</option>
+            {options.sources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Counsellor">
+          <select value={filters.assignedUserId} onChange={(event) => onFiltersChange({ assignedUserId: event.target.value })}>
+            <option value="">All counsellors</option>
+            {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <div className="lead-filter-actions">
+          <strong>{status.loading ? "Loading..." : reports ? `Generated ${formatFollowUpLabel(reports.generatedAt)}` : "No report loaded"}</strong>
+          <button className="soft-button" type="button" onClick={onResetFilters} disabled={!hasFilters || status.loading}>Reset</button>
         </div>
-        <Card title="Lead Conversion Funnel" className="funnel-card">
-          <div className="funnel">
-            {["Total Inquiries", "Qualified Leads", "Applications", "Offers Made", "Enrolled"].map((label, index) => (
-              <div key={label} style={{ width: `${100 - index * 12}%` }}>
-                <strong>{label}</strong>
-                <span>{[2840, 1920, 850, 620, 524][index]}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card title="Lead Source">
-          <SourceBreakdown />
-        </Card>
-        <Card title="Counsellor Productivity">
-          {counselors.map((person) => (
-            <div className="progress-row" key={person.name}>
-              <span>{person.name}</span>
-              <strong>{person.leads} Leads</strong>
-              <div><span style={{ width: `${Math.min(person.leads / 1.5, 100)}%` }} /></div>
-            </div>
-          ))}
-        </Card>
       </div>
+
+      {status.error && <div className="form-alert">{status.error}</div>}
+
+      {status.loading && !reports && <StatePanel title="Loading reports" message="Calculating tenant metrics..." />}
+      {!status.loading && !status.error && !reports && <StatePanel title="No reports loaded" message="Use the filters to load admissions reports." action={onRetry} actionLabel="Load reports" />}
+
+      {reports && (
+        <div className="reports-grid">
+          <div className="metric-stack">
+            <Metric title="Total Leads" value={formatNumber(summary.totalLeads)} />
+            <Metric title="Conversion Rate" value={`${summary.conversionRate || 0}%`} />
+            <Metric title="Open Leads" value={formatNumber(summary.openLeads)} />
+            <Metric title="Overdue Follow-ups" value={formatNumber(summary.overdueFollowUps)} warning={summary.overdueFollowUps > 0} />
+          </div>
+
+          <Card title="Pipeline Funnel" className="funnel-card">
+            <div className="funnel">
+              {reports.stages.length === 0 && <StatePanel title="No stage data" message="No leads were created in this period." />}
+              {reports.stages.map((stage) => (
+                <div key={stage.stageId} style={{ width: `${Math.max(18, stage.percentage || 0)}%` }}>
+                  <strong>{stage.stage}</strong>
+                  <span>{formatNumber(stage.totalLeads)} | {stage.percentage}%</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <ReportTable
+            title="Lead Source Performance"
+            emptyTitle="No source data"
+            emptyMessage="No leads match the current source filters."
+            columns={["Source", "Leads", "Won", "Lost", "Open", "Conversion"]}
+            rows={reports.sources}
+            renderRow={(item) => (
+              <tr key={item.sourceId}>
+                <td><strong>{item.source}</strong></td>
+                <td>{formatNumber(item.totalLeads)}</td>
+                <td>{formatNumber(item.wonLeads)}</td>
+                <td>{formatNumber(item.lostLeads)}</td>
+                <td>{formatNumber(item.openLeads)}</td>
+                <td>{item.conversionRate}%</td>
+              </tr>
+            )}
+          />
+
+          <ReportTable
+            title="Counsellor Performance"
+            emptyTitle="No counsellor data"
+            emptyMessage="No assigned lead or follow-up activity matches this period."
+            columns={["Counsellor", "Leads", "Won", "Scheduled", "Completed", "Overdue", "Conversion"]}
+            rows={reports.counselors}
+            renderRow={(item) => (
+              <tr key={item.userId || item.counselor}>
+                <td><strong>{item.counselor}</strong></td>
+                <td>{formatNumber(item.totalLeads)}</td>
+                <td>{formatNumber(item.wonLeads)}</td>
+                <td>{formatNumber(item.scheduledFollowUps)}</td>
+                <td>{formatNumber(item.completedFollowUps)}</td>
+                <td>{formatNumber(item.overdueFollowUps)}</td>
+                <td>{item.conversionRate}%</td>
+              </tr>
+            )}
+          />
+
+          <ReportTable
+            title="Stage Distribution"
+            emptyTitle="No stage data"
+            emptyMessage="No pipeline stage activity matches this period."
+            columns={["Stage", "Leads", "Share", "Type"]}
+            rows={reports.stages}
+            renderRow={(item) => (
+              <tr key={item.stageId}>
+                <td><strong>{item.stage}</strong></td>
+                <td>{formatNumber(item.totalLeads)}</td>
+                <td>{item.percentage}%</td>
+                <td>{item.isWonStage ? "Won" : item.isLostStage ? "Lost" : "Open"}</td>
+              </tr>
+            )}
+          />
+        </div>
+      )}
     </>
+  );
+}
+
+function ApplicationsPage({
+  applications,
+  filters,
+  status,
+  selectedApplication,
+  onFiltersChange,
+  onRetry,
+  onOpen,
+  onCloseDetail,
+  onTransition,
+  onChecklist,
+  onEnroll,
+}) {
+  const items = applications?.items || [];
+  const totalPages = Math.max(1, Math.ceil((applications?.total || 0) / Math.max(applications?.pageSize || 25, 1)));
+  return (
+    <>
+      <PageTitle
+        title="Applications & Enrollment"
+        subtitle="Review admission applications, checklist readiness, and final enrollment."
+      />
+      <div className="report-filter-panel application-filter-panel">
+        <Field label="Search">
+          <input value={filters.search} placeholder="Student or APP number" onChange={(event) => onFiltersChange({ search: event.target.value })} />
+        </Field>
+        <Field label="Status">
+          <select value={filters.status} onChange={(event) => onFiltersChange({ status: event.target.value })}>
+            <option value="">All statuses</option>
+            {["Draft", "Submitted", "UnderReview", "ChangesRequired", "Approved", "Enrolled", "Rejected", "Withdrawn", "Cancelled"].map((item) => <option key={item} value={item}>{formatApplicationStatus(item)}</option>)}
+          </select>
+        </Field>
+        <div className="lead-filter-actions">
+          <strong>{status.loading ? "Loading..." : `${applications?.total || 0} applications`}</strong>
+          <button className="soft-button" onClick={onRetry} disabled={status.loading}>Refresh</button>
+        </div>
+      </div>
+      {status.error && <div className="form-alert" role="alert">{status.error}</div>}
+      {status.message && <div className="form-success" role="status">{status.message}</div>}
+      <div className="table-card">
+        {status.loading && <StatePanel title="Loading applications" message="Fetching admission applications..." />}
+        {!status.loading && items.length === 0 && <StatePanel title="No applications" message="Create an application from a lead drawer when a lead is ready for admission review." />}
+        {!status.loading && items.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Application</th>
+                <th>Student</th>
+                <th>Course</th>
+                <th>Status</th>
+                <th>Checklist</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className="clickable-row" onClick={() => onOpen(item.id)}>
+                  <td><strong>{item.id}</strong><br /><small>{item.leadId}</small></td>
+                  <td>{item.studentName}</td>
+                  <td>{item.course}{item.intake ? <small> · {item.intake}</small> : null}</td>
+                  <td><Status status={formatApplicationStatus(item.status)} /></td>
+                  <td>{item.checklistDone}/{item.checklistTotal}</td>
+                  <td>{formatFollowUpLabel(item.updatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <footer className="table-footer">
+          <span>Page {applications?.page || 1} of {totalPages}</span>
+          <div>
+            <button className="pager" disabled={(applications?.page || 1) <= 1 || status.loading} onClick={() => onFiltersChange({ page: (applications?.page || 1) - 1 })}>Prev</button>
+            <button className="pager active" disabled>{applications?.page || 1}</button>
+            <button className="pager" disabled={(applications?.page || 1) >= totalPages || status.loading} onClick={() => onFiltersChange({ page: (applications?.page || 1) + 1 })}>Next</button>
+          </div>
+        </footer>
+      </div>
+      {selectedApplication && (
+        <ApplicationDetailPanel
+          application={selectedApplication}
+          saving={status.saving}
+          onClose={onCloseDetail}
+          onTransition={onTransition}
+          onChecklist={onChecklist}
+          onEnroll={onEnroll}
+        />
+      )}
+    </>
+  );
+}
+
+function ApplicationDetailPanel({ application, saving, onClose, onTransition, onChecklist, onEnroll }) {
+  const readiness = application.readiness || {};
+  return (
+    <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
+      <aside className="lead-drawer application-drawer" role="dialog" aria-modal="true" aria-labelledby="application-detail-title">
+        <header className="drawer-header">
+          <div>
+            <span className="eyebrow">{application.id}</span>
+            <h2 id="application-detail-title">{application.studentName}</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} disabled={saving} aria-label="Close application"><X size={20} /></button>
+        </header>
+        <div className="drawer-body">
+          <section className="lead-summary">
+            <div className="lead-avatar">{initials(application.studentName)}</div>
+            <div>
+              <h3>{application.course}</h3>
+              <p>{application.leadId}{application.intake ? ` · ${application.intake}` : ""}</p>
+            </div>
+            <Status status={formatApplicationStatus(application.status)} />
+          </section>
+          <div className="admission-readiness">
+            <MetricPill label="Checklist Missing" value={readiness.requiredChecklistMissing ?? 0} tone={(readiness.requiredChecklistMissing || 0) > 0 ? "warn" : ""} />
+            <MetricPill label="Documents" value={`${readiness.verifiedRequiredDocuments || 0}/${readiness.requiredDocuments || 0}`} tone={!readiness.documentsReady ? "warn" : ""} />
+            <MetricPill label="Fee Balance" value={formatCurrency(readiness.unpaidBalance || 0, "INR")} tone={!readiness.paymentsReady ? "warn" : ""} />
+          </div>
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Actions</h3></div>
+            <div className="application-actions">
+              {["Submitted", "UnderReview", "ChangesRequired", "Approved", "Rejected", "Withdrawn", "Cancelled"].map((status) => (
+                <button key={status} className="ghost-button" disabled={saving || application.status === status} onClick={() => onTransition(application, status)}>
+                  {formatApplicationStatus(status)}
+                </button>
+              ))}
+              <button className="primary-button" disabled={saving || application.status !== "Approved"} onClick={() => onEnroll(application)}>
+                Complete Enrollment
+              </button>
+            </div>
+          </section>
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Admission Checklist</h3><span>{application.checklist.filter((item) => item.isCompleted || item.isWaived).length}/{application.checklist.length}</span></div>
+            <div className="document-list">
+              {application.checklist.map((item) => (
+                <div className="document-row application-check-row" key={item.id}>
+                  <div className="document-main">
+                    <div className="document-title-row"><strong>{item.name}</strong><Badge label={item.isWaived ? "Waived" : item.isCompleted ? "Complete" : "Pending"} muted={!item.isCompleted && !item.isWaived} /></div>
+                    <small>{item.category}{item.isRequired ? " · Required" : " · Optional"}</small>
+                    {item.notes && <p>{item.notes}</p>}
+                  </div>
+                  <div className="document-actions">
+                    <button className="ghost-button" disabled={saving} onClick={() => onChecklist(application, item, { isCompleted: true, isWaived: false, notes: item.notes || "" })}>Complete</button>
+                    <button className="ghost-button" disabled={saving} onClick={() => onChecklist(application, item, { isCompleted: false, isWaived: true, notes: item.notes || "Waived by reviewer." })}>Waive</button>
+                    <button className="ghost-button danger-text" disabled={saving} onClick={() => onChecklist(application, item, { isCompleted: false, isWaived: false, notes: "" })}>Reset</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="drawer-section">
+            <div className="section-heading"><h3>Status Timeline</h3><span>{application.statusHistory.length}</span></div>
+            <div className="timeline">
+              {application.statusHistory.map((item, index) => (
+                <div className="timeline-item" key={`${item.newStatus}-${item.changedAt}-${index}`}>
+                  <span className="timeline-dot note" />
+                  <div>
+                    <strong>{formatApplicationStatus(item.newStatus)}</strong>
+                    <p>{item.note || "Status changed."}</p>
+                    <small>{formatFollowUpLabel(item.changedAt)} · {item.changedBy}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function formatApplicationStatus(status) {
+  const labels = {
+    UnderReview: "Under Review",
+    ChangesRequired: "Changes Required",
+  };
+  return labels[status] || status || "Unknown";
+}
+
+function CounsellorWorkInsights({ reports, options, filters, status, onFiltersChange, onResetFilters, onRetry, onOpenLead }) {
+  const hasFilters = JSON.stringify(filters) !== JSON.stringify(defaultReportFilters());
+  const followUps = reports?.followUps || {};
+  const outcomes = reports?.outcomes || {};
+  const pipelineTotal = (reports?.pipeline || []).reduce((sum, item) => sum + item.totalLeads, 0);
+
+  return (
+    <>
+      <PageTitle
+        title="My Work Insights"
+        subtitle="A focused view of who needs attention and how your admission follow-ups are progressing."
+      />
+
+      <div className="report-filter-panel counsellor-insight-filters">
+        <Field label="Start Date"><input type="date" value={filters.startDate} onChange={(event) => onFiltersChange({ startDate: event.target.value })} /></Field>
+        <Field label="End Date"><input type="date" value={filters.endDate} onChange={(event) => onFiltersChange({ endDate: event.target.value })} /></Field>
+        <Field label="Course">
+          <select value={filters.courseId} onChange={(event) => onFiltersChange({ courseId: event.target.value })}>
+            <option value="">All courses</option>
+            {options.courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Source">
+          <select value={filters.sourceId} onChange={(event) => onFiltersChange({ sourceId: event.target.value })}>
+            <option value="">All sources</option>
+            {options.sources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <div className="lead-filter-actions">
+          <strong>{status.loading ? "Refreshing..." : reports ? `${reports.startDate} to ${reports.endDate}` : "No insights loaded"}</strong>
+          <button className="soft-button" type="button" onClick={onResetFilters} disabled={!hasFilters || status.loading}>Reset</button>
+        </div>
+      </div>
+
+      {status.error && <div className="form-alert" role="alert">{status.error}</div>}
+      {status.loading && !reports && <StatePanel title="Preparing your work insights" message="Checking your assigned leads and follow-ups..." />}
+      {!status.loading && !status.error && !reports && <StatePanel title="No insights loaded" message="Load your current admission workload." action={onRetry} actionLabel="Load insights" />}
+
+      {reports && (
+        <div className="counsellor-insights">
+          <section>
+            <div className="section-heading insight-heading">
+              <div><h2>Needs attention</h2><p>Work from left to right. Each card contains the highest-priority leads first.</p></div>
+            </div>
+            <div className="attention-grid">
+              {reports.attention.map((group) => (
+                <details className={`attention-card ${group.count > 0 ? "has-items" : ""}`} key={group.key} open={group.key === "overdue" && group.count > 0}>
+                  <summary>
+                    <span>{group.title}</span>
+                    <strong>{formatNumber(group.count)}</strong>
+                    <small>{group.guidance}</small>
+                  </summary>
+                  <div className="attention-list">
+                    {group.items.length === 0 && <p>Nothing needs attention here.</p>}
+                    {group.items.map((lead) => (
+                      <button type="button" key={lead.id} onClick={() => onOpenLead(lead.id)}>
+                        <span><strong>{lead.studentName}</strong><small>{lead.course} · {lead.stage}</small></span>
+                        <Badge label={lead.priority} danger={["High", "Urgent"].includes(lead.priority)} />
+                      </button>
+                    ))}
+                    {group.count > group.items.length && <small>Showing the first {group.items.length} of {group.count}. Use Leads filters for the full list.</small>}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </section>
+
+          <section className="insight-two-column">
+            <Card title="My pipeline health" className="insight-panel">
+              {reports.pipeline.length === 0 && <StatePanel title="No assigned leads" message="No leads match these filters." />}
+              <div className="pipeline-health-list">
+                {reports.pipeline.map((stage) => (
+                  <div key={stage.stageId}>
+                    <div><strong>{stage.stage}</strong><span>{stage.totalLeads} leads{stage.stuckLeads > 0 ? ` · ${stage.stuckLeads} need review` : ""}</span></div>
+                    <div className="pipeline-health-track"><span style={{ width: `${pipelineTotal ? Math.max(4, stage.totalLeads / pipelineTotal * 100) : 0}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+              <p className="insight-note">“Need review” means the lead has remained without a recorded stage change for seven days. Legacy leads use their creation date.</p>
+            </Card>
+
+            <Card title="Follow-up discipline" className="insight-panel">
+              <div className="insight-metrics">
+                <Metric title="Completion Rate" value={`${followUps.completionRate || 0}%`} />
+                <Metric title="Completed On Time" value={formatNumber(followUps.completedOnTime)} />
+                <Metric title="Completed Late" value={formatNumber(followUps.completedLate)} warning={followUps.completedLate > 0} />
+                <Metric title="Currently Overdue" value={formatNumber(followUps.currentlyOverdue)} warning={followUps.currentlyOverdue > 0} />
+              </div>
+              <p className="insight-note">Completion rate uses follow-ups due during the selected period. Current overdue always reflects your live workload.</p>
+            </Card>
+          </section>
+
+          <section>
+            <div className="section-heading insight-heading"><div><h2>Admission outcomes</h2><p>Outcomes for your current portfolio during the selected period.</p></div></div>
+            <div className="outcome-grid">
+              <Metric title="New Leads" value={formatNumber(outcomes.newLeads)} />
+              <Metric title="Won" value={formatNumber(outcomes.wonLeads)} />
+              <Metric title="Lost" value={formatNumber(outcomes.lostLeads)} warning={outcomes.lostLeads > 0} />
+              <Metric title="Open Portfolio" value={formatNumber(outcomes.openLeads)} />
+              <Metric title="Conversion" value={`${outcomes.conversionRate || 0}%`} />
+            </div>
+          </section>
+
+          <section className="insight-two-column">
+            <InsightBreakdown title="Course interest" rows={reports.courses} empty="No course activity in this period." />
+            <InsightBreakdown title="Source quality" rows={reports.sources} empty="No source activity in this period." />
+          </section>
+        </div>
+      )}
+    </>
+  );
+}
+
+function InsightBreakdown({ title, rows, empty }) {
+  return (
+    <Card title={title} className="insight-panel report-table-card">
+      {rows.length === 0 && <StatePanel title="No data" message={empty} />}
+      {rows.length > 0 && <div className="report-table"><table><thead><tr><th>Name</th><th>Leads</th><th>Won</th><th>Open</th><th>Conversion</th></tr></thead><tbody>
+        {rows.map((item) => <tr key={item.id}><td><strong>{item.name}</strong></td><td>{item.totalLeads}</td><td>{item.wonLeads}</td><td>{item.openLeads}</td><td>{item.totalLeads ? Math.round(item.wonLeads / item.totalLeads * 100) : 0}%</td></tr>)}
+      </tbody></table></div>}
+    </Card>
+  );
+}
+
+function ReportTable({ title, emptyTitle, emptyMessage, columns, rows, renderRow }) {
+  return (
+    <Card title={title} className="report-table-card wide-card">
+      {rows.length === 0 && <StatePanel title={emptyTitle} message={emptyMessage} />}
+      {rows.length > 0 && (
+        <div className="report-table">
+          <table>
+            <thead>
+              <tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr>
+            </thead>
+            <tbody>{rows.map(renderRow)}</tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -2544,49 +4547,129 @@ const masterDataTabs = [
   { id: "stages", label: "Pipeline Stages", singular: "Lead Stage", apiPath: "lead-stages", icon: GitBranch },
 ];
 
-function SettingsPage({ currentUser, onMasterDataChanged }) {
+const profileTab = { id: "profile", label: "Institute Profile", singular: "Profile", icon: Building2 };
+const templateTab = { id: "templates", label: "Communication Templates", singular: "Template", icon: FileText };
+const settingsTabs = [profileTab, ...masterDataTabs, templateTab];
+const supportedTimeZones = [
+  ["Asia/Kolkata", "India Standard Time (UTC+05:30)"],
+  ["Asia/Dubai", "Dubai (UTC+04:00)"],
+  ["Asia/Singapore", "Singapore (UTC+08:00)"],
+  ["Asia/Tokyo", "Tokyo (UTC+09:00)"],
+  ["Asia/Kathmandu", "Kathmandu (UTC+05:45)"],
+  ["Asia/Dhaka", "Dhaka (UTC+06:00)"],
+  ["Asia/Colombo", "Colombo (UTC+05:30)"],
+  ["Europe/London", "London"],
+  ["Europe/Berlin", "Berlin"],
+  ["America/New_York", "New York"],
+  ["America/Chicago", "Chicago"],
+  ["America/Denver", "Denver"],
+  ["America/Los_Angeles", "Los Angeles"],
+  ["Australia/Sydney", "Sydney"],
+  ["UTC", "UTC"],
+];
+const templateChannels = ["Call", "WhatsApp", "Email", "SMS", "Meeting", "Note"];
+const templatePlaceholders = [
+  "studentName",
+  "leadNumber",
+  "course",
+  "stage",
+  "status",
+  "priority",
+  "source",
+  "counsellor",
+  "phone",
+  "email",
+  "city",
+  "tenantName",
+  "nextFollowUp",
+];
+
+function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged }) {
   const [masterData, setMasterData] = useState({ branches: [], courses: [], sources: [], stages: [] });
-  const [activeTab, setActiveTab] = useState("branches");
+  const [templates, setTemplates] = useState([]);
+  const [tenantProfile, setTenantProfile] = useState(null);
+  const [tenantUsers, setTenantUsers] = useState([]);
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [activeTab, setActiveTab] = useState("profile");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState({ loading: true, saving: false, error: "", fieldErrors: {}, message: "" });
   const canManage = ["Owner", "Admin"].includes(currentUser.role);
-  const tab = masterDataTabs.find((item) => item.id === activeTab) || masterDataTabs[0];
+  const tab = settingsTabs.find((item) => item.id === activeTab) || settingsTabs[0];
+  const isProfileTab = activeTab === profileTab.id;
+  const isTemplateTab = activeTab === templateTab.id;
 
-  const loadMasterData = useCallback(async (silent = false) => {
+  const loadConfiguration = useCallback(async (silent = false) => {
     if (!silent) {
       setStatus((current) => ({ ...current, loading: true, error: "", message: "" }));
     }
     try {
-      const response = await getMasterData();
+      const [profileResponse, response, templateResponse, userResponse] = await Promise.all([
+        getCurrentTenant(),
+        getMasterData(),
+        getCommunicationTemplates({ status: "all" }),
+        getUsers(),
+      ]);
+      setTenantProfile(profileResponse);
       setMasterData(response);
+      setTemplates(templateResponse);
+      setTenantUsers(userResponse);
       setStatus((current) => ({ ...current, loading: false, error: "" }));
       return true;
     } catch (error) {
       setStatus((current) => ({
         ...current,
         loading: false,
-        error: error instanceof Error ? error.message : "Unable to load master data.",
+        error: error instanceof Error ? error.message : "Unable to load settings.",
       }));
       return false;
     }
   }, []);
 
   useEffect(() => {
-    loadMasterData();
-  }, [loadMasterData]);
+    loadConfiguration();
+  }, [loadConfiguration]);
 
-  const records = masterData[activeTab] || [];
+  const records = isProfileTab ? [] : isTemplateTab ? templates : masterData[activeTab] || [];
   const visibleRecords = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return records.filter((record) => {
-      const searchText = `${record.name} ${record.city || ""}`.toLocaleLowerCase();
+      const searchText = isTemplateTab
+        ? `${record.name} ${record.channel || ""} ${record.category || ""} ${record.body || ""}`.toLocaleLowerCase()
+        : `${record.name} ${record.city || ""}`.toLocaleLowerCase();
       const matchesQuery = !normalizedQuery || searchText.includes(normalizedQuery);
       const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? record.isActive : !record.isActive);
       return matchesQuery && matchesStatus;
     });
-  }, [query, records, statusFilter]);
+  }, [isTemplateTab, query, records, statusFilter]);
+
+  const saveTenantProfile = async (payload) => {
+    setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
+    try {
+      const response = await updateCurrentTenant(payload);
+      setTenantProfile(response);
+      setProfileDirty(false);
+      setStatus({
+        loading: false,
+        saving: false,
+        error: "",
+        fieldErrors: {},
+        message: "Institute profile saved.",
+      });
+      onTenantProfileChanged?.(response);
+      return true;
+    } catch (error) {
+      setStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to save the institute profile.",
+        fieldErrors: error?.errors || {},
+        message: "",
+      }));
+      return false;
+    }
+  };
 
   const clearActionStatus = () => {
     setStatus((current) => ({ ...current, error: "", fieldErrors: {}, message: "" }));
@@ -2597,15 +4680,55 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
     setEditor({ type: activeTab, record });
   };
 
+  const refreshConfiguration = async () => {
+    const [refreshed, refreshedTemplates] = await Promise.all([
+      getMasterData(),
+      getCommunicationTemplates({ status: "all" }),
+    ]);
+    setMasterData(refreshed);
+    setTemplates(refreshedTemplates);
+  };
+
+  const saveTemplate = async (record, payload) => {
+    setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
+    try {
+      const response = record
+        ? await updateCommunicationTemplate(record.id, payload)
+        : await createCommunicationTemplate(payload);
+      await refreshConfiguration();
+      setEditor(null);
+      setStatus({
+        loading: false,
+        saving: false,
+        error: "",
+        fieldErrors: {},
+        message: response.message || "Communication template saved.",
+      });
+      onMasterDataChanged?.();
+      return true;
+    } catch (error) {
+      setStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to save communication template.",
+        fieldErrors: error?.errors || {},
+        message: "",
+      }));
+      return false;
+    }
+  };
+
   const saveRecord = async (type, record, payload) => {
     const config = masterDataTabs.find((item) => item.id === type);
+    if (!config) {
+      return saveTemplate(record, payload);
+    }
     setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
     try {
       const response = record
         ? await updateMasterRecord(config.apiPath, record.id, payload)
         : await createMasterRecord(config.apiPath, payload);
-      const refreshed = await getMasterData();
-      setMasterData(refreshed);
+      await refreshConfiguration();
       setEditor(null);
       setStatus({
         loading: false,
@@ -2640,8 +4763,7 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
     setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
     try {
       const response = await reorderLeadStages(reordered.map((item) => ({ id: item.id, version: item.version })));
-      const refreshed = await getMasterData();
-      setMasterData(refreshed);
+      await refreshConfiguration();
       setStatus({ loading: false, saving: false, error: "", fieldErrors: {}, message: response.message || "Lead stages reordered." });
       onMasterDataChanged?.();
     } catch (error) {
@@ -2660,25 +4782,30 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
   return (
     <>
       <PageTitle
-        title="Master Data"
-        subtitle="Configure the branches, courses, sources, and stages used across this CRM workspace."
-        action={canManage ? (
+        title="Settings"
+        subtitle="Manage the institute profile, lead configuration, and communication templates."
+        action={canManage && !isProfileTab ? (
           <button className="primary-button" type="button" onClick={() => openEditor()} disabled={status.loading || status.saving}>
             <Plus size={18} />Add {tab.singular}
           </button>
         ) : null}
       />
 
-      <nav className="master-tabs" aria-label="Master data categories">
-        {masterDataTabs.map((item) => {
+      <nav className="master-tabs" aria-label="Settings categories">
+        {settingsTabs.map((item) => {
           const Icon = item.icon;
-          const itemRecords = masterData[item.id] || [];
+          const itemRecords = item.id === profileTab.id ? [] : item.id === templateTab.id ? templates : masterData[item.id] || [];
           return (
             <button
               key={item.id}
               type="button"
               className={activeTab === item.id ? "active" : ""}
               onClick={() => {
+                if (activeTab === profileTab.id && item.id !== profileTab.id && profileDirty &&
+                    !window.confirm("Discard the unsaved institute profile changes?")) {
+                  return;
+                }
+                setProfileDirty(false);
                 setActiveTab(item.id);
                 setQuery("");
                 setStatusFilter("all");
@@ -2687,7 +4814,7 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
             >
               <Icon size={18} />
               <span>{item.label}</span>
-              <strong>{itemRecords.length}</strong>
+              {item.id !== profileTab.id && <strong>{itemRecords.length}</strong>}
             </button>
           );
         })}
@@ -2702,11 +4829,25 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
       {status.error && !editor && (
         <div className="team-notice error" role="alert">
           <span>{status.error}</span>
-          <button className="soft-button" type="button" onClick={() => loadMasterData()}><RotateCcw size={17} />Retry</button>
+          <button className="soft-button" type="button" onClick={() => loadConfiguration()}><RotateCcw size={17} />Retry</button>
         </div>
       )}
 
-      {!status.loading && (
+      {isProfileTab && status.loading && <StatePanel title="Loading institute profile" message="Fetching institute details and branding..." />}
+      {isProfileTab && !status.loading && tenantProfile && (
+        <TenantProfilePanel
+          profile={tenantProfile}
+          branches={masterData.branches}
+          users={tenantUsers}
+          canManage={canManage}
+          saving={status.saving}
+          fieldErrors={status.fieldErrors}
+          onDirtyChange={setProfileDirty}
+          onSubmit={saveTenantProfile}
+        />
+      )}
+
+      {!isProfileTab && !status.loading && (
         <div className="master-summary">
           <span><strong>{records.length}</strong> total</span>
           <span><strong>{activeCount}</strong> active</span>
@@ -2715,7 +4856,7 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
         </div>
       )}
 
-      {!status.loading && records.length > 0 && (
+      {!isProfileTab && !status.loading && records.length > 0 && (
         <div className="master-toolbar">
           <label className="team-search">
             <span className="sr-only">Search {tab.label.toLowerCase()}</span>
@@ -2738,7 +4879,7 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
         </div>
       )}
 
-      <div className="table-card master-table">
+      {!isProfileTab && <div className="table-card master-table">
         {status.loading && <StatePanel title="Loading master data" message="Fetching tenant configuration..." />}
         {!status.loading && records.length === 0 && <StatePanel title={`No ${tab.label.toLowerCase()}`} message={`Add the first ${tab.singular.toLowerCase()} to this workspace.`} />}
         {!status.loading && records.length > 0 && visibleRecords.length === 0 && (
@@ -2748,12 +4889,14 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
           <table>
             <thead>
               <tr>
-                {activeTab === "stages" && <th>Order</th>}
+                {!isTemplateTab && activeTab === "stages" && <th>Order</th>}
                 <th>{tab.singular}</th>
-                {activeTab === "branches" && <th>City</th>}
-                <th>Usage</th>
-                {activeTab === "stages" && <th>Type</th>}
+                {!isTemplateTab && activeTab === "branches" && <th>City</th>}
+                {isTemplateTab ? <th>Channel</th> : <th>Usage</th>}
+                {isTemplateTab && <th>Category</th>}
+                {!isTemplateTab && activeTab === "stages" && <th>Type</th>}
                 <th>Status</th>
+                {isTemplateTab && <th>Version</th>}
                 <th>Updated</th>
                 <th>Actions</th>
               </tr>
@@ -2761,10 +4904,10 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
             <tbody>
               {visibleRecords.map((record) => {
                 const activeStages = masterData.stages.filter((item) => item.isActive).sort((left, right) => left.sortOrder - right.sortOrder);
-                const stageIndex = activeTab === "stages" ? activeStages.findIndex((item) => item.id === record.id) : -1;
+                const stageIndex = !isTemplateTab && activeTab === "stages" ? activeStages.findIndex((item) => item.id === record.id) : -1;
                 return (
                   <tr key={record.id}>
-                    {activeTab === "stages" && (
+                    {!isTemplateTab && activeTab === "stages" && (
                       <td>
                         {canManage && record.isActive ? (
                           <div className="stage-order-actions">
@@ -2774,13 +4917,18 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
                         ) : <span className="team-access-label">{record.isActive ? stageIndex + 1 : "-"}</span>}
                       </td>
                     )}
-                    <td><strong>{record.name}</strong></td>
-                    {activeTab === "branches" && <td>{record.city}</td>}
-                    <td>{activeTab === "branches" ? `${record.activeUsers} users / ${record.leads} leads` : `${record.leads} leads`}</td>
-                    {activeTab === "stages" && (
+                    <td>
+                      <strong>{record.name}</strong>
+                      {isTemplateTab && <small className="template-table-preview">{record.body}</small>}
+                    </td>
+                    {!isTemplateTab && activeTab === "branches" && <td>{record.city}</td>}
+                    <td>{isTemplateTab ? <Badge label={record.channel} /> : activeTab === "branches" ? `${record.activeUsers} users / ${record.leads} leads` : `${record.leads} leads`}</td>
+                    {isTemplateTab && <td>{record.category || "-"}</td>}
+                    {!isTemplateTab && activeTab === "stages" && (
                       <td><StageTypeBadges stage={record} /></td>
                     )}
                     <td><Badge label={record.isActive ? "Active" : "Inactive"} muted={!record.isActive} /></td>
+                    {isTemplateTab && <td>v{record.version}</td>}
                     <td>{formatDate(record.updatedAt)}</td>
                     <td>
                       <div className="table-actions team-actions">
@@ -2798,9 +4946,9 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
           </table>
         )}
         {!status.loading && records.length > 0 && <footer className="table-footer team-table-footer">Showing {visibleRecords.length} of {records.length} records</footer>}
-      </div>
+      </div>}
 
-      {editor && (
+      {editor && editor.type !== templateTab.id && (
         <MasterDataModal
           key={`${editor.type}-${editor.record?.id || "new"}`}
           type={editor.type}
@@ -2812,7 +4960,258 @@ function SettingsPage({ currentUser, onMasterDataChanged }) {
           onSubmit={(payload) => saveRecord(editor.type, editor.record, payload)}
         />
       )}
+      {editor?.type === templateTab.id && (
+        <TemplateModal
+          key={`${editor.record?.id || "new"}-template`}
+          record={editor.record}
+          saving={status.saving}
+          error={status.error}
+          fieldErrors={status.fieldErrors}
+          onClose={() => { if (!status.saving) { setEditor(null); clearActionStatus(); } }}
+          onSubmit={(payload) => saveTemplate(editor.record, payload)}
+        />
+      )}
     </>
+  );
+}
+
+function tenantProfileForm(profile) {
+  return {
+    name: profile.name || "",
+    contactEmail: profile.contactEmail || "",
+    contactPhone: profile.contactPhone || "",
+    websiteUrl: profile.websiteUrl || "",
+    addressLine1: profile.addressLine1 || "",
+    addressLine2: profile.addressLine2 || "",
+    city: profile.city || "",
+    state: profile.state || "",
+    postalCode: profile.postalCode || "",
+    country: profile.country || "India",
+    timeZone: profile.timeZone || "Asia/Kolkata",
+    logoUrl: profile.logoUrl || "",
+    brandColor: profile.brandColor || "#2171D3",
+    defaultBranchId: profile.defaultBranchId || "",
+    defaultAssigneeUserId: profile.defaultAssigneeUserId || "",
+  };
+}
+
+function TenantProfilePanel({ profile, branches, users, canManage, saving, fieldErrors, onDirtyChange, onSubmit }) {
+  const [form, setForm] = useState(() => tenantProfileForm(profile));
+  const [clientErrors, setClientErrors] = useState({});
+  const [logoFailed, setLogoFailed] = useState(false);
+  const initialForm = useMemo(() => tenantProfileForm(profile), [profile]);
+  const dirty = JSON.stringify(form) !== JSON.stringify(initialForm);
+  const getFieldError = (field) => clientErrors[field] || firstError(fieldErrors[field]);
+
+  useEffect(() => {
+    setForm(tenantProfileForm(profile));
+    setClientErrors({});
+    setLogoFailed(false);
+  }, [profile]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+
+  useEffect(() => {
+    if (!dirty) {
+      return undefined;
+    }
+    const warnBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [dirty]);
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setClientErrors((current) => ({ ...current, [field]: "" }));
+    if (field === "logoUrl") {
+      setLogoFailed(false);
+    }
+  };
+
+  const validate = () => {
+    const errors = {};
+    if (!form.name.trim()) errors.name = "Institute name is required.";
+    if (form.name.trim().length > 160) errors.name = "Maximum length is 160 characters.";
+    if (form.contactEmail.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.contactEmail.trim())) errors.contactEmail = "Enter a valid contact email address.";
+    if (form.contactPhone.trim()) {
+      const digits = form.contactPhone.replace(/\D/g, "");
+      if (!/^[0-9+()\-\s.]+$/.test(form.contactPhone.trim()) || digits.length < 7 || digits.length > 15) errors.contactPhone = "Enter a valid phone number containing 7 to 15 digits.";
+    }
+    ["websiteUrl", "logoUrl"].forEach((field) => {
+      if (!form[field].trim()) return;
+      try {
+        const url = new URL(form[field].trim());
+        if (!["http:", "https:"].includes(url.protocol)) throw new Error("Invalid protocol");
+      } catch {
+        errors[field] = `Enter a valid HTTP or HTTPS ${field === "logoUrl" ? "logo URL" : "website URL"}.`;
+      }
+    });
+    if (!form.country.trim()) errors.country = "Country is required.";
+    if (!supportedTimeZones.some(([value]) => value === form.timeZone)) errors.timeZone = "Select a supported timezone.";
+    if (!/^#[0-9A-Fa-f]{6}$/.test(form.brandColor.trim())) errors.brandColor = "Enter a six-digit hex color such as #2171D3.";
+    const defaultBranch = branches.find((item) => item.id === form.defaultBranchId);
+    if (form.defaultBranchId && (!defaultBranch || !defaultBranch.isActive)) errors.defaultBranchId = "Select a valid active branch.";
+    const defaultAssignee = users.find((item) => item.id === form.defaultAssigneeUserId);
+    if (form.defaultAssigneeUserId && (!defaultAssignee || !defaultAssignee.isActive || ["Accountant", "ReadOnly"].includes(defaultAssignee.role))) {
+      errors.defaultAssigneeUserId = "Select an active CRM user.";
+    } else if (defaultBranch && defaultAssignee?.branchId && defaultAssignee.branchId !== defaultBranch.id) {
+      errors.defaultAssigneeUserId = "The default assignee must belong to the selected default branch.";
+    }
+    setClientErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canManage || saving || !dirty || !validate()) {
+      return;
+    }
+    await onSubmit({
+      ...form,
+      name: form.name.trim(),
+      contactEmail: form.contactEmail.trim(),
+      contactPhone: form.contactPhone.trim(),
+      websiteUrl: form.websiteUrl.trim(),
+      addressLine1: form.addressLine1.trim(),
+      addressLine2: form.addressLine2.trim(),
+      city: form.city.trim(),
+      state: form.state.trim(),
+      postalCode: form.postalCode.trim(),
+      country: form.country.trim(),
+      logoUrl: form.logoUrl.trim(),
+      brandColor: form.brandColor.trim().toUpperCase(),
+      defaultBranchId: form.defaultBranchId || null,
+      defaultAssigneeUserId: form.defaultAssigneeUserId || null,
+      version: profile.version,
+    });
+  };
+
+  const controlsDisabled = !canManage || saving;
+
+  return (
+    <form className="tenant-profile" onSubmit={handleSubmit} noValidate>
+      <header className="tenant-profile-header">
+        <div className="tenant-logo-preview" style={{ borderColor: form.brandColor }}>
+          {form.logoUrl && !logoFailed
+            ? <img src={form.logoUrl} alt={`${form.name || "Institute"} logo preview`} onError={() => setLogoFailed(true)} />
+            : <span style={{ background: form.brandColor }}>{initials(form.name || profile.slug).slice(0, 2)}</span>}
+        </div>
+        <div>
+          <h2>{form.name || "Institute profile"}</h2>
+          <p>{profile.slug}</p>
+        </div>
+        <div className="tenant-profile-meta">
+          <Badge label={profile.isActive ? "Active" : "Inactive"} muted={!profile.isActive} />
+          <span>Version {profile.version}</span>
+        </div>
+      </header>
+
+      {!canManage && <div className="team-notice"><span>Only owners and admins can edit this profile.</span></div>}
+
+      <section className="tenant-profile-section">
+        <h3>Institute details</h3>
+        <div className="form-grid">
+          <Field label="Institute Name" error={getFieldError("name")} required>
+            <input value={form.name} onChange={(event) => updateField("name", event.target.value)} maxLength={160} disabled={controlsDisabled} />
+          </Field>
+          <Field label="Workspace Slug">
+            <input value={profile.slug} disabled aria-readonly="true" />
+          </Field>
+          <Field label="Contact Email" error={getFieldError("contactEmail")}>
+            <input type="email" value={form.contactEmail} onChange={(event) => updateField("contactEmail", event.target.value)} maxLength={240} disabled={controlsDisabled} />
+          </Field>
+          <Field label="Contact Phone" error={getFieldError("contactPhone")}>
+            <input type="tel" value={form.contactPhone} onChange={(event) => updateField("contactPhone", event.target.value)} maxLength={40} disabled={controlsDisabled} />
+          </Field>
+          <Field label="Website URL" error={getFieldError("websiteUrl")} className="span-2">
+            <input type="url" value={form.websiteUrl} onChange={(event) => updateField("websiteUrl", event.target.value)} maxLength={500} placeholder="https://www.example.edu" disabled={controlsDisabled} />
+          </Field>
+        </div>
+      </section>
+
+      <section className="tenant-profile-section">
+        <h3>Address and timezone</h3>
+        <div className="form-grid">
+          <Field label="Address Line 1" error={getFieldError("addressLine1")} className="span-2">
+            <input value={form.addressLine1} onChange={(event) => updateField("addressLine1", event.target.value)} maxLength={200} disabled={controlsDisabled} />
+          </Field>
+          <Field label="Address Line 2" error={getFieldError("addressLine2")} className="span-2">
+            <input value={form.addressLine2} onChange={(event) => updateField("addressLine2", event.target.value)} maxLength={200} disabled={controlsDisabled} />
+          </Field>
+          <Field label="City" error={getFieldError("city")}>
+            <input value={form.city} onChange={(event) => updateField("city", event.target.value)} maxLength={120} disabled={controlsDisabled} />
+          </Field>
+          <Field label="State / Province" error={getFieldError("state")}>
+            <input value={form.state} onChange={(event) => updateField("state", event.target.value)} maxLength={120} disabled={controlsDisabled} />
+          </Field>
+          <Field label="Postal Code" error={getFieldError("postalCode")}>
+            <input value={form.postalCode} onChange={(event) => updateField("postalCode", event.target.value)} maxLength={20} disabled={controlsDisabled} />
+          </Field>
+          <Field label="Country" error={getFieldError("country")} required>
+            <input value={form.country} onChange={(event) => updateField("country", event.target.value)} maxLength={80} disabled={controlsDisabled} />
+          </Field>
+          <Field label="Timezone" error={getFieldError("timeZone")} className="span-2" required>
+            <select value={form.timeZone} onChange={(event) => updateField("timeZone", event.target.value)} disabled={controlsDisabled}>
+              {supportedTimeZones.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </Field>
+        </div>
+      </section>
+
+      <section className="tenant-profile-section">
+        <h3>Branding</h3>
+        <div className="form-grid">
+          <Field label="Logo URL" error={getFieldError("logoUrl")} className="span-2">
+            <input type="url" value={form.logoUrl} onChange={(event) => updateField("logoUrl", event.target.value)} maxLength={500} placeholder="https://cdn.example.edu/logo.png" disabled={controlsDisabled} />
+          </Field>
+          <Field label="Brand Color" error={getFieldError("brandColor")} required>
+            <div className="color-input-group">
+              <input type="color" value={/^#[0-9A-Fa-f]{6}$/.test(form.brandColor) ? form.brandColor : "#2171D3"} onChange={(event) => updateField("brandColor", event.target.value.toUpperCase())} disabled={controlsDisabled} aria-label="Select brand color" />
+              <input value={form.brandColor} onChange={(event) => updateField("brandColor", event.target.value)} maxLength={7} disabled={controlsDisabled} />
+            </div>
+          </Field>
+        </div>
+      </section>
+
+      <section className="tenant-profile-section">
+        <h3>Lead defaults</h3>
+        <div className="form-grid">
+          <Field label="Default Branch" error={getFieldError("defaultBranchId")}>
+            <select value={form.defaultBranchId} onChange={(event) => updateField("defaultBranchId", event.target.value)} disabled={controlsDisabled}>
+              <option value="">No default branch</option>
+              {branches.map((item) => <option key={item.id} value={item.id} disabled={!item.isActive}>{item.name}{item.isActive ? "" : " (Inactive)"}</option>)}
+            </select>
+          </Field>
+          <Field label="Default Assignee" error={getFieldError("defaultAssigneeUserId")}>
+            <select value={form.defaultAssigneeUserId} onChange={(event) => updateField("defaultAssigneeUserId", event.target.value)} disabled={controlsDisabled}>
+              <option value="">Leave new leads unassigned</option>
+              {users
+                .filter((item) => !["Accountant", "ReadOnly"].includes(item.role))
+                .map((item) => <option key={item.id} value={item.id} disabled={!item.isActive}>{item.fullName} ({item.role}){item.isActive ? "" : " - Inactive"}</option>)}
+            </select>
+          </Field>
+        </div>
+      </section>
+
+      {canManage && (
+        <footer className="tenant-profile-actions">
+          <span>{dirty ? "Unsaved changes" : `Last updated ${formatDate(profile.updatedAt)}`}</span>
+          <button className="ghost-button" type="button" onClick={() => { setForm(initialForm); setClientErrors({}); setLogoFailed(false); }} disabled={saving || !dirty}>
+            <RotateCcw size={17} />Reset
+          </button>
+          <button className="primary-button" type="submit" disabled={saving || !dirty}>
+            <CheckCircle2 size={17} />{saving ? "Saving..." : "Save Profile"}
+          </button>
+        </footer>
+      )}
+    </form>
   );
 }
 
@@ -2823,6 +5222,110 @@ function StageTypeBadges({ stage }) {
       {stage.isWonStage && <Badge label="Won" />}
       {stage.isLostStage && <Badge label="Lost" danger />}
       {!stage.isDefaultStage && !stage.isWonStage && !stage.isLostStage && <span className="muted-text">Standard</span>}
+    </div>
+  );
+}
+
+function TemplateModal({ record, saving, error, fieldErrors, onClose, onSubmit }) {
+  const isEditing = Boolean(record);
+  const [form, setForm] = useState({
+    name: record?.name || "",
+    channel: record?.channel || "WhatsApp",
+    category: record?.category || "",
+    body: record?.body || "",
+    isActive: record?.isActive ?? true,
+  });
+  const [clientErrors, setClientErrors] = useState({});
+  const getFieldError = (field) => clientErrors[field] || firstError(fieldErrors[field]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => event.key === "Escape" && !saving && onClose();
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, saving]);
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setClientErrors((current) => {
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const errors = validateCommunicationTemplateForm(form);
+    setClientErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
+    const payload = {
+      name: form.name.trim(),
+      channel: form.channel,
+      category: form.category.trim(),
+      body: form.body.trim(),
+      isActive: form.isActive,
+      version: record?.version || 0,
+    };
+
+    onSubmit(payload);
+  };
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
+      <form className="modal team-modal template-modal" onSubmit={handleSubmit} noValidate role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
+        <header className="modal-header">
+          <div>
+            <h2 id="template-modal-title">{isEditing ? "Edit" : "Add"} Communication Template</h2>
+            <p>{isEditing ? `Version ${record.version}` : "Create reusable copy for lead communication activity."}</p>
+          </div>
+          <button type="button" className="icon-button modal-close" onClick={onClose} disabled={saving} aria-label="Close"><X size={20} /></button>
+        </header>
+        <div className="team-modal-body">
+          {error && <div className="form-alert" role="alert">{error}</div>}
+          <div className="form-grid">
+            <Field label="Template Name" error={getFieldError("name")} required>
+              <input value={form.name} maxLength={160} onChange={(event) => updateField("name", event.target.value)} autoFocus required />
+            </Field>
+            <Field label="Channel" error={getFieldError("channel")} required>
+              <select value={form.channel} onChange={(event) => updateField("channel", event.target.value)} required>
+                {templateChannels.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </Field>
+            <Field label="Category" error={getFieldError("category")} className="span-2" required>
+              <input value={form.category} maxLength={80} onChange={(event) => updateField("category", event.target.value)} placeholder="Inquiry, Follow-up, Demo, Documents" required />
+            </Field>
+            <Field label="Template Body" error={getFieldError("body")} className="span-2" required>
+              <textarea value={form.body} rows={9} maxLength={2000} onChange={(event) => updateField("body", event.target.value)} required />
+            </Field>
+          </div>
+          <div className="template-helper">
+            <span>Placeholders</span>
+            <div>
+              {templatePlaceholders.map((item) => (
+                <button key={item} type="button" className="template-token" onClick={() => updateField("body", `${form.body}${form.body.endsWith(" ") || form.body.length === 0 ? "" : " "}{{${item}}}`)}>
+                  {`{{${item}}}`}
+                </button>
+              ))}
+            </div>
+          </div>
+          {isEditing && (
+            <fieldset className="master-options status-option">
+              <legend>Availability</legend>
+              <label className="master-checkbox">
+                <input type="checkbox" checked={form.isActive} onChange={(event) => updateField("isActive", event.target.checked)} />
+                Active and available inside lead profiles
+              </label>
+            </fieldset>
+          )}
+        </div>
+        <footer className="team-modal-actions">
+          <button type="button" className="ghost-button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving..." : isEditing ? "Save Changes" : "Add Template"}</button>
+        </footer>
+      </form>
     </div>
   );
 }
@@ -2994,20 +5497,23 @@ function FilterBar({ filters, options, total, loading, onChange, onReset }) {
 
   return (
     <div className="lead-filter-panel">
-      <label className="team-search">
+      <label className="lead-search-field">
         <span>Search</span>
-        <input
-          value={searchDraft}
-          placeholder="Name, phone, email, lead ID"
-          onChange={(event) => setSearchDraft(event.target.value)}
-          onBlur={submitSearch}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              submitSearch();
-            }
-          }}
-        />
+        <div className="lead-search-input">
+          <Search size={16} />
+          <input
+            value={searchDraft}
+            placeholder="Name, phone, email, lead ID"
+            onChange={(event) => setSearchDraft(event.target.value)}
+            onBlur={submitSearch}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submitSearch();
+              }
+            }}
+          />
+        </div>
       </label>
 
       <label>
@@ -3086,10 +5592,18 @@ function FilterBar({ filters, options, total, loading, onChange, onReset }) {
   );
 }
 
-function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onOpenLead, onPageChange }) {
+function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onOpenLead, onPageChange, canSelect, selected, onToggleLead, onTogglePage }) {
   const totalPages = Math.max(1, Math.ceil(total / Math.max(pageSize, 1)));
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const end = Math.min(total, page * pageSize);
+  const selectedCount = leads.filter((lead) => selected[lead.id]).length;
+  const selectAllRef = useRef(null);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedCount > 0 && selectedCount < leads.length;
+    }
+  }, [selectedCount, leads.length]);
 
   return (
     <div className="table-card">
@@ -3100,7 +5614,7 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
       <table>
         <thead>
           <tr>
-            <th><input type="checkbox" /></th>
+            {canSelect && <th className="selection-cell"><input ref={selectAllRef} type="checkbox" checked={leads.length > 0 && selectedCount === leads.length} onChange={onTogglePage} aria-label="Select all leads on this page" /></th>}
             <th>Student Name</th>
             <th>Phone</th>
             <th>Source</th>
@@ -3115,7 +5629,7 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
         <tbody>
           {leads.map((lead) => (
             <tr key={lead.id} className="clickable-row" onClick={() => onOpenLead(lead.id)}>
-              <td><input type="checkbox" onClick={(event) => event.stopPropagation()} /></td>
+              {canSelect && <td className="selection-cell"><input type="checkbox" checked={Boolean(selected[lead.id])} onChange={() => onToggleLead(lead)} onClick={(event) => event.stopPropagation()} aria-label={`Select ${lead.studentName}`} /></td>}
               <td>
                 <div className="student-cell">
                   <span>{initials(lead.studentName)}</span>
@@ -3152,21 +5666,56 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
   );
 }
 
-function FollowUpRow({ item, compact = false }) {
+function FollowUpRow({ item, compact = false, saving = false, canManageLeads = false, onOpenLead, onComplete, onCancel, onReschedule }) {
+  const scheduled = item.status === "Scheduled";
+  const overdue = scheduled && new Date(item.dueAt).getTime() < Date.now();
+  const dueLabel = item.status === "Completed"
+    ? `Completed ${formatFollowUpLabel(item.completedAt)}`
+    : item.status === "Cancelled"
+      ? `Cancelled ${formatFollowUpLabel(item.cancelledAt)}`
+      : formatFollowUpLabel(item.dueAt);
+
   return (
     <article className={`followup-row ${compact ? "compact" : ""}`}>
       <div className="channel-icon">{item.type[0]}</div>
-      <div>
+      <div className="followup-main">
         <h3>{item.studentName}</h3>
-        <Badge label={`${item.priority} Priority`} danger={item.priority === "High"} warning={item.priority === "Medium"} />
-        <p>{item.assignedTo}</p>
+        <div className="followup-badges">
+          <Badge label={`${item.priority} Priority`} danger={["High", "Urgent"].includes(item.priority)} warning={item.priority === "Medium"} />
+          <Badge label={item.status} muted={item.status !== "Scheduled"} />
+          {overdue && <Badge label="Overdue" danger />}
+        </div>
+        <p>{item.leadId} - {item.assignedTo}</p>
       </div>
-      <div>
-        <small>{item.status}</small>
+      <div className="followup-time">
+        <small>{dueLabel}</small>
         <strong>{formatTime(item.dueAt)}</strong>
         <p>{formatDate(item.dueAt)}</p>
       </div>
-      {!compact && <button className="primary-button"><CheckCircle2 size={18} />Complete</button>}
+      {!compact && (
+        <div className="followup-actions">
+          <button type="button" className="ghost-button" onClick={() => onOpenLead(item.leadId)} disabled={saving}>
+            <Eye size={16} />
+            Lead
+          </button>
+          {scheduled && canManageLeads && (
+            <>
+              <button type="button" className="ghost-button" onClick={() => onReschedule(item)} disabled={saving}>
+                <CalendarDays size={16} />
+                Reschedule
+              </button>
+              <button type="button" className="ghost-button danger-text" onClick={() => onCancel(item)} disabled={saving}>
+                <X size={16} />
+                Cancel
+              </button>
+              <button type="button" className="primary-button" onClick={() => onComplete(item)} disabled={saving}>
+                <CheckCircle2 size={18} />
+                {saving ? "Saving..." : "Complete"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -3223,13 +5772,68 @@ function initials(name) {
   return (name || "?").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 }
 
-function StatePanel({ title, message, action }) {
+function StatePanel({ title, message, action, actionLabel = "Retry" }) {
   return (
     <div className="state-panel">
       <strong>{title}</strong>
       <p>{message}</p>
-      {action && <button className="soft-button" onClick={action}>Retry</button>}
+      {action && <button className="soft-button" onClick={action}>{actionLabel}</button>}
     </div>
+  );
+}
+
+function NotificationPanel({ data, status, onClose, onItemClick, onMarkAllRead, onRetry, onLoadMore }) {
+  const hasMore = data.items.length < data.total;
+
+  return (
+    <section className="notification-panel" aria-label="Notifications">
+      <header className="notification-panel-header">
+        <div>
+          <strong>Notifications</strong>
+          <span>{data.unreadCount ? `${data.unreadCount} unread` : "You're up to date"}</span>
+        </div>
+        <button className="icon-button" onClick={onClose} aria-label="Close notifications">
+          <X size={18} />
+        </button>
+      </header>
+      {data.unreadCount > 0 && (
+        <button className="notification-read-all" onClick={onMarkAllRead} disabled={status.saving}>
+          <CheckCircle2 size={16} />
+          {status.saving ? "Updating..." : "Mark all read"}
+        </button>
+      )}
+      {status.error && (
+        <div className="notification-error">
+          <span>{status.error}</span>
+          <button onClick={onRetry}>Retry</button>
+        </div>
+      )}
+      <div className="notification-list">
+        {status.loading && data.items.length === 0 && <p className="notification-empty">Loading notifications...</p>}
+        {!status.loading && !status.error && data.items.length === 0 && (
+          <p className="notification-empty">No reminders yet.</p>
+        )}
+        {data.items.map((item) => (
+          <button
+            key={item.id}
+            className={`notification-item ${item.readAt ? "read" : "unread"}`}
+            onClick={() => onItemClick(item)}
+          >
+            <span className={`notification-severity ${item.severity.toLowerCase()}`} />
+            <span className="notification-copy">
+              <strong>{item.title}</strong>
+              <span>{item.message}</span>
+              <small>{formatFollowUpLabel(item.createdAt)}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+      {hasMore && (
+        <button className="notification-load-more" onClick={onLoadMore} disabled={status.loading}>
+          {status.loading ? "Loading..." : "Load more"}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -3266,6 +5870,120 @@ function formatFollowUpLabel(value) {
   }
 
   return `${formatDate(value)}, ${formatTime(value)}`;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) {
+    return "0 KB";
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatCurrency(value, currency = "INR") {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: currency || "INR",
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function mappedPreviewValue(row, mapping, field) {
+  const header = mapping?.[field];
+  return header ? row.values?.[header] || "" : "";
+}
+
+function downloadFileResponse(response, fallbackFilename) {
+  const url = URL.createObjectURL(response.blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = response.filename || fallbackFilename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function getFollowUpQueueCounts(followUps) {
+  return followUps.reduce((counts, item) => {
+    if (item.status === "Completed") {
+      counts.completed += 1;
+    } else if (item.status === "Cancelled") {
+      counts.cancelled += 1;
+    } else if (followUpMatchesQueue(item, "overdue")) {
+      counts.overdue += 1;
+    } else if (followUpMatchesQueue(item, "today")) {
+      counts.today += 1;
+    } else if (followUpMatchesQueue(item, "upcoming")) {
+      counts.upcoming += 1;
+    }
+    return counts;
+  }, { overdue: 0, today: 0, upcoming: 0, completed: 0, cancelled: 0 });
+}
+
+function followUpMatchesQueue(item, queue) {
+  if (queue === "all") {
+    return true;
+  }
+  if (queue === "completed") {
+    return item.status === "Completed";
+  }
+  if (queue === "cancelled") {
+    return item.status === "Cancelled";
+  }
+  if (item.status !== "Scheduled") {
+    return false;
+  }
+
+  const dueAt = new Date(item.dueAt);
+  if (Number.isNaN(dueAt.getTime())) {
+    return false;
+  }
+
+  const now = new Date();
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+
+  if (queue === "overdue") {
+    return dueAt < now;
+  }
+  if (queue === "today") {
+    return dueAt >= now && dueAt <= endOfToday;
+  }
+  if (queue === "upcoming") {
+    return dueAt > endOfToday;
+  }
+
+  return false;
+}
+
+function compareFollowUpsForQueue(left, right) {
+  const leftTime = new Date(left.dueAt).getTime();
+  const rightTime = new Date(right.dueAt).getTime();
+  const safeLeft = Number.isNaN(leftTime) ? Number.MAX_SAFE_INTEGER : leftTime;
+  const safeRight = Number.isNaN(rightTime) ? Number.MAX_SAFE_INTEGER : rightTime;
+  return safeLeft - safeRight;
+}
+
+function isToday(value) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear()
+    && date.getMonth() === today.getMonth()
+    && date.getDate() === today.getDate();
 }
 
 function groupActivitiesByDate(activities) {
@@ -3309,6 +6027,8 @@ function emptyLeadOptions() {
     sources: [],
     stages: [],
     counselors: [],
+    defaultBranchId: null,
+    defaultAssigneeUserId: null,
   };
 }
 
@@ -3337,7 +6057,28 @@ function defaultLeadFilters() {
   };
 }
 
-function createDefaultLeadForm(options) {
+function defaultReportFilters() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 29);
+  return {
+    startDate: toDateInputValue(start),
+    endDate: toDateInputValue(end),
+    branchId: "",
+    courseId: "",
+    sourceId: "",
+    assignedUserId: "",
+  };
+}
+
+function toDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function createDefaultLeadForm(options, initialValues = {}) {
   return {
     studentName: "",
     guardianName: "",
@@ -3347,11 +6088,16 @@ function createDefaultLeadForm(options) {
     courseId: options.courses[0]?.id || "",
     leadSourceId: options.sources[0]?.id || "",
     leadStageId: findOptionId(options.stages, "New Inquiry") || options.stages[0]?.id || "",
-    branchId: options.branches[0]?.id || "",
-    assignedUserId: options.counselors[0]?.id || "",
+    branchId: options.branches.some((item) => item.id === options.defaultBranchId)
+      ? options.defaultBranchId
+      : options.branches[0]?.id || "",
+    assignedUserId: options.counselors.some((item) => item.id === options.defaultAssigneeUserId)
+      ? options.defaultAssigneeUserId
+      : "",
     status: "New Lead",
     priority: "Medium",
     nextFollowUpAt: "",
+    ...initialValues,
   };
 }
 
@@ -3373,6 +6119,24 @@ function createLeadUpdateForm(lead) {
   };
 }
 
+function areLeadProfileFormsEqual(left, right) {
+  return [
+    "studentName",
+    "guardianName",
+    "email",
+    "phone",
+    "city",
+    "courseId",
+    "leadSourceId",
+    "leadStageId",
+    "branchId",
+    "assignedUserId",
+    "status",
+    "priority",
+    "nextFollowUpAt",
+  ].every((key) => (left?.[key] || "") === (right?.[key] || ""));
+}
+
 function includeCurrentOption(options, id, name) {
   if (!id || options.some((item) => item.id === id)) {
     return options;
@@ -3386,7 +6150,16 @@ function createDefaultFollowUpForm(lead) {
     type: "Call",
     priority: lead?.priority || "Medium",
     assignedUserId: lead?.assignedUserId || "",
-    dueAt: "",
+    dueAt: defaultFutureDateTimeLocal(),
+  };
+}
+
+function createDefaultPaymentForm() {
+  return {
+    title: "",
+    amountDue: "",
+    dueDate: "",
+    notes: "",
   };
 }
 
@@ -3543,6 +6316,45 @@ function firstError(value) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function validateCommunicationTemplateForm(form) {
+  const errors = {};
+  const name = form.name.trim();
+  const category = form.category.trim();
+  const body = form.body.trim();
+
+  if (!name) errors.name = "Template name is required.";
+  else if (name.length > 160) errors.name = "Template name must be 160 characters or fewer.";
+
+  if (!templateChannels.includes(form.channel)) errors.channel = "Choose a supported channel.";
+
+  if (!category) errors.category = "Category is required.";
+  else if (category.length > 80) errors.category = "Category must be 80 characters or fewer.";
+
+  if (!body) errors.body = "Template body is required.";
+  else if (body.length > 2000) errors.body = "Template body must be 2000 characters or fewer.";
+
+  const unknownPlaceholders = extractTemplateTokens(body).filter((item) => !templatePlaceholders.includes(item));
+  if (unknownPlaceholders.length > 0) {
+    errors.body = `Unsupported placeholder: {{${unknownPlaceholders[0]}}}.`;
+  }
+
+  return errors;
+}
+
+function extractTemplateTokens(value) {
+  const tokens = [];
+  const regex = /\{\{\s*([^}]+?)\s*\}\}/g;
+  let match = regex.exec(value);
+  while (match) {
+    const token = match[1].trim();
+    if (token && !tokens.includes(token)) {
+      tokens.push(token);
+    }
+    match = regex.exec(value);
+  }
+  return tokens;
+}
+
 function optionalValue(value) {
   return value && value.trim() ? value.trim() : null;
 }
@@ -3559,6 +6371,17 @@ function toDateTimeLocalValue(value) {
 
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return offsetDate.toISOString().slice(0, 16);
+}
+
+function defaultFutureDateTimeLocal() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() + 60);
+  date.setSeconds(0, 0);
+  if (date.getMinutes() > 0) {
+    date.setHours(date.getHours() + 1, 0, 0, 0);
+  }
+
+  return toDateTimeLocalValue(date);
 }
 
 export default App;

@@ -3,6 +3,7 @@ using System;
 using EducationCrm.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace EducationCrm.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260701070939_AddNotificationsAutomation")]
+    partial class AddNotificationsAutomation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -59,211 +62,6 @@ namespace EducationCrm.Api.Migrations
                     b.HasIndex("TenantId", "CreatedAt");
 
                     b.ToTable("activities", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionApplication", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ApplicationNumber")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("AssignedReviewerUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BranchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CourseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DecisionReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Intake")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<string>("InternalNotes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<Guid>("LeadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("RejectedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<DateTime?>("SubmittedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedReviewerUserId");
-
-                    b.HasIndex("BranchId");
-
-                    b.HasIndex("CourseId");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("LeadId");
-
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.HasIndex("TenantId", "ApplicationNumber")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "AssignedReviewerUserId");
-
-                    b.HasIndex("TenantId", "Status", "UpdatedAt");
-
-                    b.HasIndex("TenantId", "LeadId", "CourseId", "Intake")
-                        .IsUnique();
-
-                    b.ToTable("admission_applications", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionChecklistItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CompletedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<bool>("IsCompleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsWaived")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApplicationId");
-
-                    b.HasIndex("CompletedByUserId");
-
-                    b.HasIndex("TenantId", "ApplicationId", "SortOrder");
-
-                    b.ToTable("admission_checklist_items", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionStatusHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("ChangedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("ChangedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("NewStatus")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("PreviousStatus")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApplicationId");
-
-                    b.HasIndex("ChangedByUserId");
-
-                    b.HasIndex("TenantId", "ApplicationId", "ChangedAt");
-
-                    b.ToTable("admission_status_history", (string)null);
                 });
 
             modelBuilder.Entity("EducationCrm.Api.Models.AppUser", b =>
@@ -756,80 +554,6 @@ namespace EducationCrm.Api.Migrations
                             UpdatedAt = new DateTime(2026, 6, 25, 5, 30, 0, 0, DateTimeKind.Unspecified),
                             Version = 1
                         });
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.Enrollment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BranchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CourseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("EnrolledAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("EnrollmentNumber")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("Intake")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<Guid>("LeadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("StudentName")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApplicationId")
-                        .IsUnique();
-
-                    b.HasIndex("BranchId");
-
-                    b.HasIndex("CourseId");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("LeadId");
-
-                    b.HasIndex("TenantId", "EnrollmentNumber")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "LeadId");
-
-                    b.ToTable("enrollments", (string)null);
                 });
 
             modelBuilder.Entity("EducationCrm.Api.Models.FollowUp", b =>
@@ -2007,113 +1731,6 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionApplication", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "AssignedReviewerUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedReviewerUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Course", "Course")
-                        .WithMany()
-                        .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Lead", "Lead")
-                        .WithMany("AdmissionApplications")
-                        .HasForeignKey("LeadId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany("AdmissionApplications")
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "UpdatedByUser")
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AssignedReviewerUser");
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("Course");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Lead");
-
-                    b.Navigation("Tenant");
-
-                    b.Navigation("UpdatedByUser");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionChecklistItem", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AdmissionApplication", "Application")
-                        .WithMany("ChecklistItems")
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CompletedByUser")
-                        .WithMany()
-                        .HasForeignKey("CompletedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Application");
-
-                    b.Navigation("CompletedByUser");
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionStatusHistory", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AdmissionApplication", "Application")
-                        .WithMany("StatusHistory")
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "ChangedByUser")
-                        .WithMany()
-                        .HasForeignKey("ChangedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Application");
-
-                    b.Navigation("ChangedByUser");
-
-                    b.Navigation("Tenant");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.AppUser", b =>
                 {
                     b.HasOne("EducationCrm.Api.Models.Branch", "Branch")
@@ -2186,55 +1803,6 @@ namespace EducationCrm.Api.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.Enrollment", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AdmissionApplication", "Application")
-                        .WithOne("Enrollment")
-                        .HasForeignKey("EducationCrm.Api.Models.Enrollment", "ApplicationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Course", "Course")
-                        .WithMany()
-                        .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Lead", "Lead")
-                        .WithMany("Enrollments")
-                        .HasForeignKey("LeadId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany("Enrollments")
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Application");
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("Course");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Lead");
 
                     b.Navigation("Tenant");
                 });
@@ -2566,15 +2134,6 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("DefaultBranch");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionApplication", b =>
-                {
-                    b.Navigation("ChecklistItems");
-
-                    b.Navigation("Enrollment");
-
-                    b.Navigation("StatusHistory");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.AppUser", b =>
                 {
                     b.Navigation("AssignedFollowUps");
@@ -2612,11 +2171,7 @@ namespace EducationCrm.Api.Migrations
                 {
                     b.Navigation("Activities");
 
-                    b.Navigation("AdmissionApplications");
-
                     b.Navigation("Documents");
-
-                    b.Navigation("Enrollments");
 
                     b.Navigation("FollowUps");
 
@@ -2649,8 +2204,6 @@ namespace EducationCrm.Api.Migrations
 
             modelBuilder.Entity("EducationCrm.Api.Models.Tenant", b =>
                 {
-                    b.Navigation("AdmissionApplications");
-
                     b.Navigation("Branches");
 
                     b.Navigation("CommunicationTemplates");
@@ -2658,8 +2211,6 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("Courses");
 
                     b.Navigation("DocumentTypes");
-
-                    b.Navigation("Enrollments");
 
                     b.Navigation("LeadSources");
 

@@ -38,4 +38,9 @@ public sealed class Lead
     public AppUser? ArchivedByUser { get; set; }
     public ICollection<FollowUp> FollowUps { get; set; } = [];
     public ICollection<Activity> Activities { get; set; } = [];
+    public ICollection<LeadDocument> Documents { get; set; } = [];
+    public ICollection<LeadPayment> Payments { get; set; } = [];
+    public ICollection<Notification> Notifications { get; set; } = [];
+    public ICollection<AdmissionApplication> AdmissionApplications { get; set; } = [];
+    public ICollection<Enrollment> Enrollments { get; set; } = [];
 }

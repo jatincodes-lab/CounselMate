@@ -10,6 +10,8 @@ public sealed record AuthenticatedUser(
     Guid TenantId,
     string TenantName,
     string TenantSlug,
+    string? TenantLogoUrl,
+    string TenantBrandColor,
     string FullName,
     string Email,
     string Role);

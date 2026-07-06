@@ -3,6 +3,7 @@ using System;
 using EducationCrm.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace EducationCrm.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260701045657_AddLeadDocuments")]
+    partial class AddLeadDocuments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -59,211 +62,6 @@ namespace EducationCrm.Api.Migrations
                     b.HasIndex("TenantId", "CreatedAt");
 
                     b.ToTable("activities", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionApplication", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ApplicationNumber")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("AssignedReviewerUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BranchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CourseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DecisionReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Intake")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<string>("InternalNotes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<Guid>("LeadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("RejectedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<DateTime?>("SubmittedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedReviewerUserId");
-
-                    b.HasIndex("BranchId");
-
-                    b.HasIndex("CourseId");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("LeadId");
-
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.HasIndex("TenantId", "ApplicationNumber")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "AssignedReviewerUserId");
-
-                    b.HasIndex("TenantId", "Status", "UpdatedAt");
-
-                    b.HasIndex("TenantId", "LeadId", "CourseId", "Intake")
-                        .IsUnique();
-
-                    b.ToTable("admission_applications", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionChecklistItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CompletedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<bool>("IsCompleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsWaived")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApplicationId");
-
-                    b.HasIndex("CompletedByUserId");
-
-                    b.HasIndex("TenantId", "ApplicationId", "SortOrder");
-
-                    b.ToTable("admission_checklist_items", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionStatusHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("ChangedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("ChangedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("NewStatus")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("PreviousStatus")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApplicationId");
-
-                    b.HasIndex("ChangedByUserId");
-
-                    b.HasIndex("TenantId", "ApplicationId", "ChangedAt");
-
-                    b.ToTable("admission_status_history", (string)null);
                 });
 
             modelBuilder.Entity("EducationCrm.Api.Models.AppUser", b =>
@@ -758,80 +556,6 @@ namespace EducationCrm.Api.Migrations
                         });
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.Enrollment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BranchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CourseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("EnrolledAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("EnrollmentNumber")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("Intake")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<Guid>("LeadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("StudentName")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApplicationId")
-                        .IsUnique();
-
-                    b.HasIndex("BranchId");
-
-                    b.HasIndex("CourseId");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("LeadId");
-
-                    b.HasIndex("TenantId", "EnrollmentNumber")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "LeadId");
-
-                    b.ToTable("enrollments", (string)null);
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.FollowUp", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1280,144 +1004,6 @@ namespace EducationCrm.Api.Migrations
                     b.ToTable("lead_documents", (string)null);
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.LeadPayment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("AmountDue")
-                        .HasPrecision(12, 2)
-                        .HasColumnType("numeric(12,2)");
-
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CancelledByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<DateTime?>("DueDate")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid>("LeadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CancelledByUserId");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("LeadId");
-
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.HasIndex("TenantId", "DueDate");
-
-                    b.HasIndex("TenantId", "LeadId");
-
-                    b.HasIndex("TenantId", "Status");
-
-                    b.ToTable("lead_payments", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.LeadPaymentTransaction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(12, 2)
-                        .HasColumnType("numeric(12,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("LeadPaymentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Method")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime>("PaidAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("ReceiptNumber")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<string>("ReferenceNumber")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("LeadPaymentId");
-
-                    b.HasIndex("TenantId", "LeadPaymentId");
-
-                    b.HasIndex("TenantId", "ReceiptNumber")
-                        .IsUnique()
-                        .HasFilter("\"ReceiptNumber\" IS NOT NULL");
-
-                    b.HasIndex("TenantId", "ReferenceNumber");
-
-                    b.ToTable("lead_payment_transactions", (string)null);
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.LeadSource", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1681,188 +1267,6 @@ namespace EducationCrm.Api.Migrations
                         });
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.Notification", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("DeduplicationKey")
-                        .IsRequired()
-                        .HasMaxLength(240)
-                        .HasColumnType("character varying(240)");
-
-                    b.Property<DateTime?>("DismissedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int?>("EntityVersion")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid?>("FollowUpId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("LeadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("LeadPaymentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(600)
-                        .HasColumnType("character varying(600)");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid>("RecipientUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("ScheduledFor")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(180)
-                        .HasColumnType("character varying(180)");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExpiresAt");
-
-                    b.HasIndex("FollowUpId");
-
-                    b.HasIndex("LeadId");
-
-                    b.HasIndex("LeadPaymentId");
-
-                    b.HasIndex("RecipientUserId");
-
-                    b.HasIndex("TenantId", "FollowUpId");
-
-                    b.HasIndex("TenantId", "LeadPaymentId");
-
-                    b.HasIndex("TenantId", "RecipientUserId", "DeduplicationKey")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "RecipientUserId", "DismissedAt", "ReadAt", "CreatedAt");
-
-                    b.ToTable("notifications", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.NotificationDeliveryAttempt", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("AttemptNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("AttemptedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("Channel")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("ErrorCode")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<Guid>("NotificationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ProviderMessageId")
-                        .HasMaxLength(240)
-                        .HasColumnType("character varying(240)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NotificationId");
-
-                    b.HasIndex("TenantId", "Status", "AttemptedAt");
-
-                    b.HasIndex("TenantId", "NotificationId", "Channel", "AttemptNumber")
-                        .IsUnique();
-
-                    b.ToTable("notification_delivery_attempts", (string)null);
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.NotificationPreference", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<bool>("FollowUpRemindersEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("PaymentRemindersEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("notification_preferences", (string)null);
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2007,113 +1411,6 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionApplication", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "AssignedReviewerUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedReviewerUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Course", "Course")
-                        .WithMany()
-                        .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Lead", "Lead")
-                        .WithMany("AdmissionApplications")
-                        .HasForeignKey("LeadId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany("AdmissionApplications")
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "UpdatedByUser")
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AssignedReviewerUser");
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("Course");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Lead");
-
-                    b.Navigation("Tenant");
-
-                    b.Navigation("UpdatedByUser");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionChecklistItem", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AdmissionApplication", "Application")
-                        .WithMany("ChecklistItems")
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CompletedByUser")
-                        .WithMany()
-                        .HasForeignKey("CompletedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Application");
-
-                    b.Navigation("CompletedByUser");
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionStatusHistory", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AdmissionApplication", "Application")
-                        .WithMany("StatusHistory")
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "ChangedByUser")
-                        .WithMany()
-                        .HasForeignKey("ChangedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Application");
-
-                    b.Navigation("ChangedByUser");
-
-                    b.Navigation("Tenant");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.AppUser", b =>
                 {
                     b.HasOne("EducationCrm.Api.Models.Branch", "Branch")
@@ -2186,55 +1483,6 @@ namespace EducationCrm.Api.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.Enrollment", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AdmissionApplication", "Application")
-                        .WithOne("Enrollment")
-                        .HasForeignKey("EducationCrm.Api.Models.Enrollment", "ApplicationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Course", "Course")
-                        .WithMany()
-                        .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Lead", "Lead")
-                        .WithMany("Enrollments")
-                        .HasForeignKey("LeadId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany("Enrollments")
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Application");
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("Course");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Lead");
 
                     b.Navigation("Tenant");
                 });
@@ -2383,72 +1631,6 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("UploadedByUser");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.LeadPayment", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CancelledByUser")
-                        .WithMany()
-                        .HasForeignKey("CancelledByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.Lead", "Lead")
-                        .WithMany("Payments")
-                        .HasForeignKey("LeadId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "UpdatedByUser")
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("CancelledByUser");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Lead");
-
-                    b.Navigation("Tenant");
-
-                    b.Navigation("UpdatedByUser");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.LeadPaymentTransaction", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EducationCrm.Api.Models.LeadPayment", "LeadPayment")
-                        .WithMany("Transactions")
-                        .HasForeignKey("LeadPaymentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("LeadPayment");
-
-                    b.Navigation("Tenant");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.LeadSource", b =>
                 {
                     b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
@@ -2471,84 +1653,6 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.Notification", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.FollowUp", "FollowUp")
-                        .WithMany("Notifications")
-                        .HasForeignKey("FollowUpId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.HasOne("EducationCrm.Api.Models.Lead", "Lead")
-                        .WithMany("Notifications")
-                        .HasForeignKey("LeadId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.HasOne("EducationCrm.Api.Models.LeadPayment", "LeadPayment")
-                        .WithMany("Notifications")
-                        .HasForeignKey("LeadPaymentId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "RecipientUser")
-                        .WithMany("Notifications")
-                        .HasForeignKey("RecipientUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany("Notifications")
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("FollowUp");
-
-                    b.Navigation("Lead");
-
-                    b.Navigation("LeadPayment");
-
-                    b.Navigation("RecipientUser");
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.NotificationDeliveryAttempt", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.Notification", "Notification")
-                        .WithMany("DeliveryAttempts")
-                        .HasForeignKey("NotificationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Notification");
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.NotificationPreference", b =>
-                {
-                    b.HasOne("EducationCrm.Api.Models.Tenant", "Tenant")
-                        .WithMany("NotificationPreferences")
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EducationCrm.Api.Models.AppUser", "User")
-                        .WithOne("NotificationPreference")
-                        .HasForeignKey("EducationCrm.Api.Models.NotificationPreference", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Tenant");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.Tenant", b =>
                 {
                     b.HasOne("EducationCrm.Api.Models.AppUser", "DefaultAssigneeUser")
@@ -2566,24 +1670,11 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("DefaultBranch");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.AdmissionApplication", b =>
-                {
-                    b.Navigation("ChecklistItems");
-
-                    b.Navigation("Enrollment");
-
-                    b.Navigation("StatusHistory");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.AppUser", b =>
                 {
                     b.Navigation("AssignedFollowUps");
 
                     b.Navigation("AssignedLeads");
-
-                    b.Navigation("NotificationPreference");
-
-                    b.Navigation("Notifications");
                 });
 
             modelBuilder.Entity("EducationCrm.Api.Models.Branch", b =>
@@ -2603,33 +1694,13 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("LeadDocuments");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.FollowUp", b =>
-                {
-                    b.Navigation("Notifications");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.Lead", b =>
                 {
                     b.Navigation("Activities");
 
-                    b.Navigation("AdmissionApplications");
-
                     b.Navigation("Documents");
 
-                    b.Navigation("Enrollments");
-
                     b.Navigation("FollowUps");
-
-                    b.Navigation("Notifications");
-
-                    b.Navigation("Payments");
-                });
-
-            modelBuilder.Entity("EducationCrm.Api.Models.LeadPayment", b =>
-                {
-                    b.Navigation("Notifications");
-
-                    b.Navigation("Transactions");
                 });
 
             modelBuilder.Entity("EducationCrm.Api.Models.LeadSource", b =>
@@ -2642,15 +1713,8 @@ namespace EducationCrm.Api.Migrations
                     b.Navigation("Leads");
                 });
 
-            modelBuilder.Entity("EducationCrm.Api.Models.Notification", b =>
-                {
-                    b.Navigation("DeliveryAttempts");
-                });
-
             modelBuilder.Entity("EducationCrm.Api.Models.Tenant", b =>
                 {
-                    b.Navigation("AdmissionApplications");
-
                     b.Navigation("Branches");
 
                     b.Navigation("CommunicationTemplates");
@@ -2659,17 +1723,11 @@ namespace EducationCrm.Api.Migrations
 
                     b.Navigation("DocumentTypes");
 
-                    b.Navigation("Enrollments");
-
                     b.Navigation("LeadSources");
 
                     b.Navigation("LeadStages");
 
                     b.Navigation("Leads");
-
-                    b.Navigation("NotificationPreferences");
-
-                    b.Navigation("Notifications");
 
                     b.Navigation("Users");
                 });

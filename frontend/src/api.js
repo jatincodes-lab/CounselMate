@@ -23,6 +23,12 @@ export function clearStoredAuth() {
   localStorage.removeItem(USER_STORAGE_KEY);
 }
 
+export function updateStoredUser(user) {
+  if (user) {
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  }
+}
+
 async function request(path, options = {}) {
   const { token } = getStoredAuth();
   const headers = {
@@ -45,6 +51,50 @@ async function request(path, options = {}) {
   }
 
   return response.json();
+}
+
+async function requestForm(path, formData, method = "POST") {
+  const { token } = getStoredAuth();
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw await createApiError(response);
+  }
+
+  return response.json();
+}
+
+async function requestBlob(path) {
+  const { token } = getStoredAuth();
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw await createApiError(response);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") || "";
+  return {
+    blob,
+    filename: getFilenameFromDisposition(disposition),
+  };
 }
 
 export async function login(payload) {
@@ -81,6 +131,29 @@ export async function getCurrentUser() {
   return request("/auth/me");
 }
 
+export async function getNotifications(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request(`/notifications${suffix}`);
+}
+
+export async function getNotificationUnreadCount() {
+  return request("/notifications/unread-count");
+}
+
+export async function markNotificationRead(notificationId) {
+  return request(`/notifications/${encodeURIComponent(notificationId)}/read`, { method: "POST" });
+}
+
+export async function markAllNotificationsRead() {
+  return request("/notifications/read-all", { method: "POST" });
+}
+
 export function logout() {
   clearStoredAuth();
 }
@@ -91,6 +164,7 @@ async function createApiError(response) {
     const error = new Error(body.message || body.title || `Request failed with status ${response.status}`);
     error.status = response.status;
     error.errors = body.errors || {};
+    error.data = body;
     return error;
   } catch {
     const error = new Error(`Request failed with status ${response.status}`);
@@ -101,12 +175,13 @@ async function createApiError(response) {
 }
 
 export async function getCrmData() {
-  const [dashboard, leads, pipeline, followUps, leadOptions] = await Promise.all([
+  const [dashboard, leads, pipeline, followUps, leadOptions, communicationTemplates] = await Promise.all([
     request("/dashboard"),
     request("/leads"),
     request("/pipeline"),
     request("/follow-ups"),
     request("/leads/options"),
+    request("/communication-templates"),
   ]);
 
   return {
@@ -115,6 +190,7 @@ export async function getCrmData() {
     pipeline,
     followUps,
     leadOptions,
+    communicationTemplates,
   };
 }
 
@@ -130,8 +206,113 @@ export async function getLeads(params = {}) {
   return normalizeLeadList(response);
 }
 
+export async function previewLeadImport(payload) {
+  return requestForm("/leads/import/preview", createLeadImportFormData(payload));
+}
+
+export async function commitLeadImport(payload) {
+  return requestForm("/leads/import/commit", createLeadImportFormData(payload));
+}
+
+export async function downloadLeadImportTemplate(format = "xlsx") {
+  return requestBlob(`/leads/import/template?format=${encodeURIComponent(format)}`);
+}
+
+export async function exportLeads(params = {}, format = "xlsx") {
+  const query = new URLSearchParams();
+  Object.entries({ ...params, format }).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+
+  return requestBlob(`/leads/export${query.toString() ? `?${query}` : ""}`);
+}
+
+export async function getReports(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+
+  return request(`/reports${query.toString() ? `?${query}` : ""}`);
+}
+
+export async function getCounsellorWorkInsights(params = {}) {
+  const query = new URLSearchParams();
+  ["startDate", "endDate", "courseId", "sourceId"].forEach((key) => {
+    const value = params[key];
+    if (value !== undefined && value !== null && value !== "") query.set(key, value);
+  });
+  return request(`/reports/counsellor-workspace${query.toString() ? `?${query}` : ""}`);
+}
+
+export async function exportReports(params = {}, format = "xlsx") {
+  const query = new URLSearchParams();
+  Object.entries({ ...params, format }).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+
+  return requestBlob(`/reports/export${query.toString() ? `?${query}` : ""}`);
+}
+
+export async function getApplications(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") query.set(key, value);
+  });
+  return request(`/applications${query.toString() ? `?${query}` : ""}`);
+}
+
+export async function getApplicationDetail(applicationId) {
+  return request(`/applications/${encodeURIComponent(applicationId)}`);
+}
+
+export async function createLeadApplication(leadId, payload = {}) {
+  return request(`/leads/${encodeURIComponent(leadId)}/applications`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function transitionApplication(applicationId, payload) {
+  return request(`/applications/${encodeURIComponent(applicationId)}/transitions`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateApplicationChecklistItem(applicationId, itemId, payload) {
+  return request(`/applications/${encodeURIComponent(applicationId)}/checklist/${encodeURIComponent(itemId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function enrollApplication(applicationId, payload) {
+  return request(`/applications/${encodeURIComponent(applicationId)}/enroll`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export async function getPlatformTenants() {
   return request("/platform/tenants");
+}
+
+export async function getCurrentTenant() {
+  return request("/tenants/current");
+}
+
+export async function updateCurrentTenant(payload) {
+  return request("/tenants/current", {
+    method: "PATCH",
+    body: payload,
+  });
 }
 
 export async function createPlatformTenant(payload) {
@@ -170,6 +351,31 @@ export async function getMasterData() {
   return request("/master-data");
 }
 
+export async function getCommunicationTemplates(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+
+  return request(`/communication-templates${query.toString() ? `?${query}` : ""}`);
+}
+
+export async function createCommunicationTemplate(payload) {
+  return request("/communication-templates", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateCommunicationTemplate(templateId, payload) {
+  return request(`/communication-templates/${encodeURIComponent(templateId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
 export async function createMasterRecord(type, payload) {
   return request(`/master-data/${encodeURIComponent(type)}`, {
     method: "POST",
@@ -199,7 +405,17 @@ export async function createLead(payload) {
 }
 
 export async function getLeadDetail(leadId) {
-  return request(`/leads/${encodeURIComponent(leadId)}`);
+  const [lead, documents, payments] = await Promise.all([
+    request(`/leads/${encodeURIComponent(leadId)}`),
+    getLeadDocuments(leadId),
+    getLeadPayments(leadId),
+  ]);
+
+  return {
+    ...lead,
+    documents: documents.items || [],
+    payments: payments.items || [],
+  };
 }
 
 export async function updateLead(leadId, payload) {
@@ -237,8 +453,97 @@ export async function restoreLead(leadId, payload) {
   });
 }
 
+export async function runBulkLeadAction(payload) {
+  return request("/leads/bulk-actions", {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export async function addLeadActivity(leadId, payload) {
   return request(`/leads/${encodeURIComponent(leadId)}/activities`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function applyCommunicationTemplate(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/template-activities`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function getLeadDocuments(leadId) {
+  return request(`/leads/${encodeURIComponent(leadId)}/documents`);
+}
+
+export async function uploadLeadDocument(leadId, payload) {
+  const formData = new FormData();
+  formData.append("documentTypeId", payload.documentTypeId);
+  formData.append("file", payload.file);
+  if (payload.version) {
+    formData.append("version", String(payload.version));
+  }
+  if (payload.notes) {
+    formData.append("notes", payload.notes);
+  }
+
+  return requestForm(`/leads/${encodeURIComponent(leadId)}/documents`, formData);
+}
+
+export async function verifyLeadDocument(leadId, documentId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/documents/${encodeURIComponent(documentId)}/verify`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function rejectLeadDocument(leadId, documentId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/documents/${encodeURIComponent(documentId)}/reject`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function deleteLeadDocument(leadId, documentId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/documents/${encodeURIComponent(documentId)}`, {
+    method: "DELETE",
+    body: payload,
+  });
+}
+
+export async function downloadLeadDocument(leadId, documentId) {
+  return requestBlob(`/leads/${encodeURIComponent(leadId)}/documents/${encodeURIComponent(documentId)}/download`);
+}
+
+export async function getLeadPayments(leadId) {
+  return request(`/leads/${encodeURIComponent(leadId)}/payments`);
+}
+
+export async function createLeadPayment(leadId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/payments`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateLeadPayment(leadId, paymentId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/payments/${encodeURIComponent(paymentId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function addLeadPaymentTransaction(leadId, paymentId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/payments/${encodeURIComponent(paymentId)}/transactions`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function cancelLeadPayment(leadId, paymentId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/payments/${encodeURIComponent(paymentId)}/cancel`, {
     method: "POST",
     body: payload,
   });
@@ -288,4 +593,27 @@ function normalizeLeadList(response) {
     pageSize: response?.pageSize || 25,
     total: response?.total || 0,
   };
+}
+
+function createLeadImportFormData({ file, mapping, duplicateMode, fingerprint }) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("duplicateMode", duplicateMode || "skip");
+  if (mapping) {
+    formData.append("mapping", JSON.stringify(mapping));
+  }
+  if (fingerprint) {
+    formData.append("fingerprint", fingerprint);
+  }
+  return formData;
+}
+
+function getFilenameFromDisposition(disposition) {
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch) {
+    return decodeURIComponent(utfMatch[1].replace(/"/g, ""));
+  }
+
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  return match ? match[1] : "";
 }

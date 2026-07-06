@@ -482,29 +482,8 @@ button:disabled {
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 22px 18px 18px;
-}
-
-.brand-mark {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 auto;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 2px;
-  background: #fff;
-  display: grid;
-  place-items: center;
-}
-
-.brand-mark img {
-  width: 142px;
-  max-width: none;
-  height: auto;
-  display: block;
-  transform: translateX(-3px) scale(1.22);
-  transform-origin: left center;
+  padding: 24px 18px 20px;
+  border-left: 3px solid rgba(255, 255, 255, 0.42);
 }
 
 .brand-copy {
@@ -516,9 +495,9 @@ button:disabled {
 .brand-copy strong {
   overflow: hidden;
   color: #fff;
-  font-size: 17px;
+  font-size: 22px;
   font-weight: 900;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.05em;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1863,6 +1842,17 @@ h1 {
   font-size: 13px;
 }
 
+.leads-workspace .lead-filter-actions .soft-button {
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
+.leads-workspace .lead-filter-actions .soft-button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
 .leads-workspace .table-card {
   overflow: hidden;
   border-color: #dbe3ef;
@@ -1980,7 +1970,7 @@ h1 {
   min-height: 58px;
   padding: 12px 16px;
   border-top: 1px solid #dbe3ef;
-  background: #fff;
+  background: #f8fafc;
 }
 
 .leads-workspace .table-footer span {
@@ -1990,17 +1980,37 @@ h1 {
 }
 
 .leads-workspace .pager {
-  min-width: 38px;
+  min-width: 72px;
   height: 36px;
   border-color: #dbe3ef;
   background: #fff;
   color: #334155;
+  font-size: 12px;
+  font-weight: 800;
 }
 
-.leads-workspace .pager.active {
+.leads-workspace .pager:hover:not(:disabled) {
   border-color: #2563eb;
-  background: #2563eb;
-  color: #fff;
+  color: #1d4ed8;
+}
+
+.lead-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.pagination-status {
+  min-width: 104px;
+  padding: 0 10px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .leads-workspace .bulk-action-bar {
@@ -4524,5 +4534,16 @@ td {
 
   .leads-workspace .table-card {
     overflow-x: auto;
+  }
+
+  .leads-workspace .table-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .lead-pagination {
+    width: 100%;
+    justify-content: space-between;
   }
 }

@@ -1035,9 +1035,6 @@ function App() {
     <div className="app-shell" style={{ "--tenant-brand": currentUser.tenantBrandColor || "#2171D3" }}>
       <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            <img src={counselMateLogo} alt="" />
-          </span>
           <div className="brand-copy">
             <strong>CounselMate</strong>
             <span>Admission CRM</span>
@@ -6559,9 +6556,9 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
       )}
       <footer className="table-footer">
         <span>Showing {loading || error ? 0 : start}-{loading || error ? 0 : end} of {loading || error ? 0 : total} leads</span>
-        <div>
+        <div className="lead-pagination">
           <button className="pager" disabled={page <= 1 || loading} onClick={() => onPageChange(page - 1)}>Prev</button>
-          <button className="pager active" disabled>{page}</button>
+          <span className="pagination-status">Page {page} of {totalPages}</span>
           <button className="pager" disabled={page >= totalPages || loading} onClick={() => onPageChange(page + 1)}>Next</button>
         </div>
       </footer>

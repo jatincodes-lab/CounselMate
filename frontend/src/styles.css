@@ -1699,6 +1699,288 @@ h1 {
   font-size: 13px;
 }
 
+.leads-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.leads-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 22px;
+  border: 1px solid #dbe3ef;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.045);
+}
+
+.leads-hero h1 {
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.04em;
+}
+
+.leads-hero p {
+  max-width: 640px;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.leads-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 560px;
+}
+
+.leads-hero .primary-button,
+.leads-hero .secondary-button,
+.leads-workspace .soft-button,
+.leads-workspace .ghost-button,
+.leads-workspace .pager,
+.leads-workspace .badge,
+.leads-workspace .status {
+  border-radius: 2px;
+}
+
+.leads-hero-stat {
+  display: grid;
+  min-width: 108px;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+}
+
+.leads-hero-stat span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.leads-hero-stat strong {
+  color: #0f172a;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.leads-workspace .lead-filter-panel {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 0;
+  padding: 16px;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.04);
+}
+
+.leads-workspace .lead-filter-panel label {
+  gap: 7px;
+  color: #475569;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.leads-workspace .lead-filter-panel input,
+.leads-workspace .lead-filter-panel select,
+.leads-workspace .lead-search-input {
+  min-height: 40px;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.leads-workspace .lead-search-input {
+  background: #fff;
+}
+
+.leads-workspace .lead-filter-panel input:focus,
+.leads-workspace .lead-filter-panel select:focus,
+.leads-workspace .lead-search-input:focus-within {
+  outline: 2px solid rgba(37, 99, 235, 0.16);
+  border-color: #2563eb;
+  background: #fff;
+}
+
+.leads-workspace .lead-filter-actions {
+  min-height: 40px;
+  padding-top: 0;
+  justify-content: flex-end;
+}
+
+.leads-workspace .lead-filter-actions strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.leads-workspace .table-card {
+  overflow: hidden;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.05);
+}
+
+.leads-workspace .table-card table {
+  min-width: 1080px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.leads-workspace .table-card thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 44px;
+  border-bottom: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.leads-workspace .table-card tbody td {
+  height: 72px;
+  border-bottom: 1px solid #edf2f7;
+  color: #334155;
+  font-size: 13px;
+}
+
+.leads-workspace .table-card tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.leads-workspace .clickable-row {
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.leads-workspace .clickable-row:hover {
+  background: #f8fafc;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.leads-workspace .selection-cell input {
+  width: 16px;
+  height: 16px;
+}
+
+.leads-workspace .student-cell {
+  gap: 12px;
+}
+
+.leads-workspace .student-cell > span {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #bfdbfe;
+  border-radius: 2px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.leads-workspace .student-cell strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.leads-workspace .student-cell small {
+  max-width: 210px;
+  overflow: hidden;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leads-workspace .badge,
+.leads-workspace .status {
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.leads-workspace .badge.muted {
+  border-color: #dbe3ef;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.leads-workspace .status {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.leads-workspace .status.archived,
+.leads-workspace .status.dropped {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.leads-workspace .status.enrolled {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.leads-workspace .table-footer {
+  min-height: 58px;
+  padding: 12px 16px;
+  border-top: 1px solid #dbe3ef;
+  background: #fff;
+}
+
+.leads-workspace .table-footer span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.leads-workspace .pager {
+  min-width: 38px;
+  height: 36px;
+  border-color: #dbe3ef;
+  background: #fff;
+  color: #334155;
+}
+
+.leads-workspace .pager.active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.leads-workspace .bulk-action-bar {
+  bottom: 18px;
+  margin-top: 0;
+  padding: 12px;
+  border-color: #dbe3ef;
+  border-left: 3px solid #2563eb;
+  border-radius: 2px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14);
+}
+
+.leads-workspace .bulk-action-bar select {
+  min-height: 38px;
+  border-color: #dbe3ef;
+  border-radius: 2px;
+}
+
 .filter-bar label,
 .form-grid label {
   display: grid;
@@ -4131,6 +4413,15 @@ td {
   .dashboard-action-list {
     grid-template-columns: 1fr;
   }
+
+  .leads-hero {
+    flex-direction: column;
+  }
+
+  .leads-hero-actions {
+    max-width: none;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 760px) {
@@ -4173,5 +4464,27 @@ td {
   .dashboard-chart-card,
   .dashboard-focus-card {
     min-height: auto;
+  }
+
+  .leads-hero {
+    padding: 18px;
+  }
+
+  .leads-hero-actions {
+    width: 100%;
+  }
+
+  .leads-hero-stat {
+    flex: 1 1 calc(50% - 6px);
+  }
+
+  .leads-hero .primary-button,
+  .leads-hero .secondary-button {
+    flex: 1 1 140px;
+    justify-content: center;
+  }
+
+  .leads-workspace .table-card {
+    overflow-x: auto;
   }
 }

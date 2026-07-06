@@ -2114,36 +2114,56 @@ function LeadsPage({
   const counselorOptions = ["Counselor", "Telecaller"].includes(currentUser?.role)
     ? options.counselors.filter((item) => item.id === currentUser.userId)
     : options.counselors;
+  const activeFilters = [
+    filters.search,
+    filters.branchId,
+    filters.courseId,
+    filters.sourceId,
+    filters.stageId,
+    filters.assignedUserId,
+    filters.priority,
+    filters.archive && filters.archive !== "active" ? filters.archive : "",
+  ].filter(Boolean).length;
+
   return (
-    <>
-      <PageTitle
-        title="Leads Management"
-        subtitle="Review and manage student admission pipelines."
-        action={
-          <div className="page-actions">
-            <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
-              <Plus size={18} />
-              Add Lead
-            </button>
-            {canImportExportLeads && (
-              <>
-                <button className="secondary-button" onClick={onImport}>
-                  <FileText size={18} />
-                  Import
-                </button>
-                <button className="secondary-button" onClick={() => onExport("csv")} disabled={Boolean(exportStatus.exporting)}>
-                  <Download size={18} />
-                  {exportStatus.exporting === "csv" ? "Exporting..." : "CSV"}
-                </button>
-                <button className="secondary-button" onClick={() => onExport("xlsx")} disabled={Boolean(exportStatus.exporting)}>
-                  <Download size={18} />
-                  {exportStatus.exporting === "xlsx" ? "Exporting..." : "XLSX"}
-                </button>
-              </>
-            )}
+    <section className="leads-workspace">
+      <div className="leads-hero">
+        <div>
+          <span className="eyebrow">Lead operations</span>
+          <h1>Leads Management</h1>
+          <p>Qualify enquiries, assign counsellors, move stages, and keep admission follow-ups clean.</p>
+        </div>
+        <div className="leads-hero-actions">
+          <div className="leads-hero-stat">
+            <span>Total leads</span>
+            <strong>{loading ? "..." : formatNumber(total)}</strong>
           </div>
-        }
-      />
+          <div className="leads-hero-stat">
+            <span>Filters</span>
+            <strong>{activeFilters}</strong>
+          </div>
+          <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
+            <Plus size={18} />
+            Add Lead
+          </button>
+          {canImportExportLeads && (
+            <>
+              <button className="secondary-button" onClick={onImport}>
+                <FileText size={18} />
+                Import
+              </button>
+              <button className="secondary-button" onClick={() => onExport("csv")} disabled={Boolean(exportStatus.exporting)}>
+                <Download size={18} />
+                {exportStatus.exporting === "csv" ? "Exporting..." : "CSV"}
+              </button>
+              <button className="secondary-button" onClick={() => onExport("xlsx")} disabled={Boolean(exportStatus.exporting)}>
+                <Download size={18} />
+                {exportStatus.exporting === "xlsx" ? "Exporting..." : "XLSX"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
       {exportStatus.error && <div className="form-alert">{exportStatus.error}</div>}
       {bulkStatus.error && <div className="form-alert" role="alert">{bulkStatus.error}</div>}
       {bulkStatus.message && <div className="form-success" role="status">{bulkStatus.message}</div>}
@@ -2198,7 +2218,7 @@ function LeadsPage({
           <button className="ghost-button" onClick={() => setSelected({})} disabled={bulkStatus.saving}>Clear</button>
         </div>
       )}
-    </>
+    </section>
   );
 }
 

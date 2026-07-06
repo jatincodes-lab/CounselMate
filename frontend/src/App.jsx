@@ -6564,7 +6564,7 @@ function FollowUpRow({ item, compact = false, saving = false, canManageLeads = f
         </div>
         <p>{item.leadId} - {item.assignedTo}</p>
       </div>
-      <div className="followup-time">
+      <div className="followup-time" aria-label={dueLabel}>
         <small>{dueLabel}</small>
         <strong>{formatTime(item.dueAt)}</strong>
         <p>{formatDate(item.dueAt)}</p>

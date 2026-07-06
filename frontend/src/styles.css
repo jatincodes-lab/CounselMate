@@ -1301,6 +1301,94 @@ h1 {
   min-height: 348px;
 }
 
+.dashboard-focus-card .schedule-list {
+  gap: 10px;
+}
+
+.dashboard-focus-card .followup-row.compact {
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: auto;
+  padding: 12px;
+  border-color: #dbe3ef;
+  border-left: 3px solid #2563eb;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.dashboard-focus-card .followup-row.compact:hover {
+  background: #f8fafc;
+}
+
+.dashboard-focus-card .channel-icon {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 14px;
+}
+
+.dashboard-focus-card .followup-main {
+  min-width: 0;
+  gap: 5px;
+}
+
+.dashboard-focus-card .followup-main h3 {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-focus-card .followup-main p {
+  overflow: hidden;
+  margin-top: 0;
+  color: #64748b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-focus-card .followup-badges {
+  gap: 5px;
+}
+
+.dashboard-focus-card .badge {
+  padding: 4px 7px;
+  font-size: 10px;
+  letter-spacing: 0.01em;
+}
+
+.dashboard-focus-card .followup-time {
+  justify-items: end;
+  min-width: 86px;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 1px solid #e2e8f0;
+  text-align: right;
+}
+
+.dashboard-focus-card .followup-time small {
+  display: none;
+}
+
+.dashboard-focus-card .followup-time strong {
+  color: #0f172a;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.dashboard-focus-card .followup-time p {
+  margin-top: 0;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .chart-shell {
   position: relative;
   min-height: 230px;
@@ -4059,6 +4147,19 @@ td {
 
   .dashboard-command-grid .card-body {
     padding: 16px;
+  }
+
+  .dashboard-focus-card .followup-row.compact {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .dashboard-focus-card .followup-time {
+    grid-column: 1 / -1;
+    justify-items: start;
+    padding: 8px 0 0 50px;
+    border-left: 0;
+    border-top: 1px solid #e2e8f0;
+    text-align: left;
   }
 
   .dashboard-chart-card,

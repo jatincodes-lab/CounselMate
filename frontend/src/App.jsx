@@ -7,6 +7,7 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  CreditCard,
   Download,
   Eye,
   EyeOff,
@@ -27,6 +28,7 @@ import {
   UserPlus,
   UserX,
   Users,
+  Upload,
   X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -118,6 +120,20 @@ import {
   updateEnrollmentStatus,
 } from "./api";
 import counselMateLogo from "./assets/counselmate-logo.png";
+import {
+  Badge as UiBadge,
+  Button as UiButton,
+  Card as UiCard,
+  CardContent as UiCardContent,
+  CardDescription as UiCardDescription,
+  CardHeader as UiCardHeader,
+  CardTitle as UiCardTitle,
+  Input as UiInput,
+  Label as UiLabel,
+  Select as UiSelect,
+  Separator as UiSeparator,
+  Switch as UiSwitch,
+} from "./components/ui";
 
 const navItems = [
   { id: "platform", label: "Platform", icon: Users, ownerOnly: true },
@@ -2852,6 +2868,7 @@ function LeadDetailDrawer({
   const [paymentTransactionForms, setPaymentTransactionForms] = useState({});
   const [editingPaymentId, setEditingPaymentId] = useState("");
   const [editingPaymentForm, setEditingPaymentForm] = useState(null);
+  const [receivingPaymentId, setReceivingPaymentId] = useState("");
 
   useEffect(() => {
     setEditForm(createLeadUpdateForm(lead));
@@ -2866,6 +2883,7 @@ function LeadDetailDrawer({
     setPaymentTransactionForms({});
     setEditingPaymentId("");
     setEditingPaymentForm(null);
+    setReceivingPaymentId("");
   }, [lead, communicationTemplates]);
 
   useEffect(() => {
@@ -2905,6 +2923,14 @@ function LeadDetailDrawer({
   const activeTemplates = communicationTemplates.filter((item) => item.isActive);
   const documents = lead?.documents || [];
   const payments = lead?.payments || [];
+  const uploadedDocumentCount = documents.filter((item) => item.documentId).length;
+  const requiredDocumentCount = documents.filter((item) => item.isRequired).length;
+  const verifiedRequiredDocumentCount = documents.filter((item) => item.isRequired && item.status === "Verified").length;
+  const activePayments = payments.filter((item) => item.status !== "Cancelled");
+  const paymentCurrency = activePayments[0]?.currency || "INR";
+  const totalPaymentDue = activePayments.reduce((total, item) => total + Number(item.amountDue || 0), 0);
+  const totalPaymentPaid = activePayments.reduce((total, item) => total + Number(item.amountPaid || 0), 0);
+  const totalPaymentBalance = activePayments.reduce((total, item) => total + Number(item.balance || 0), 0);
 
   const handleUpdateSubmit = async (event) => {
     event.preventDefault();
@@ -3069,6 +3095,7 @@ function LeadDetailDrawer({
   };
 
   const openPaymentEdit = (payment) => {
+    setReceivingPaymentId("");
     setEditingPaymentId(payment.id);
     setEditingPaymentForm({
       title: payment.title,
@@ -3132,6 +3159,7 @@ function LeadDetailDrawer({
       version: payment.version,
     });
     if (updatedLead) {
+      setReceivingPaymentId("");
       updatePaymentTransactionForm(payment.id, {
         amount: "",
         referenceNumber: "",
@@ -3356,211 +3384,173 @@ function LeadDetailDrawer({
               </div>
             </form>
 
-            <section className="drawer-section">
-              <div className="section-heading">
-                <h3>Documents</h3>
-                <span>{documents.filter((item) => item.documentId).length}/{documents.length}</span>
+            <section className="drawer-section lead-assets-section">
+              <div className="lead-assets-heading">
+                <div className="lead-assets-title">
+                  <span className="lead-assets-icon documents"><FileText size={19} /></span>
+                  <div><h3>Documents</h3><p>Upload and review the lead's required records.</p></div>
+                </div>
+                <UiBadge variant={uploadedDocumentCount === documents.length && documents.length > 0 ? "success" : "secondary"}>{uploadedDocumentCount} of {documents.length} uploaded</UiBadge>
               </div>
+              {documents.length > 0 && (
+                <div className="document-readiness">
+                  <div className="document-readiness-copy"><span>Required document readiness</span><strong>{verifiedRequiredDocumentCount}/{requiredDocumentCount} verified</strong></div>
+                  <div className="document-readiness-track"><span style={{ width: `${requiredDocumentCount ? (verifiedRequiredDocumentCount / requiredDocumentCount) * 100 : 100}%` }} /></div>
+                </div>
+              )}
               {archived && <p className="drawer-permission-note">Restore this lead before uploading or reviewing documents.</p>}
               {!canManageLeads && <p className="drawer-permission-note">Read-only users can view and download uploaded documents only.</p>}
-              <div className="document-list">
-                {documents.length === 0 && <p className="muted-text">No document checklist is configured.</p>}
+              <div className="document-list lead-document-list">
+                {documents.length === 0 && <div className="lead-assets-empty"><FileText size={22} /><strong>No document checklist</strong><span>Configure document types in Settings to start collecting files.</span></div>}
                 {documents.map((document) => {
                   const form = documentForms[document.documentTypeId] || {};
                   const hasFile = Boolean(document.documentId);
                   const canReplaceThisDocument = canUploadDocuments && (!hasFile || document.status !== "Verified" || canReviewDocuments);
 
                   return (
-                    <div className="document-row" key={document.documentTypeId}>
-                      <div className="document-main">
-                        <div className="document-title-row">
-                          <strong>{document.name}</strong>
-                          <Badge label={document.isRequired ? "Required" : "Optional"} muted={!document.isRequired} />
-                          <Badge label={document.status} muted={document.status === "Pending"} />
+                    <UiCard className={`lead-document-card ${hasFile ? "has-file" : "is-missing"}`} key={document.documentTypeId}>
+                      <div className="lead-document-card-header">
+                        <div className="lead-document-identity">
+                          <span className={`lead-file-icon ${hasFile ? "has-file" : ""}`}><FileText size={19} /></span>
+                          <div>
+                            <div className="lead-document-name"><strong>{document.name}</strong>{document.isRequired && <span className="required-dot" title="Required" />}</div>
+                            <span>{hasFile ? `${document.fileName} - ${formatFileSize(document.fileSizeBytes)}` : "No file uploaded"}</span>
+                          </div>
                         </div>
-                        {hasFile ? (
-                          <p>{document.fileName} - {formatFileSize(document.fileSizeBytes)}</p>
-                        ) : (
-                          <p>No file uploaded.</p>
-                        )}
-                        {document.notes && <small>{document.notes}</small>}
-                        {document.uploadedAt && <small>Uploaded {formatFollowUpLabel(document.uploadedAt)}{document.uploadedBy ? ` by ${document.uploadedBy}` : ""}</small>}
-                        {document.reviewedAt && <small>Reviewed {formatFollowUpLabel(document.reviewedAt)}{document.reviewedBy ? ` by ${document.reviewedBy}` : ""}</small>}
+                        <div className="lead-document-badges">
+                          <UiBadge variant={document.isRequired ? "outline" : "secondary"}>{document.isRequired ? "Required" : "Optional"}</UiBadge>
+                          <UiBadge variant={leadDocumentStatusVariant(document.status)}>{document.status}</UiBadge>
+                        </div>
                       </div>
-                      <div className="document-actions">
-                        {hasFile && document.canDownload && (
-                          <button type="button" className="ghost-button" disabled={saving} onClick={() => onDownloadDocument(document)}>
-                            <Download size={16} />
-                            Download
-                          </button>
-                        )}
-                        {canReviewDocuments && hasFile && document.status !== "Verified" && (
-                          <button type="button" className="ghost-button" disabled={saving} onClick={() => onVerifyDocument(document)}>
-                            <CheckCircle2 size={16} />
-                            Verify
-                          </button>
-                        )}
-                        {canReviewDocuments && hasFile && (
-                          <button type="button" className="ghost-button danger-text" disabled={saving || !form.rejectNotes?.trim()} onClick={() => handleDocumentReject(document)}>
-                            <X size={16} />
-                            Reject
-                          </button>
-                        )}
-                        {canReviewDocuments && hasFile && document.status !== "Verified" && (
-                          <button type="button" className="ghost-button danger-text" disabled={saving} onClick={() => onDeleteDocument(document)}>
-                            <UserX size={16} />
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                      {canReviewDocuments && hasFile && (
-                        <Field label="Review Notes" className="span-2" error={getFieldError("notes")}>
-                          <input value={form.rejectNotes || ""} maxLength={500} disabled={saving} placeholder="Required when rejecting" onChange={(event) => updateDocumentForm(document.documentTypeId, { rejectNotes: event.target.value })} />
-                        </Field>
+                      {hasFile && (
+                        <div className="lead-document-meta">
+                          {document.notes && <p>{document.notes}</p>}
+                          <div>
+                            {document.uploadedAt && <span><Upload size={13} />Uploaded {formatFollowUpLabel(document.uploadedAt)}{document.uploadedBy ? ` by ${document.uploadedBy}` : ""}</span>}
+                            {document.reviewedAt && <span><CheckCircle2 size={13} />Reviewed {formatFollowUpLabel(document.reviewedAt)}{document.reviewedBy ? ` by ${document.reviewedBy}` : ""}</span>}
+                          </div>
+                        </div>
                       )}
-                      <form className="document-upload-form" onSubmit={(event) => handleDocumentUpload(event, document)}>
-                        <Field label={hasFile ? "Replacement File" : "Upload File"} error={getFieldError("file")}>
-                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" disabled={!canReplaceThisDocument} onChange={(event) => updateDocumentForm(document.documentTypeId, { file: event.target.files?.[0] || null })} />
-                        </Field>
-                        <Field label="Upload Notes" error={getFieldError("notes")}>
-                          <input value={form.notes || ""} maxLength={500} disabled={!canReplaceThisDocument} onChange={(event) => updateDocumentForm(document.documentTypeId, { notes: event.target.value })} />
-                        </Field>
-                        <button type="submit" className="primary-button" disabled={!canReplaceThisDocument || !form.file}>
-                          {saving ? "Saving..." : hasFile ? "Replace" : "Upload"}
-                        </button>
+                      {hasFile && (
+                        <div className="lead-document-actions">
+                          {document.canDownload && <UiButton variant="outline" size="sm" disabled={saving} onClick={() => onDownloadDocument(document)}><Download size={15} />Download</UiButton>}
+                          {canReviewDocuments && document.status !== "Verified" && <UiButton variant="secondary" size="sm" disabled={saving} onClick={() => onVerifyDocument(document)}><CheckCircle2 size={15} />Verify</UiButton>}
+                          {canReviewDocuments && <UiButton variant="ghost" size="sm" className="ui-button-danger" disabled={saving || !form.rejectNotes?.trim()} onClick={() => handleDocumentReject(document)}><X size={15} />Reject</UiButton>}
+                          {canReviewDocuments && document.status !== "Verified" && <UiButton variant="ghost" size="sm" className="ui-button-danger" disabled={saving} onClick={() => onDeleteDocument(document)}><UserX size={15} />Delete</UiButton>}
+                        </div>
+                      )}
+                      {canReviewDocuments && hasFile && (
+                        <div className="lead-document-review-panel">
+                          <UiLabel htmlFor={`review-${document.documentTypeId}`}>Reviewer note
+                            <UiInput id={`review-${document.documentTypeId}`} value={form.rejectNotes || ""} maxLength={500} disabled={saving} placeholder="Add a reason before rejecting" onChange={(event) => updateDocumentForm(document.documentTypeId, { rejectNotes: event.target.value })} />
+                          </UiLabel>
+                          {getFieldError("notes") && <small className="field-error">{getFieldError("notes")}</small>}
+                        </div>
+                      )}
+                      <form className="lead-document-upload-panel" onSubmit={(event) => handleDocumentUpload(event, document)}>
+                        <div className="lead-upload-copy"><span className="lead-upload-icon"><Upload size={17} /></span><div><strong>{hasFile ? "Replace document" : "Upload document"}</strong><span>PDF, JPG, PNG, DOC or DOCX</span></div></div>
+                        <UiLabel htmlFor={`file-${document.documentTypeId}`} className="lead-file-input-label"><span className="sr-only">{hasFile ? "Replacement file" : "Upload file"}</span><UiInput id={`file-${document.documentTypeId}`} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" disabled={!canReplaceThisDocument} onChange={(event) => updateDocumentForm(document.documentTypeId, { file: event.target.files?.[0] || null })} /></UiLabel>
+                        <UiLabel htmlFor={`upload-note-${document.documentTypeId}`} className="lead-upload-note-label"><span className="sr-only">Upload note</span><UiInput id={`upload-note-${document.documentTypeId}`} value={form.notes || ""} maxLength={500} placeholder="Optional note" disabled={!canReplaceThisDocument} onChange={(event) => updateDocumentForm(document.documentTypeId, { notes: event.target.value })} /></UiLabel>
+                        <UiButton type="submit" size="sm" disabled={!canReplaceThisDocument || !form.file}><Upload size={15} />{saving ? "Saving..." : hasFile ? "Replace" : "Upload"}</UiButton>
+                        {getFieldError("file") && <small className="field-error span-all">{getFieldError("file")}</small>}
                       </form>
                       {!canReplaceThisDocument && canUploadDocuments && document.status === "Verified" && (
-                        <p className="drawer-permission-note">Only reviewers can replace verified documents.</p>
+                        <p className="lead-document-lock-note"><CheckCircle2 size={14} />Verified documents can only be replaced by a reviewer.</p>
                       )}
-                    </div>
+                    </UiCard>
                   );
                 })}
               </div>
             </section>
 
-            <section className="drawer-section">
-              <div className="section-heading">
-                <h3>Payments</h3>
-                <span>{formatCurrency(payments.reduce((total, item) => total + Number(item.balance || 0), 0), "INR")}</span>
+            <section className="drawer-section lead-assets-section lead-payments-section">
+              <div className="lead-assets-heading">
+                <div className="lead-assets-title">
+                  <span className="lead-assets-icon payments"><CreditCard size={19} /></span>
+                  <div><h3>Payments</h3><p>Track fees, balances, and payment receipts.</p></div>
+                </div>
+                <UiBadge variant={totalPaymentBalance > 0 ? "warning" : "success"}>{totalPaymentBalance > 0 ? `${formatCurrency(totalPaymentBalance, paymentCurrency)} outstanding` : "Fully paid"}</UiBadge>
+              </div>
+              <div className="lead-payment-summary">
+                <div><span>Total due</span><strong>{formatCurrency(totalPaymentDue, paymentCurrency)}</strong></div>
+                <div><span>Collected</span><strong className="paid">{formatCurrency(totalPaymentPaid, paymentCurrency)}</strong></div>
+                <div><span>Balance</span><strong className={totalPaymentBalance > 0 ? "balance" : "paid"}>{formatCurrency(totalPaymentBalance, paymentCurrency)}</strong></div>
               </div>
               {archived && <p className="drawer-permission-note">Restore this lead before adding or updating payments.</p>}
               {!canManagePayments && <p className="drawer-permission-note">Payment management is limited to owner, admin, and accountant roles.</p>}
               {canManageLeadPayments && (
-                <form className="payment-form" onSubmit={handlePaymentCreate}>
-                  <Field label="Fee Item" error={getFieldError("title")} required>
-                    <input value={paymentForm.title} maxLength={160} onChange={(event) => setPaymentForm((current) => ({ ...current, title: event.target.value }))} required />
-                  </Field>
-                  <Field label="Amount Due" error={getFieldError("amountDue")} required>
-                    <input type="number" min="0.01" step="0.01" value={paymentForm.amountDue} onChange={(event) => setPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required />
-                  </Field>
-                  <Field label="Due Date" error={getFieldError("dueDate")}>
-                    <input type="date" value={paymentForm.dueDate} onChange={(event) => setPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} />
-                  </Field>
-                  <Field label="Notes" error={getFieldError("notes")}>
-                    <input value={paymentForm.notes} maxLength={500} onChange={(event) => setPaymentForm((current) => ({ ...current, notes: event.target.value }))} />
-                  </Field>
-                  <button type="submit" className="primary-button" disabled={!paymentForm.title.trim() || !paymentForm.amountDue}>
-                    {saving ? "Saving..." : "Add Fee"}
-                  </button>
-                </form>
+                <UiCard className="lead-payment-create-card">
+                  <div className="lead-payment-form-heading"><div><strong>Add fee item</strong><span>Create a payable item for this lead.</span></div><UiBadge variant="outline">INR</UiBadge></div>
+                  <form className="lead-payment-create-form" onSubmit={handlePaymentCreate}>
+                    <UiLabel htmlFor="new-fee-title">Fee item *<UiInput id="new-fee-title" value={paymentForm.title} maxLength={160} placeholder="e.g. Registration fee" onChange={(event) => setPaymentForm((current) => ({ ...current, title: event.target.value }))} required /></UiLabel>
+                    <UiLabel htmlFor="new-fee-amount">Amount due *<UiInput id="new-fee-amount" type="number" min="0.01" step="0.01" value={paymentForm.amountDue} placeholder="0.00" onChange={(event) => setPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required /></UiLabel>
+                    <UiLabel htmlFor="new-fee-date">Due date<UiInput id="new-fee-date" type="date" value={paymentForm.dueDate} onChange={(event) => setPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} /></UiLabel>
+                    <UiLabel htmlFor="new-fee-note">Note<UiInput id="new-fee-note" value={paymentForm.notes} maxLength={500} placeholder="Optional note" onChange={(event) => setPaymentForm((current) => ({ ...current, notes: event.target.value }))} /></UiLabel>
+                    <UiButton type="submit" disabled={!paymentForm.title.trim() || !paymentForm.amountDue}><Plus size={16} />{saving ? "Saving..." : "Add fee"}</UiButton>
+                  </form>
+                  {(getFieldError("title") || getFieldError("amountDue") || getFieldError("dueDate")) && <small className="field-error">{getFieldError("title") || getFieldError("amountDue") || getFieldError("dueDate")}</small>}
+                </UiCard>
               )}
-              <div className="payment-list">
-                {payments.length === 0 && <p className="muted-text">No payment items added.</p>}
+              <div className="payment-list lead-payment-list">
+                {payments.length === 0 && <div className="lead-assets-empty"><CreditCard size={22} /><strong>No payment items</strong><span>Add the first fee item to begin tracking collections.</span></div>}
                 {payments.map((payment) => {
                   const transactionForm = paymentTransactionForms[payment.id] || {};
                   const editable = canManageLeadPayments && payment.status !== "Cancelled";
                   const canReceive = editable && payment.balance > 0;
                   const canCancel = editable && payment.amountPaid <= 0;
+                  const paidPercent = Number(payment.amountDue) > 0 ? Math.min(100, (Number(payment.amountPaid || 0) / Number(payment.amountDue)) * 100) : 0;
                   return (
-                    <div className="payment-row" key={payment.id}>
-                      <div className="payment-main">
-                        <div className="document-title-row">
-                          <strong>{payment.title}</strong>
-                          <Badge label={payment.status} muted={payment.status === "Pending"} />
-                        </div>
-                        <div className="payment-amount-grid">
-                          <InfoItem label="Due" value={formatCurrency(payment.amountDue, payment.currency)} />
-                          <InfoItem label="Paid" value={formatCurrency(payment.amountPaid, payment.currency)} />
-                          <InfoItem label="Balance" value={formatCurrency(payment.balance, payment.currency)} />
-                        </div>
-                        {payment.dueDate && <small>Due {formatDate(payment.dueDate)}</small>}
-                        {payment.notes && <small>{payment.notes}</small>}
+                    <UiCard className={`lead-payment-card ${payment.status === "Cancelled" ? "is-cancelled" : ""}`} key={payment.id}>
+                      <div className="lead-payment-card-header">
+                        <div><div className="lead-payment-name"><span className="lead-file-icon has-file"><CreditCard size={18} /></span><div><strong>{payment.title}</strong>{payment.dueDate && <span>Due {formatDate(payment.dueDate)}</span>}</div></div></div>
+                        <div className="lead-payment-card-actions"><UiBadge variant={leadPaymentStatusVariant(payment.status)}>{payment.status}</UiBadge>{canReceive && <UiButton variant="secondary" size="sm" disabled={saving} onClick={() => { setEditingPaymentId(""); setEditingPaymentForm(null); setReceivingPaymentId((current) => current === payment.id ? "" : payment.id); }}><CreditCard size={15} />Receive</UiButton>}{editable && <UiButton variant="ghost" size="icon" disabled={saving} onClick={() => openPaymentEdit(payment)} title="Edit fee" aria-label={`Edit ${payment.title}`}><Pencil size={16} /></UiButton>}{canCancel && <UiButton variant="ghost" size="icon" className="ui-button-danger" disabled={saving} onClick={() => onCancelPayment(payment)} title="Cancel fee" aria-label={`Cancel ${payment.title}`}><X size={16} /></UiButton>}</div>
                       </div>
-                      <div className="document-actions">
-                        {editable && (
-                          <button type="button" className="ghost-button" disabled={saving} onClick={() => openPaymentEdit(payment)}>
-                            <Pencil size={16} />
-                            Edit
-                          </button>
-                        )}
-                        {canCancel && (
-                          <button type="button" className="ghost-button danger-text" disabled={saving} onClick={() => onCancelPayment(payment)}>
-                            <X size={16} />
-                            Cancel
-                          </button>
-                        )}
+                      <div className="lead-payment-metrics">
+                        <div><span>Amount due</span><strong>{formatCurrency(payment.amountDue, payment.currency)}</strong></div>
+                        <div><span>Paid</span><strong className="paid">{formatCurrency(payment.amountPaid, payment.currency)}</strong></div>
+                        <div><span>Balance</span><strong className={payment.balance > 0 ? "balance" : "paid"}>{formatCurrency(payment.balance, payment.currency)}</strong></div>
                       </div>
+                      <div className="lead-payment-progress"><span style={{ width: `${paidPercent}%` }} /></div>
+                      {payment.notes && <p className="lead-payment-note">{payment.notes}</p>}
                       {editingPaymentId === payment.id && editingPaymentForm && (
-                        <form className="payment-form span-all" onSubmit={handlePaymentUpdate}>
-                          <Field label="Fee Item" error={getFieldError("title")} required>
-                            <input value={editingPaymentForm.title} maxLength={160} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, title: event.target.value }))} required />
-                          </Field>
-                          <Field label="Amount Due" error={getFieldError("amountDue")} required>
-                            <input type="number" min={payment.amountPaid || 0.01} step="0.01" value={editingPaymentForm.amountDue} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required />
-                          </Field>
-                          <Field label="Due Date" error={getFieldError("dueDate")}>
-                            <input type="date" value={editingPaymentForm.dueDate} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} />
-                          </Field>
-                          <Field label="Notes" error={getFieldError("notes")}>
-                            <input value={editingPaymentForm.notes} maxLength={500} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, notes: event.target.value }))} />
-                          </Field>
-                          <div className="inline-editor-actions">
-                            <button type="button" className="ghost-button" disabled={saving} onClick={() => { setEditingPaymentId(""); setEditingPaymentForm(null); }}>Cancel</button>
-                            <button type="submit" className="primary-button" disabled={saving}>Save</button>
+                        <form className="lead-payment-inline-form" onSubmit={handlePaymentUpdate}>
+                          <div className="lead-inline-form-heading"><strong>Edit fee item</strong><span>Update the charge details.</span></div>
+                          <div className="lead-payment-form-grid">
+                            <UiLabel>Fee item *<UiInput value={editingPaymentForm.title} maxLength={160} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, title: event.target.value }))} required /></UiLabel>
+                            <UiLabel>Amount due *<UiInput type="number" min={payment.amountPaid || 0.01} step="0.01" value={editingPaymentForm.amountDue} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, amountDue: event.target.value }))} required /></UiLabel>
+                            <UiLabel>Due date<UiInput type="date" value={editingPaymentForm.dueDate} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, dueDate: event.target.value }))} /></UiLabel>
+                            <UiLabel>Note<UiInput value={editingPaymentForm.notes} maxLength={500} onChange={(event) => setEditingPaymentForm((current) => ({ ...current, notes: event.target.value }))} /></UiLabel>
                           </div>
+                          <div className="lead-inline-actions"><UiButton variant="ghost" type="button" disabled={saving} onClick={() => { setEditingPaymentId(""); setEditingPaymentForm(null); }}>Cancel</UiButton><UiButton type="submit" disabled={saving}>{saving ? "Saving..." : "Save changes"}</UiButton></div>
                         </form>
                       )}
-                      {canReceive && (
-                        <form className="payment-transaction-form span-all" onSubmit={(event) => handlePaymentTransactionCreate(event, payment)}>
-                          <Field label="Receive Amount" error={getFieldError("amount")} required>
-                            <input type="number" min="0.01" max={payment.balance} step="0.01" value={transactionForm.amount || ""} onChange={(event) => updatePaymentTransactionForm(payment.id, { amount: event.target.value })} required />
-                          </Field>
-                          <Field label="Method" error={getFieldError("method")}>
-                            <select value={transactionForm.method || "UPI"} onChange={(event) => updatePaymentTransactionForm(payment.id, { method: event.target.value })}>
-                              {["UPI", "Cash", "Bank Transfer", "Card", "Cheque", "Other"].map((item) => <option key={item} value={item}>{item}</option>)}
-                            </select>
-                          </Field>
-                          <Field label="Paid At" error={getFieldError("paidAt")}>
-                            <input type="datetime-local" value={transactionForm.paidAt || ""} onChange={(event) => updatePaymentTransactionForm(payment.id, { paidAt: event.target.value })} />
-                          </Field>
-                          <Field label="Reference" error={getFieldError("referenceNumber")}>
-                            <input value={transactionForm.referenceNumber || ""} maxLength={120} onChange={(event) => updatePaymentTransactionForm(payment.id, { referenceNumber: event.target.value })} />
-                          </Field>
-                          <Field label="Receipt" error={getFieldError("receiptNumber")}>
-                            <input value={transactionForm.receiptNumber || ""} maxLength={120} placeholder="Auto-generated if blank" onChange={(event) => updatePaymentTransactionForm(payment.id, { receiptNumber: event.target.value })} />
-                          </Field>
-                          <Field label="Notes" error={getFieldError("notes")}>
-                            <input value={transactionForm.notes || ""} maxLength={500} onChange={(event) => updatePaymentTransactionForm(payment.id, { notes: event.target.value })} />
-                          </Field>
-                          <button type="submit" className="primary-button" disabled={saving || !transactionForm.amount}>
-                            {saving ? "Saving..." : "Record Payment"}
-                          </button>
+                      {canReceive && receivingPaymentId === payment.id && (
+                        <form className="lead-receive-payment-form" onSubmit={(event) => handlePaymentTransactionCreate(event, payment)}>
+                          <div className="lead-inline-form-heading"><div><strong>Record a payment</strong><span>Outstanding: {formatCurrency(payment.balance, payment.currency)}</span></div><CreditCard size={18} /></div>
+                          <div className="lead-payment-form-grid receive">
+                            <UiLabel>Amount *<UiInput type="number" min="0.01" max={payment.balance} step="0.01" value={transactionForm.amount || ""} placeholder="0.00" onChange={(event) => updatePaymentTransactionForm(payment.id, { amount: event.target.value })} required /></UiLabel>
+                            <UiLabel>Method<UiSelect value={transactionForm.method || "UPI"} onChange={(event) => updatePaymentTransactionForm(payment.id, { method: event.target.value })}>{["UPI", "Cash", "Bank Transfer", "Card", "Cheque", "Other"].map((item) => <option key={item} value={item}>{item}</option>)}</UiSelect></UiLabel>
+                            <UiLabel>Paid at<UiInput type="datetime-local" value={transactionForm.paidAt || ""} onChange={(event) => updatePaymentTransactionForm(payment.id, { paidAt: event.target.value })} /></UiLabel>
+                            <UiLabel>Reference<UiInput value={transactionForm.referenceNumber || ""} maxLength={120} placeholder="Transaction ID" onChange={(event) => updatePaymentTransactionForm(payment.id, { referenceNumber: event.target.value })} /></UiLabel>
+                            <UiLabel>Receipt<UiInput value={transactionForm.receiptNumber || ""} maxLength={120} placeholder="Auto-generated if blank" onChange={(event) => updatePaymentTransactionForm(payment.id, { receiptNumber: event.target.value })} /></UiLabel>
+                            <UiLabel>Note<UiInput value={transactionForm.notes || ""} maxLength={500} placeholder="Optional note" onChange={(event) => updatePaymentTransactionForm(payment.id, { notes: event.target.value })} /></UiLabel>
+                          </div>
+                          <div className="lead-inline-actions"><UiButton variant="ghost" type="button" disabled={saving} onClick={() => setReceivingPaymentId("")}>Cancel</UiButton><UiButton type="submit" disabled={saving || !transactionForm.amount}><CreditCard size={16} />{saving ? "Saving..." : "Record payment"}</UiButton></div>
                         </form>
                       )}
-                      {payment.transactions.length > 0 && (
-                        <div className="payment-transactions span-all">
+                      {(payment.transactions || []).length > 0 && (
+                        <div className="lead-payment-history">
+                          <div className="lead-payment-history-title"><strong>Payment history</strong><UiBadge variant="secondary">{payment.transactions.length} transaction{payment.transactions.length === 1 ? "" : "s"}</UiBadge></div>
                           {payment.transactions.map((transaction) => (
-                            <div className="payment-transaction" key={transaction.id}>
-                              <strong>{formatCurrency(transaction.amount, payment.currency)}</strong>
-                              <span>{transaction.method}</span>
-                              <span>{formatFollowUpLabel(transaction.paidAt)}</span>
-                              <span>{transaction.receiptNumber || "No receipt"}</span>
-                              {transaction.referenceNumber && <span>{transaction.referenceNumber}</span>}
+                            <div className="lead-payment-transaction" key={transaction.id}>
+                              <span className="lead-transaction-icon"><CheckCircle2 size={15} /></span>
+                              <div><strong>{formatCurrency(transaction.amount, payment.currency)}</strong><span>{transaction.method} - {formatFollowUpLabel(transaction.paidAt)}</span></div>
+                              <div><strong>{transaction.receiptNumber || "No receipt"}</strong>{transaction.referenceNumber && <span>Ref: {transaction.referenceNumber}</span>}</div>
                             </div>
                           ))}
                         </div>
                       )}
-                    </div>
+                    </UiCard>
                   );
                 })}
               </div>
@@ -6344,6 +6334,14 @@ function LeadIntelligencePanel({ settings, options, users, canManage, saving, fi
   const [clientErrors, setClientErrors] = useState({});
   const getFieldError = (field) => clientErrors[field] || firstError(fieldErrors[field]);
   const rules = settings.rules || [];
+  const activeRules = rules.filter((rule) => rule.isActive).length;
+  const eligibleUsers = users.filter((user) => user.isActive && !["Accountant", "ReadOnly"].includes(user.role)).length;
+  const weightFields = ["priorityWeight", "sourceWeight", "responseWeight", "engagementWeight", "freshnessWeight", "profileWeight"];
+  const totalWeight = weightFields.reduce((sum, field) => sum + (Number(form[field]) || 0), 0);
+  const savedForm = leadIntelligenceSettingsForm(settings);
+  const hasChanges = Object.keys(savedForm).some((field) => String(form[field]) !== String(savedForm[field]));
+  const warmThreshold = Math.max(0, Math.min(100, Number(form.warmThreshold) || 0));
+  const hotThreshold = Math.max(0, Math.min(100, Number(form.hotThreshold) || 0));
 
   useEffect(() => {
     setForm(leadIntelligenceSettingsForm(settings));
@@ -6352,6 +6350,14 @@ function LeadIntelligencePanel({ settings, options, users, canManage, saving, fi
 
   const updateField = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
+    setClientErrors((current) => {
+      if (Object.keys(current).length === 0) return current;
+      const next = { ...current };
+      delete next[field];
+      if (weightFields.includes(field)) delete next.weights;
+      if (["hotThreshold", "warmThreshold"].includes(field)) delete next.thresholds;
+      return next;
+    });
   };
 
   const submit = async (event) => {
@@ -6376,63 +6382,171 @@ function LeadIntelligencePanel({ settings, options, users, canManage, saving, fi
   };
 
   return (
-    <div className="lead-intelligence-panel">
-      <form className="settings-form intelligence-settings-form" onSubmit={submit}>
-        <div className="settings-section-header">
-          <div><h2>Scoring and Distribution</h2><p>Configure score calculation and optional automatic assignment.</p></div>
-          {canManage && <button className="settings-button" type="submit" disabled={saving}>Save settings</button>}
-        </div>
-        <div className="settings-form-grid">
-          <label className="master-checkbox"><input type="checkbox" checked={form.scoringEnabled} disabled={!canManage || saving} onChange={(event) => updateField("scoringEnabled", event.target.checked)} />Scoring enabled</label>
-          <label className="master-checkbox"><input type="checkbox" checked={form.distributionEnabled} disabled={!canManage || saving} onChange={(event) => updateField("distributionEnabled", event.target.checked)} />Distribution enabled</label>
-          <Field label="Default Distribution">
-            <select value={form.defaultDistributionStrategy} disabled={!canManage || saving} onChange={(event) => updateField("defaultDistributionStrategy", event.target.value)}>
-              {["RoundRobin", "Workload", "DefaultAssignee", "Disabled"].map((item) => <option key={item} value={item}>{formatDistributionStrategy(item)}</option>)}
-            </select>
-          </Field>
-          <Field label="Max Active Leads/User" error={getFieldError("maxActiveLeadsPerUser")}>
-            <input type="number" min="1" max="10000" value={form.maxActiveLeadsPerUser} disabled={!canManage || saving} onChange={(event) => updateField("maxActiveLeadsPerUser", event.target.value)} />
-          </Field>
-          <Field label="Hot Threshold" error={getFieldError("thresholds")}>
-            <input type="number" min="0" max="100" value={form.hotThreshold} disabled={!canManage || saving} onChange={(event) => updateField("hotThreshold", event.target.value)} />
-          </Field>
-          <Field label="Warm Threshold">
-            <input type="number" min="0" max="100" value={form.warmThreshold} disabled={!canManage || saving} onChange={(event) => updateField("warmThreshold", event.target.value)} />
-          </Field>
-          {["priorityWeight", "sourceWeight", "responseWeight", "engagementWeight", "freshnessWeight", "profileWeight"].map((field) => (
-            <Field key={field} label={formatWeightLabel(field)} error={getFieldError("weights")}>
-              <input type="number" min="0" max="100" value={form[field]} disabled={!canManage || saving} onChange={(event) => updateField(field, event.target.value)} />
-            </Field>
-          ))}
-        </div>
+    <div className="lead-intelligence-panel lead-intelligence-v2">
+      <div className="intelligence-summary-grid" aria-label="Lead intelligence status">
+        <UiCard className="intelligence-summary-card">
+          <div className={`intelligence-summary-icon ${form.scoringEnabled ? "is-active" : ""}`}><BarChart3 size={19} /></div>
+          <div><span>Lead scoring</span><strong>{form.scoringEnabled ? "Enabled" : "Disabled"}</strong></div>
+          <UiBadge variant={form.scoringEnabled ? "success" : "secondary"}>{form.scoringEnabled ? "Live" : "Off"}</UiBadge>
+        </UiCard>
+        <UiCard className="intelligence-summary-card">
+          <div className={`intelligence-summary-icon ${form.distributionEnabled ? "is-active" : ""}`}><GitBranch size={19} /></div>
+          <div><span>Auto distribution</span><strong>{formatDistributionStrategy(form.defaultDistributionStrategy)}</strong></div>
+          <UiBadge variant={form.distributionEnabled ? "success" : "secondary"}>{form.distributionEnabled ? "Live" : "Off"}</UiBadge>
+        </UiCard>
+        <UiCard className="intelligence-summary-card">
+          <div className="intelligence-summary-icon is-active"><Users size={19} /></div>
+          <div><span>Distribution rules</span><strong>{activeRules} active of {rules.length}</strong></div>
+          <UiBadge variant="outline">{eligibleUsers} eligible users</UiBadge>
+        </UiCard>
+      </div>
+
+      <form onSubmit={submit}>
+        <UiCard className="intelligence-config-card">
+          <UiCardHeader className="intelligence-main-header">
+            <div>
+              <div className="intelligence-heading-row">
+                <span className="intelligence-heading-icon"><Settings size={19} /></span>
+                <div>
+                  <UiCardTitle>Scoring & routing configuration</UiCardTitle>
+                  <UiCardDescription>Control how leads are ranked and assigned to your counselling team.</UiCardDescription>
+                </div>
+              </div>
+            </div>
+            <div className="intelligence-header-actions">
+              {!canManage && <UiBadge variant="warning">View only</UiBadge>}
+              {canManage && hasChanges && <UiButton variant="ghost" type="button" disabled={saving} onClick={() => { setForm(leadIntelligenceSettingsForm(settings)); setClientErrors({}); }}>Reset</UiButton>}
+              {canManage && <UiButton type="submit" disabled={saving || !hasChanges}><CheckCircle2 size={17} />{saving ? "Saving..." : "Save changes"}</UiButton>}
+            </div>
+          </UiCardHeader>
+          <UiSeparator />
+          <UiCardContent className="intelligence-config-content">
+            <div className="intelligence-config-grid">
+              <UiCard className="intelligence-module-card">
+                <UiCardHeader>
+                  <div className="intelligence-module-heading">
+                    <span className="intelligence-module-icon blue"><BarChart3 size={18} /></span>
+                    <div><UiCardTitle>Lead scoring</UiCardTitle><UiCardDescription>Rank leads from 0–100 using weighted signals.</UiCardDescription></div>
+                  </div>
+                  <UiSwitch checked={form.scoringEnabled} disabled={!canManage || saving} onCheckedChange={(checked) => updateField("scoringEnabled", checked)} aria-label="Enable lead scoring" />
+                </UiCardHeader>
+                <UiSeparator />
+                <UiCardContent className="intelligence-module-content">
+                  <section className="intelligence-form-section">
+                    <div className="intelligence-section-title">
+                      <div><strong>Score thresholds</strong><span>Define when a lead becomes warm or hot.</span></div>
+                      <UiBadge variant="outline">0–100 score</UiBadge>
+                    </div>
+                    <div className="threshold-preview" style={{ "--warm-threshold": `${warmThreshold}%`, "--hot-threshold": `${hotThreshold}%` }}>
+                      <div className="threshold-track"><span className="cold-zone" /><span className="warm-zone" /><span className="hot-zone" /></div>
+                      <span className="threshold-marker warm" title={`Warm starts at ${warmThreshold}`} />
+                      <span className="threshold-marker hot" title={`Hot starts at ${hotThreshold}`} />
+                      <div className="threshold-legend"><span>Cold</span><span>Warm at {warmThreshold}</span><span>Hot at {hotThreshold}</span></div>
+                    </div>
+                    <div className="intelligence-field-grid two-columns">
+                      <UiLabel htmlFor="warm-threshold">Warm threshold<UiInput id="warm-threshold" type="number" min="0" max="100" value={form.warmThreshold} disabled={!canManage || saving} aria-invalid={Boolean(getFieldError("thresholds"))} onChange={(event) => updateField("warmThreshold", event.target.value)} /></UiLabel>
+                      <UiLabel htmlFor="hot-threshold">Hot threshold<UiInput id="hot-threshold" type="number" min="0" max="100" value={form.hotThreshold} disabled={!canManage || saving} aria-invalid={Boolean(getFieldError("thresholds"))} onChange={(event) => updateField("hotThreshold", event.target.value)} /></UiLabel>
+                    </div>
+                    {getFieldError("thresholds") && <small className="field-error">{getFieldError("thresholds")}</small>}
+                  </section>
+
+                  <UiSeparator />
+
+                  <section className="intelligence-form-section">
+                    <div className="intelligence-section-title">
+                      <div><strong>Signal weights</strong><span>Balance the factors used in every lead score.</span></div>
+                      <UiBadge variant={totalWeight > 0 ? "secondary" : "warning"}>{totalWeight} total</UiBadge>
+                    </div>
+                    <div className="intelligence-field-grid weight-grid">
+                      {weightFields.map((field) => (
+                        <UiLabel key={field} htmlFor={`weight-${field}`}>
+                          {formatWeightLabel(field).replace(" Weight", "")}
+                          <span className="intelligence-input-suffix"><UiInput id={`weight-${field}`} type="number" min="0" max="100" value={form[field]} disabled={!canManage || saving} aria-invalid={Boolean(getFieldError("weights"))} onChange={(event) => updateField(field, event.target.value)} /><span>%</span></span>
+                        </UiLabel>
+                      ))}
+                    </div>
+                    {getFieldError("weights") && <small className="field-error">{getFieldError("weights")}</small>}
+                  </section>
+                </UiCardContent>
+              </UiCard>
+
+              <UiCard className="intelligence-module-card">
+                <UiCardHeader>
+                  <div className="intelligence-module-heading">
+                    <span className="intelligence-module-icon violet"><GitBranch size={18} /></span>
+                    <div><UiCardTitle>Lead distribution</UiCardTitle><UiCardDescription>Automatically route new leads to eligible users.</UiCardDescription></div>
+                  </div>
+                  <UiSwitch checked={form.distributionEnabled} disabled={!canManage || saving} onCheckedChange={(checked) => updateField("distributionEnabled", checked)} aria-label="Enable automatic lead distribution" />
+                </UiCardHeader>
+                <UiSeparator />
+                <UiCardContent className="intelligence-module-content">
+                  <section className="intelligence-form-section">
+                    <div className="intelligence-section-title">
+                      <div><strong>Fallback routing</strong><span>Used when no active distribution rule matches.</span></div>
+                    </div>
+                    <UiLabel htmlFor="distribution-strategy">Default strategy
+                      <UiSelect id="distribution-strategy" value={form.defaultDistributionStrategy} disabled={!canManage || saving} onChange={(event) => updateField("defaultDistributionStrategy", event.target.value)}>
+                        {["RoundRobin", "Workload", "DefaultAssignee", "Disabled"].map((item) => <option key={item} value={item}>{formatDistributionStrategy(item)}</option>)}
+                      </UiSelect>
+                    </UiLabel>
+                    <div className="strategy-explanation">
+                      <span className="intelligence-module-icon slate"><Users size={17} /></span>
+                      <div><strong>{formatDistributionStrategy(form.defaultDistributionStrategy)}</strong><p>{distributionStrategyDescription(form.defaultDistributionStrategy)}</p></div>
+                    </div>
+                  </section>
+
+                  <UiSeparator />
+
+                  <section className="intelligence-form-section">
+                    <div className="intelligence-section-title">
+                      <div><strong>Workload guardrail</strong><span>Prevent routing to overloaded counsellors.</span></div>
+                    </div>
+                    <UiLabel htmlFor="max-active-leads">Maximum active leads per user
+                      <UiInput id="max-active-leads" type="number" min="1" max="10000" value={form.maxActiveLeadsPerUser} disabled={!canManage || saving} aria-invalid={Boolean(getFieldError("maxActiveLeadsPerUser"))} onChange={(event) => updateField("maxActiveLeadsPerUser", event.target.value)} />
+                    </UiLabel>
+                    {getFieldError("maxActiveLeadsPerUser") && <small className="field-error">{getFieldError("maxActiveLeadsPerUser")}</small>}
+                    <div className="routing-capacity-note"><strong>{(eligibleUsers * (Number(form.maxActiveLeadsPerUser) || 0)).toLocaleString()}</strong><span>estimated team capacity across {eligibleUsers} eligible users</span></div>
+                  </section>
+                </UiCardContent>
+              </UiCard>
+            </div>
+          </UiCardContent>
+        </UiCard>
       </form>
 
-      <div className="table-card master-table settings-table-card">
-        <div className="settings-section-header">
-          <div><h2>Distribution Rules</h2><p>Rules are evaluated in priority order before the default strategy.</p></div>
-          <div className="settings-hero-actions">
-            {canManage && <button className="secondary-button" type="button" disabled={saving} onClick={onRecalculate}>Recalculate scores</button>}
-            {canManage && <button className="settings-button" type="button" disabled={saving} onClick={onCreateRule}><Plus size={18} />Add rule</button>}
+      <UiCard className="intelligence-rules-card">
+        <UiCardHeader className="intelligence-rules-header">
+          <div className="intelligence-heading-row">
+            <span className="intelligence-heading-icon"><GitBranch size={19} /></span>
+            <div><UiCardTitle>Distribution rules</UiCardTitle><UiCardDescription>Rules run by priority before the fallback routing strategy.</UiCardDescription></div>
           </div>
-        </div>
-        {rules.length === 0 ? <StatePanel title="No distribution rules" message="Default distribution will be used when enabled." /> : (
-          <table>
-            <thead><tr><th>Rule</th><th>Strategy</th><th>Scope</th><th>Targets</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
+          <div className="intelligence-header-actions">
+            {canManage && <UiButton variant="outline" type="button" disabled={saving} onClick={onRecalculate}><RotateCcw size={16} />Recalculate scores</UiButton>}
+            {canManage && <UiButton type="button" disabled={saving} onClick={onCreateRule}><Plus size={17} />Add rule</UiButton>}
+          </div>
+        </UiCardHeader>
+        <UiSeparator />
+        <UiCardContent className="intelligence-rules-content">
+          {!form.distributionEnabled && <div className="intelligence-disabled-notice"><GitBranch size={17} /><span>Rules are configured but will not run while automatic distribution is disabled.</span></div>}
+          {rules.length === 0 ? (
+            <div className="intelligence-empty-state"><span className="intelligence-empty-icon"><GitBranch size={23} /></span><strong>No distribution rules yet</strong><p>Create a rule to route specific branches, courses, or lead sources differently.</p>{canManage && <UiButton variant="outline" onClick={onCreateRule}><Plus size={16} />Create first rule</UiButton>}</div>
+          ) : (
+            <div className="intelligence-rules-table" role="table" aria-label="Distribution rules">
+              <div className="intelligence-rule-row intelligence-rule-head" role="row"><span>Rule</span><span>Strategy</span><span>Scope</span><span>Targets</span><span>Status</span><span className="sr-only">Actions</span></div>
               {rules.map((rule) => (
-                <tr key={rule.id}>
-                  <td><strong>{rule.name}</strong><small>Priority {rule.priorityOrder}</small></td>
-                  <td><Badge label={formatDistributionStrategy(rule.strategy)} /></td>
-                  <td>{describeDistributionScope(rule, options)}</td>
-                  <td>{rule.targetUserIds?.length ? `${rule.targetUserIds.length} users` : "All eligible users"}</td>
-                  <td><Badge label={rule.isActive ? "Active" : "Inactive"} muted={!rule.isActive} /></td>
-                  <td>{canManage ? <button className="icon-button table-action-button" type="button" onClick={() => onEditRule(rule)} title="Edit"><Pencil size={17} /></button> : <span className="team-access-label">View only</span>}</td>
-                </tr>
+                <div className="intelligence-rule-row" role="row" key={rule.id}>
+                  <div className="intelligence-rule-name" role="cell" data-label="Rule"><span className="rule-priority">{rule.priorityOrder}</span><div><strong>{rule.name}</strong><small>Priority {rule.priorityOrder}</small></div></div>
+                  <div role="cell" data-label="Strategy"><UiBadge variant="secondary">{formatDistributionStrategy(rule.strategy)}</UiBadge></div>
+                  <div className="intelligence-rule-copy" role="cell" data-label="Scope">{describeDistributionScope(rule, options)}</div>
+                  <div className="intelligence-rule-copy" role="cell" data-label="Targets">{rule.targetUserIds?.length ? `${rule.targetUserIds.length} selected users` : "All eligible users"}</div>
+                  <div role="cell" data-label="Status"><UiBadge variant={rule.isActive ? "success" : "secondary"}>{rule.isActive ? "Active" : "Inactive"}</UiBadge></div>
+                  <div className="intelligence-rule-action" role="cell">{canManage ? <UiButton variant="ghost" size="icon" onClick={() => onEditRule(rule)} title={`Edit ${rule.name}`} aria-label={`Edit ${rule.name}`}><Pencil size={16} /></UiButton> : <span className="team-access-label">View only</span>}</div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+            </div>
+          )}
+        </UiCardContent>
+      </UiCard>
     </div>
   );
 }
@@ -6573,6 +6687,15 @@ function formatDistributionStrategy(strategy) {
     DefaultAssignee: "Default assignee",
     Disabled: "Disabled",
   }[strategy] || strategy || "Default";
+}
+
+function distributionStrategyDescription(strategy) {
+  return {
+    RoundRobin: "Assigns each new lead to the next eligible user in sequence.",
+    Workload: "Prioritizes the eligible user with the lowest active lead count.",
+    DefaultAssignee: "Routes leads to the default assignee configured for the institute.",
+    Disabled: "Leaves matching leads unassigned for manual review.",
+  }[strategy] || "Applies the configured fallback assignment behavior.";
 }
 
 function formatWeightLabel(field) {
@@ -7419,6 +7542,20 @@ function FollowUpRow({ item, compact = false, saving = false, canManageLeads = f
 
 function Badge({ label, muted, danger, warning }) {
   return <span className={`badge ${muted ? "muted" : ""} ${danger ? "danger" : ""} ${warning ? "warning" : ""}`}>{label}</span>;
+}
+
+function leadDocumentStatusVariant(status) {
+  if (status === "Verified") return "success";
+  if (status === "Rejected") return "danger";
+  if (status === "Pending") return "warning";
+  return "secondary";
+}
+
+function leadPaymentStatusVariant(status) {
+  if (["Paid", "Completed"].includes(status)) return "success";
+  if (["PartiallyPaid", "Partially Paid", "Partial", "Overdue"].includes(status)) return "warning";
+  if (status === "Cancelled") return "secondary";
+  return "outline";
 }
 
 function LeadScoreBadge({ lead }) {

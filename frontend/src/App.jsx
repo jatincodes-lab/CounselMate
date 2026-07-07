@@ -1115,6 +1115,7 @@ function App() {
     <div className="app-shell" style={{ "--tenant-brand": currentUser.tenantBrandColor || "#2171D3" }}>
       <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
         <div className="brand">
+          <div className="brand-mark" aria-hidden="true">CM</div>
           <div className="brand-copy">
             <strong>CounselMate</strong>
             <span>Admission CRM</span>
@@ -1122,29 +1123,34 @@ function App() {
         </div>
         <TenantIdentity user={currentUser} />
 
-        <nav className="nav-list">
+        <nav className="nav-list" aria-label="Primary navigation">
+          <span className="nav-section-label">Workspace</span>
           {navItems.filter((item) => !item.ownerOnly || currentUser.role === "Owner").map((item) => {
             const Icon = item.icon;
+            const isActive = activePage === item.id;
             return (
               <button
                 key={item.id}
-                className={`nav-item ${activePage === item.id ? "active" : ""}`}
+                className={`nav-item ${isActive ? "active" : ""}`}
                 onClick={() => {
                   changeActivePage(item.id);
                   setSidebarOpen(false);
                 }}
               >
                 <Icon size={20} />
-                {item.label}
+                <span>{item.label}</span>
+                {isActive && <small>Current</small>}
               </button>
             );
           })}
         </nav>
 
-        <button className="sidebar-action" onClick={() => openCreateLeadModal()} disabled={!canManageLeads}>
-          <Plus size={18} />
-          New Lead
-        </button>
+        <div className="sidebar-footer">
+          <button className="sidebar-action" onClick={() => openCreateLeadModal()} disabled={!canManageLeads}>
+            <Plus size={18} />
+            New Lead
+          </button>
+        </div>
       </aside>
 
       <main className="main">

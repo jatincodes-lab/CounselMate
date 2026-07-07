@@ -175,8 +175,9 @@ async function createApiError(response) {
 }
 
 export async function getCrmData() {
-  const [dashboard, leads, pipeline, followUps, leadOptions, communicationTemplates] = await Promise.all([
+  const [dashboard, advancedDashboard, leads, pipeline, followUps, leadOptions, communicationTemplates] = await Promise.all([
     request("/dashboard"),
+    request("/dashboard/advanced"),
     request("/leads"),
     request("/pipeline"),
     request("/follow-ups"),
@@ -186,6 +187,7 @@ export async function getCrmData() {
 
   return {
     dashboard,
+    advancedDashboard,
     leads: normalizeLeadList(leads),
     pipeline,
     followUps,

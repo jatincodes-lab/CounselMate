@@ -1549,6 +1549,45 @@ api.MapGet("/dashboard", async (
     ));
 });
 
+api.MapGet("/dashboard/advanced", async (
+    string? startDate,
+    string? endDate,
+    Guid? branchId,
+    Guid? courseId,
+    Guid? assignedUserId,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null)
+    {
+        return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    var range = ResolveReportDateRange(startDate, endDate);
+    if (range.Errors.Count > 0)
+    {
+        return Results.ValidationProblem(range.Errors);
+    }
+
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    var dashboard = await BuildAdvancedDashboardAsync(
+        db,
+        tenant.TenantId,
+        currentUser,
+        accessScope,
+        range.Range!,
+        branchId,
+        courseId,
+        assignedUserId,
+        cancellationToken);
+
+    return Results.Ok(dashboard);
+});
+
 api.MapGet("/reports", async (
     string? startDate,
     string? endDate,
@@ -1694,15 +1733,6 @@ api.MapGet("/reports/counsellor-workspace", async (
     if (courseId is not null) followUps = followUps.Where(item => item.Lead.CourseId == courseId);
     if (sourceId is not null) followUps = followUps.Where(item => item.Lead.LeadSourceId == sourceId);
 
-    static IQueryable<CounsellorAttentionLead> ProjectAttention(IQueryable<Lead> query) => query.Select(lead => new CounsellorAttentionLead(
-        lead.LeadNumber,
-        lead.StudentName,
-        lead.Course.Name,
-        lead.LeadStage.Name,
-        lead.Priority,
-        lead.NextFollowUpAt,
-        lead.Activities.Where(activity => activity.Type != "LeadCreated").Select(activity => (DateTimeOffset?)activity.CreatedAt).Max() ?? lead.CreatedAt));
-
     var overdueLeadIds = followUps
         .Where(item => item.Status == "Scheduled" && item.DueAt < now)
         .Select(item => item.LeadId)
@@ -1727,14 +1757,37 @@ api.MapGet("/reports/counsellor-workspace", async (
         IQueryable<Lead> query)
     {
         var count = await query.CountAsync(cancellationToken);
-        var orderedQuery = query
-            .OrderByDescending(lead => lead.Priority == "Urgent")
-            .ThenByDescending(lead => lead.Priority == "High")
-            .ThenBy(lead => lead.NextFollowUpAt)
-            .ThenBy(lead => lead.StudentName);
-        var items = await ProjectAttention(orderedQuery)
+        var rows = await query
+            .Select(lead => new
+            {
+                lead.LeadNumber,
+                lead.StudentName,
+                Course = lead.Course.Name,
+                Stage = lead.LeadStage.Name,
+                lead.Priority,
+                lead.NextFollowUpAt,
+                LastActivityAt = lead.Activities
+                    .Where(activity => activity.Type != "LeadCreated")
+                    .Select(activity => (DateTimeOffset?)activity.CreatedAt)
+                    .Max() ?? lead.CreatedAt,
+                PriorityRank = lead.Priority == "Urgent" ? 0 : lead.Priority == "High" ? 1 : lead.Priority == "Medium" ? 2 : 3
+            })
+            .OrderBy(row => row.PriorityRank)
+            .ThenBy(row => row.NextFollowUpAt == null)
+            .ThenBy(row => row.NextFollowUpAt)
+            .ThenBy(row => row.StudentName)
             .Take(8)
             .ToListAsync(cancellationToken);
+        var items = rows
+            .Select(lead => new CounsellorAttentionLead(
+                lead.LeadNumber,
+                lead.StudentName,
+                lead.Course,
+                lead.Stage,
+                lead.Priority,
+                lead.NextFollowUpAt,
+                lead.LastActivityAt))
+            .ToList();
         return new CounsellorAttentionGroup(key, title, guidance, count, items);
     }
 
@@ -5395,6 +5448,394 @@ static ReportDateRangeResult ResolveReportDateRange(string? startDate, string? e
     return new ReportDateRangeResult(new ReportDateRange(parsedStart, parsedEnd, start, endExclusive), errors);
 }
 
+static async Task<AdvancedDashboardResponse> BuildAdvancedDashboardAsync(
+    AppDbContext db,
+    Guid tenantId,
+    AuthenticatedUser? currentUser,
+    LeadAccessScope accessScope,
+    ReportDateRange range,
+    Guid? branchId,
+    Guid? courseId,
+    Guid? assignedUserId,
+    CancellationToken cancellationToken)
+{
+    var now = IndianClock.Now();
+    var scopedLeads = ApplyLeadAccessScope(
+        db.Leads.AsNoTracking().Where(lead => lead.TenantId == tenantId && lead.ArchivedAt == null),
+        currentUser,
+        accessScope);
+
+    if (branchId is not null) scopedLeads = scopedLeads.Where(lead => lead.BranchId == branchId);
+    if (courseId is not null) scopedLeads = scopedLeads.Where(lead => lead.CourseId == courseId);
+    if (assignedUserId is not null) scopedLeads = scopedLeads.Where(lead => lead.AssignedUserId == assignedUserId);
+
+    var scopedLeadIds = scopedLeads.Select(lead => lead.Id);
+    var periodLeadsQuery = scopedLeads.Where(lead => lead.CreatedAt >= range.Start && lead.CreatedAt < range.EndExclusive);
+    var periodLeads = await periodLeadsQuery
+        .Select(lead => new AdvancedLeadAnalyticsRow(
+            lead.Id,
+            lead.BranchId,
+            lead.Branch == null ? "No branch" : lead.Branch.Name,
+            lead.CourseId,
+            lead.Course.Name,
+            lead.AssignedUserId,
+            lead.AssignedUser == null ? "Unassigned" : lead.AssignedUser.FullName,
+            lead.CreatedAt,
+            lead.LeadStage.IsWonStage,
+            lead.LeadStage.IsLostStage))
+        .ToListAsync(cancellationToken);
+
+    var applicationQuery = db.AdmissionApplications.AsNoTracking()
+        .Where(item =>
+            item.TenantId == tenantId &&
+            scopedLeadIds.Contains(item.LeadId) &&
+            item.CreatedAt >= range.Start &&
+            item.CreatedAt < range.EndExclusive);
+    if (branchId is not null) applicationQuery = applicationQuery.Where(item => item.BranchId == branchId);
+    if (courseId is not null) applicationQuery = applicationQuery.Where(item => item.CourseId == courseId);
+    if (assignedUserId is not null) applicationQuery = applicationQuery.Where(item => item.Lead.AssignedUserId == assignedUserId);
+
+    var applications = await applicationQuery
+        .Select(item => new AdvancedActivityAnalyticsRow(
+            item.LeadId,
+            item.BranchId,
+            item.Branch == null ? "No branch" : item.Branch.Name,
+            item.CourseId,
+            item.Course.Name,
+            item.Lead.AssignedUserId,
+            item.Lead.AssignedUser == null ? "Unassigned" : item.Lead.AssignedUser.FullName,
+            item.CreatedAt,
+            item.Status))
+        .ToListAsync(cancellationToken);
+
+    var enrollmentQuery = db.Enrollments.AsNoTracking()
+        .Where(item =>
+            item.TenantId == tenantId &&
+            scopedLeadIds.Contains(item.LeadId) &&
+            item.EnrolledAt >= range.Start &&
+            item.EnrolledAt < range.EndExclusive);
+    if (branchId is not null) enrollmentQuery = enrollmentQuery.Where(item => item.BranchId == branchId);
+    if (courseId is not null) enrollmentQuery = enrollmentQuery.Where(item => item.CourseId == courseId);
+    if (assignedUserId is not null) enrollmentQuery = enrollmentQuery.Where(item => item.Lead.AssignedUserId == assignedUserId);
+
+    var enrollments = await enrollmentQuery
+        .Select(item => new AdvancedActivityAnalyticsRow(
+            item.LeadId,
+            item.BranchId,
+            item.Branch == null ? "No branch" : item.Branch.Name,
+            item.CourseId,
+            item.Course.Name,
+            item.Lead.AssignedUserId,
+            item.Lead.AssignedUser == null ? "Unassigned" : item.Lead.AssignedUser.FullName,
+            item.EnrolledAt,
+            item.Status))
+        .ToListAsync(cancellationToken);
+
+    var activePayments = db.LeadPayments.AsNoTracking()
+        .Where(item =>
+            item.TenantId == tenantId &&
+            item.CancelledAt == null &&
+            item.Status != "Cancelled" &&
+            scopedLeadIds.Contains(item.LeadId));
+
+    var periodPaymentItems = await activePayments
+        .Where(item => item.CreatedAt >= range.Start && item.CreatedAt < range.EndExclusive)
+        .Select(item => new AdvancedPaymentItemAnalyticsRow(
+            item.Id,
+            item.LeadId,
+            item.Lead.BranchId,
+            item.Lead.Branch == null ? "No branch" : item.Lead.Branch.Name,
+            item.Lead.CourseId,
+            item.Lead.Course.Name,
+            item.Lead.AssignedUserId,
+            item.Lead.AssignedUser == null ? "Unassigned" : item.Lead.AssignedUser.FullName,
+            item.CreatedAt,
+            item.AmountDue,
+            item.Transactions.Sum(transaction => (decimal?)transaction.Amount) ?? 0m))
+        .ToListAsync(cancellationToken);
+
+    var periodTransactions = await db.LeadPaymentTransactions.AsNoTracking()
+        .Where(item =>
+            item.TenantId == tenantId &&
+            item.PaidAt >= range.Start &&
+            item.PaidAt < range.EndExclusive &&
+            item.LeadPayment.CancelledAt == null &&
+            item.LeadPayment.Status != "Cancelled" &&
+            scopedLeadIds.Contains(item.LeadPayment.LeadId))
+        .Select(item => new AdvancedPaymentTransactionAnalyticsRow(
+            item.LeadPayment.LeadId,
+            item.LeadPayment.Lead.BranchId,
+            item.LeadPayment.Lead.Branch == null ? "No branch" : item.LeadPayment.Lead.Branch.Name,
+            item.LeadPayment.Lead.CourseId,
+            item.LeadPayment.Lead.Course.Name,
+            item.LeadPayment.Lead.AssignedUserId,
+            item.LeadPayment.Lead.AssignedUser == null ? "Unassigned" : item.LeadPayment.Lead.AssignedUser.FullName,
+            item.PaidAt,
+            item.Amount))
+        .ToListAsync(cancellationToken);
+
+    var expectedRevenue = periodPaymentItems.Sum(item => item.AmountDue);
+    var collectedRevenue = periodTransactions.Sum(item => item.Amount);
+    var pendingBalance = periodPaymentItems.Sum(item => Math.Max(0m, item.AmountDue - item.PaidAllTime));
+    var totalLeads = periodLeads.Count;
+    var enrolledLeads = enrollments.Select(item => item.LeadId).Distinct().Count();
+    var approvedApplications = applications.Count(item => string.Equals(item.Status, "Approved", StringComparison.OrdinalIgnoreCase));
+
+    var allActivePaymentBalances = await activePayments
+        .Select(item => new
+        {
+            item.LeadId,
+            Balance = item.AmountDue - (item.Transactions.Sum(transaction => (decimal?)transaction.Amount) ?? 0m),
+            item.DueDate
+        })
+        .ToListAsync(cancellationToken);
+    var clearPaymentLeadCount = allActivePaymentBalances
+        .Where(item => item.Balance <= 0)
+        .Select(item => item.LeadId)
+        .Distinct()
+        .Count();
+
+    var overdueFollowUps = await db.FollowUps.AsNoTracking().CountAsync(
+        item =>
+            item.TenantId == tenantId &&
+            item.Status == "Scheduled" &&
+            item.DueAt < now &&
+            scopedLeadIds.Contains(item.LeadId),
+        cancellationToken);
+    var overduePaymentCount = allActivePaymentBalances.Count(item => item.Balance > 0 && item.DueDate != null && item.DueDate < now);
+    var approvedNotEnrolled = await db.AdmissionApplications.AsNoTracking().CountAsync(
+        item =>
+            item.TenantId == tenantId &&
+            item.Status == "Approved" &&
+            item.Enrollment == null &&
+            scopedLeadIds.Contains(item.LeadId),
+        cancellationToken);
+    var leadsWithoutNextAction = await scopedLeads.CountAsync(
+        lead => lead.NextFollowUpAt == null && !lead.LeadStage.IsWonStage && !lead.LeadStage.IsLostStage,
+        cancellationToken);
+
+    var alerts = new[]
+    {
+        new AdvancedDashboardAlert("overdueFollowUps", "Overdue follow-ups", overdueFollowUps, overdueFollowUps > 0 ? "danger" : "success", "Scheduled conversations that already crossed their due time."),
+        new AdvancedDashboardAlert("overduePayments", "Payment balance due", overduePaymentCount, overduePaymentCount > 0 ? "warning" : "success", "Active fee items with unpaid balance and a past due date."),
+        new AdvancedDashboardAlert("approvedNotEnrolled", "Approved not enrolled", approvedNotEnrolled, approvedNotEnrolled > 0 ? "warning" : "success", "Approved applications that still need enrollment completion."),
+        new AdvancedDashboardAlert("noNextAction", "Leads without next action", leadsWithoutNextAction, leadsWithoutNextAction > 0 ? "neutral" : "success", "Open leads that do not have a planned follow-up.")
+    };
+
+    var funnel = BuildAdvancedFunnel(totalLeads, applications.Select(item => item.LeadId).Distinct().Count(), approvedApplications, enrolledLeads, clearPaymentLeadCount);
+    var trend = BuildAdvancedRevenueTrend(range, periodLeads, applications, enrollments, periodPaymentItems, periodTransactions);
+    var courseRows = BuildAdvancedPerformanceRows("course", periodLeads, applications, enrollments, periodPaymentItems, periodTransactions);
+    var branchRows = BuildAdvancedPerformanceRows("branch", periodLeads, applications, enrollments, periodPaymentItems, periodTransactions);
+    var counselorRows = BuildAdvancedPerformanceRows("counselor", periodLeads, applications, enrollments, periodPaymentItems, periodTransactions);
+
+    return new AdvancedDashboardResponse(
+        IndianClock.Now(),
+        range.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        range.EndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        new ReportAccessResponse(accessScope.CanViewAll ? "All accessible tenant leads" : "Scoped to your assigned leads and branch", currentUser?.Role ?? string.Empty),
+        new AdvancedDashboardSummaryResponse(
+            totalLeads,
+            applications.Select(item => item.LeadId).Distinct().Count(),
+            approvedApplications,
+            enrolledLeads,
+            expectedRevenue,
+            collectedRevenue,
+            pendingBalance,
+            CalculateMoneyRate(collectedRevenue, expectedRevenue),
+            CalculateRate(enrolledLeads, Math.Max(totalLeads, 1)),
+            overdueFollowUps),
+        trend,
+        funnel,
+        courseRows,
+        branchRows,
+        counselorRows,
+        alerts);
+}
+
+static IReadOnlyCollection<AdvancedDashboardFunnelStep> BuildAdvancedFunnel(int leads, int applications, int approved, int enrolled, int paymentsCleared)
+{
+    var baseline = Math.Max(leads, 1);
+    return
+    [
+        new AdvancedDashboardFunnelStep("leads", "Leads", leads, CalculateRate(leads, baseline)),
+        new AdvancedDashboardFunnelStep("applications", "Applications", applications, CalculateRate(applications, baseline)),
+        new AdvancedDashboardFunnelStep("approved", "Approved", approved, CalculateRate(approved, baseline)),
+        new AdvancedDashboardFunnelStep("enrolled", "Enrolled", enrolled, CalculateRate(enrolled, baseline)),
+        new AdvancedDashboardFunnelStep("paymentsCleared", "Payments Cleared", paymentsCleared, CalculateRate(paymentsCleared, baseline))
+    ];
+}
+
+static IReadOnlyCollection<AdvancedDashboardTrendPoint> BuildAdvancedRevenueTrend(
+    ReportDateRange range,
+    IReadOnlyCollection<AdvancedLeadAnalyticsRow> leads,
+    IReadOnlyCollection<AdvancedActivityAnalyticsRow> applications,
+    IReadOnlyCollection<AdvancedActivityAnalyticsRow> enrollments,
+    IReadOnlyCollection<AdvancedPaymentItemAnalyticsRow> paymentItems,
+    IReadOnlyCollection<AdvancedPaymentTransactionAnalyticsRow> transactions)
+{
+    var days = (range.EndDate.ToDateTime(TimeOnly.MinValue) - range.StartDate.ToDateTime(TimeOnly.MinValue)).Days + 1;
+    var monthly = days > 45;
+    var points = new List<AdvancedDashboardTrendPoint>();
+
+    if (monthly)
+    {
+        var cursor = new DateOnly(range.StartDate.Year, range.StartDate.Month, 1);
+        var endMonth = new DateOnly(range.EndDate.Year, range.EndDate.Month, 1);
+        while (cursor <= endMonth)
+        {
+            var bucketStart = cursor;
+            var bucketEnd = cursor.AddMonths(1);
+            points.Add(BuildAdvancedTrendPoint(
+                cursor.ToString("MMM yyyy", CultureInfo.InvariantCulture),
+                cursor.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                bucketStart,
+                bucketEnd,
+                leads,
+                applications,
+                enrollments,
+                paymentItems,
+                transactions));
+            cursor = cursor.AddMonths(1);
+        }
+        return points;
+    }
+
+    for (var cursor = range.StartDate; cursor <= range.EndDate; cursor = cursor.AddDays(1))
+    {
+        points.Add(BuildAdvancedTrendPoint(
+            cursor.ToString("dd MMM", CultureInfo.InvariantCulture),
+            cursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            cursor,
+            cursor.AddDays(1),
+            leads,
+            applications,
+            enrollments,
+            paymentItems,
+            transactions));
+    }
+
+    return points;
+}
+
+static AdvancedDashboardTrendPoint BuildAdvancedTrendPoint(
+    string label,
+    string date,
+    DateOnly start,
+    DateOnly endExclusive,
+    IReadOnlyCollection<AdvancedLeadAnalyticsRow> leads,
+    IReadOnlyCollection<AdvancedActivityAnalyticsRow> applications,
+    IReadOnlyCollection<AdvancedActivityAnalyticsRow> enrollments,
+    IReadOnlyCollection<AdvancedPaymentItemAnalyticsRow> paymentItems,
+    IReadOnlyCollection<AdvancedPaymentTransactionAnalyticsRow> transactions)
+{
+    static DateOnly ToLocalDate(DateTimeOffset value) => DateOnly.FromDateTime(value.ToOffset(IndianClock.Offset).DateTime);
+    var bucketPayments = paymentItems.Where(item => ToLocalDate(item.CreatedAt) >= start && ToLocalDate(item.CreatedAt) < endExclusive).ToArray();
+    return new AdvancedDashboardTrendPoint(
+        label,
+        date,
+        bucketPayments.Sum(item => item.AmountDue),
+        transactions.Where(item => ToLocalDate(item.PaidAt) >= start && ToLocalDate(item.PaidAt) < endExclusive).Sum(item => item.Amount),
+        bucketPayments.Sum(item => Math.Max(0m, item.AmountDue - item.PaidAllTime)),
+        leads.Count(item => ToLocalDate(item.CreatedAt) >= start && ToLocalDate(item.CreatedAt) < endExclusive),
+        applications.Count(item => ToLocalDate(item.OccurredAt) >= start && ToLocalDate(item.OccurredAt) < endExclusive),
+        enrollments.Count(item => ToLocalDate(item.OccurredAt) >= start && ToLocalDate(item.OccurredAt) < endExclusive));
+}
+
+static IReadOnlyCollection<AdvancedDashboardPerformanceRow> BuildAdvancedPerformanceRows(
+    string dimension,
+    IReadOnlyCollection<AdvancedLeadAnalyticsRow> leads,
+    IReadOnlyCollection<AdvancedActivityAnalyticsRow> applications,
+    IReadOnlyCollection<AdvancedActivityAnalyticsRow> enrollments,
+    IReadOnlyCollection<AdvancedPaymentItemAnalyticsRow> paymentItems,
+    IReadOnlyCollection<AdvancedPaymentTransactionAnalyticsRow> transactions)
+{
+    var rows = new Dictionary<string, AdvancedDashboardPerformanceAccumulator>(StringComparer.OrdinalIgnoreCase);
+
+    AdvancedDashboardPerformanceAccumulator Get(Guid? id, string name)
+    {
+        var normalizedName = string.IsNullOrWhiteSpace(name) ? "Unassigned" : name;
+        var key = id?.ToString("N", CultureInfo.InvariantCulture) ?? $"none:{normalizedName}";
+        if (!rows.TryGetValue(key, out var row))
+        {
+            row = new AdvancedDashboardPerformanceAccumulator(id, normalizedName);
+            rows[key] = row;
+        }
+        return row;
+    }
+
+    (Guid? Id, string Name) LeadKey(AdvancedLeadAnalyticsRow row) => dimension switch
+    {
+        "branch" => (row.BranchId, row.Branch),
+        "counselor" => (row.AssignedUserId, row.Counselor),
+        _ => (row.CourseId, row.Course)
+    };
+    (Guid? Id, string Name) ActivityKey(AdvancedActivityAnalyticsRow row) => dimension switch
+    {
+        "branch" => (row.BranchId, row.Branch),
+        "counselor" => (row.AssignedUserId, row.Counselor),
+        _ => (row.CourseId, row.Course)
+    };
+    (Guid? Id, string Name) PaymentItemKey(AdvancedPaymentItemAnalyticsRow row) => dimension switch
+    {
+        "branch" => (row.BranchId, row.Branch),
+        "counselor" => (row.AssignedUserId, row.Counselor),
+        _ => (row.CourseId, row.Course)
+    };
+    (Guid? Id, string Name) TransactionKey(AdvancedPaymentTransactionAnalyticsRow row) => dimension switch
+    {
+        "branch" => (row.BranchId, row.Branch),
+        "counselor" => (row.AssignedUserId, row.Counselor),
+        _ => (row.CourseId, row.Course)
+    };
+
+    foreach (var lead in leads)
+    {
+        var key = LeadKey(lead);
+        var row = Get(key.Id, key.Name);
+        row.Leads += 1;
+    }
+    foreach (var application in applications)
+    {
+        var key = ActivityKey(application);
+        Get(key.Id, key.Name).Applications += 1;
+    }
+    foreach (var enrollment in enrollments)
+    {
+        var key = ActivityKey(enrollment);
+        Get(key.Id, key.Name).Enrollments += 1;
+    }
+    foreach (var payment in paymentItems)
+    {
+        var key = PaymentItemKey(payment);
+        var row = Get(key.Id, key.Name);
+        row.ExpectedRevenue += payment.AmountDue;
+        row.PendingBalance += Math.Max(0m, payment.AmountDue - payment.PaidAllTime);
+    }
+    foreach (var transaction in transactions)
+    {
+        var key = TransactionKey(transaction);
+        Get(key.Id, key.Name).CollectedRevenue += transaction.Amount;
+    }
+
+    return rows.Values
+        .Select(item => new AdvancedDashboardPerformanceRow(
+            item.Id,
+            item.Name,
+            item.Leads,
+            item.Applications,
+            item.Enrollments,
+            item.ExpectedRevenue,
+            item.CollectedRevenue,
+            item.PendingBalance,
+            CalculateRate(item.Enrollments, Math.Max(item.Leads, 1)),
+            CalculateMoneyRate(item.CollectedRevenue, item.ExpectedRevenue)))
+        .OrderByDescending(item => item.CollectedRevenue)
+        .ThenByDescending(item => item.Enrollments)
+        .ThenBy(item => item.Name)
+        .Take(8)
+        .ToArray();
+}
+
 static async Task<ReportsResponse> BuildReportsAsync(
     AppDbContext db,
     Guid tenantId,
@@ -5582,6 +6023,11 @@ static IReadOnlyCollection<ReportExportRow> BuildReportExportRows(ReportsRespons
 static decimal CalculateRate(int numerator, int denominator)
 {
     return denominator <= 0 ? 0m : Math.Round((decimal)numerator / denominator * 100m, 1);
+}
+
+static decimal CalculateMoneyRate(decimal numerator, decimal denominator)
+{
+    return denominator <= 0m ? 0m : Math.Round(numerator / denominator * 100m, 1);
 }
 
 static async Task<LeadImportFormRequest> ReadLeadImportFormAsync(HttpRequest request, bool requireFingerprint, CancellationToken cancellationToken)
@@ -7213,6 +7659,116 @@ record DashboardSummary(
     int Enrolled,
     int PendingFollowUps,
     decimal ConversionRate);
+
+record AdvancedDashboardResponse(
+    DateTimeOffset GeneratedAt,
+    string StartDate,
+    string EndDate,
+    ReportAccessResponse Access,
+    AdvancedDashboardSummaryResponse Summary,
+    IReadOnlyCollection<AdvancedDashboardTrendPoint> RevenueTrend,
+    IReadOnlyCollection<AdvancedDashboardFunnelStep> Funnel,
+    IReadOnlyCollection<AdvancedDashboardPerformanceRow> Courses,
+    IReadOnlyCollection<AdvancedDashboardPerformanceRow> Branches,
+    IReadOnlyCollection<AdvancedDashboardPerformanceRow> Counselors,
+    IReadOnlyCollection<AdvancedDashboardAlert> Alerts);
+
+record AdvancedDashboardSummaryResponse(
+    int TotalLeads,
+    int Applications,
+    int ApprovedApplications,
+    int Enrollments,
+    decimal ExpectedRevenue,
+    decimal CollectedRevenue,
+    decimal PendingBalance,
+    decimal CollectionRate,
+    decimal EnrollmentRate,
+    int OverdueFollowUps);
+
+record AdvancedDashboardTrendPoint(
+    string Label,
+    string Date,
+    decimal ExpectedRevenue,
+    decimal CollectedRevenue,
+    decimal PendingBalance,
+    int Leads,
+    int Applications,
+    int Enrollments);
+
+record AdvancedDashboardFunnelStep(string Key, string Label, int Count, decimal Percentage);
+
+record AdvancedDashboardPerformanceRow(
+    Guid? Id,
+    string Name,
+    int Leads,
+    int Applications,
+    int Enrollments,
+    decimal ExpectedRevenue,
+    decimal CollectedRevenue,
+    decimal PendingBalance,
+    decimal EnrollmentRate,
+    decimal CollectionRate);
+
+record AdvancedDashboardAlert(string Key, string Title, int Count, string Severity, string Description);
+
+record AdvancedLeadAnalyticsRow(
+    Guid Id,
+    Guid? BranchId,
+    string Branch,
+    Guid CourseId,
+    string Course,
+    Guid? AssignedUserId,
+    string Counselor,
+    DateTimeOffset CreatedAt,
+    bool IsWonStage,
+    bool IsLostStage);
+
+record AdvancedActivityAnalyticsRow(
+    Guid LeadId,
+    Guid? BranchId,
+    string Branch,
+    Guid CourseId,
+    string Course,
+    Guid? AssignedUserId,
+    string Counselor,
+    DateTimeOffset OccurredAt,
+    string Status);
+
+record AdvancedPaymentItemAnalyticsRow(
+    Guid PaymentId,
+    Guid LeadId,
+    Guid? BranchId,
+    string Branch,
+    Guid CourseId,
+    string Course,
+    Guid? AssignedUserId,
+    string Counselor,
+    DateTimeOffset CreatedAt,
+    decimal AmountDue,
+    decimal PaidAllTime);
+
+record AdvancedPaymentTransactionAnalyticsRow(
+    Guid LeadId,
+    Guid? BranchId,
+    string Branch,
+    Guid CourseId,
+    string Course,
+    Guid? AssignedUserId,
+    string Counselor,
+    DateTimeOffset PaidAt,
+    decimal Amount);
+
+sealed class AdvancedDashboardPerformanceAccumulator(Guid? id, string name)
+{
+    public Guid? Id { get; } = id;
+    public string Name { get; } = name;
+    public int Leads { get; set; }
+    public int Applications { get; set; }
+    public int Enrollments { get; set; }
+    public decimal ExpectedRevenue { get; set; }
+    public decimal CollectedRevenue { get; set; }
+    public decimal PendingBalance { get; set; }
+}
 
 record ReportDateRange(DateOnly StartDate, DateOnly EndDate, DateTimeOffset Start, DateTimeOffset EndExclusive);
 record ReportDateRangeResult(ReportDateRange? Range, Dictionary<string, string[]> Errors);

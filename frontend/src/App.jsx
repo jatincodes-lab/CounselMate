@@ -197,6 +197,7 @@ function App() {
   });
   const [crmData, setCrmData] = useState({
     dashboard: null,
+    advancedDashboard: null,
     leads: emptyLeadList(),
     pipeline: [],
     followUps: [],
@@ -629,6 +630,7 @@ function App() {
     setReportsStatus({ loading: false, error: "", exporting: "" });
     setCrmData({
       dashboard: null,
+      advancedDashboard: null,
       leads: emptyLeadList(),
       pipeline: [],
       followUps: [],
@@ -1218,6 +1220,7 @@ function App() {
           {activePage === "dashboard" && (
             <Dashboard
               dashboard={crmData.dashboard}
+              advancedDashboard={crmData.advancedDashboard}
               followUps={crmData.followUps}
               pipeline={crmData.pipeline}
               loading={crmStatus.loading}
@@ -1943,17 +1946,29 @@ function PageTitle({ title, subtitle, action }) {
 
 const DASHBOARD_CHART_COLORS = ["#2563eb", "#0f766e", "#f59e0b", "#7c3aed", "#dc2626", "#64748b"];
 
-function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, onRetry, onNewLead, canManageLeads }) {
+function Dashboard({ dashboard, advancedDashboard, followUps = [], pipeline = [], loading, error, onRetry, onNewLead, canManageLeads }) {
   const now = Date.now();
   const totalLeads = Number(dashboard?.totalLeads || 0);
-  const newLeadsToday = Number(dashboard?.newLeadsToday || 0);
-  const contacted = Number(dashboard?.contacted || 0);
   const enrolled = Number(dashboard?.enrolled || 0);
-  const openLeads = Math.max(totalLeads - enrolled, 0);
   const conversionRate = totalLeads > 0 ? Math.round((enrolled / totalLeads) * 100) : 0;
   const scheduledFollowUps = followUps.filter((item) => item.status === "Scheduled");
-  const overdueFollowUps = scheduledFollowUps.filter((item) => item.dueAt && new Date(item.dueAt).getTime() < now).length;
   const highPriorityFollowUps = scheduledFollowUps.filter((item) => ["Urgent", "High"].includes(item.priority)).length;
+  const advancedSummary = advancedDashboard?.summary;
+  const collectionRate = Number(advancedSummary?.collectionRate || 0);
+  const enrollmentRate = Number(advancedSummary?.enrollmentRate || conversionRate);
+  const revenueTrend = (advancedDashboard?.revenueTrend || []).map((item) => ({
+    ...item,
+    expectedRevenue: Number(item.expectedRevenue || 0),
+    collectedRevenue: Number(item.collectedRevenue || 0),
+    pendingBalance: Number(item.pendingBalance || 0),
+    leads: Number(item.leads || 0),
+    applications: Number(item.applications || 0),
+    enrollments: Number(item.enrollments || 0),
+  }));
+  const alerts = advancedDashboard?.alerts || [];
+  const rangeLabel = advancedDashboard?.startDate && advancedDashboard?.endDate
+    ? `${formatDate(advancedDashboard.startDate)} - ${formatDate(advancedDashboard.endDate)}`
+    : "Last 30 days";
 
   const pipelineData = useMemo(() => {
     return (pipeline || [])
@@ -1966,18 +1981,24 @@ function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, o
   }, [pipeline]);
 
   const pipelineTotal = pipelineData.reduce((sum, item) => sum + item.count, 0);
-  const pipelineWithLeads = pipelineData.filter((item) => item.count > 0);
-  const progressData = [
-    { name: "New", value: newLeadsToday },
-    { name: "Contacted", value: contacted },
-    { name: "Open", value: openLeads },
-    { name: "Enrolled", value: enrolled },
+  const funnelData = (advancedDashboard?.funnel || []).map((item, index) => ({
+    name: item.label,
+    count: Number(item.count || 0),
+    percentage: Number(item.percentage || 0),
+    fill: DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length],
+  }));
+  const funnelWithCounts = funnelData.filter((item) => item.count > 0);
+  const activityData = [
+    { name: "Leads", value: Number(advancedSummary?.totalLeads ?? totalLeads) },
+    { name: "Applications", value: Number(advancedSummary?.applications || 0) },
+    { name: "Approved", value: Number(advancedSummary?.approvedApplications || 0) },
+    { name: "Enrollments", value: Number(advancedSummary?.enrollments ?? enrolled) },
   ];
   const focusItems = [
     {
-      title: overdueFollowUps > 0 ? "Recover overdue follow-ups" : "Follow-up discipline is clean",
-      description: overdueFollowUps > 0 ? `${overdueFollowUps} scheduled follow-up${overdueFollowUps === 1 ? "" : "s"} crossed the due time.` : "No overdue scheduled follow-ups in the current queue.",
-      tone: overdueFollowUps > 0 ? "danger" : "success",
+      title: collectionRate >= 80 ? "Collection health is strong" : "Improve fee collection velocity",
+      description: `${collectionRate}% of expected revenue was collected in this period.`,
+      tone: collectionRate >= 80 ? "success" : collectionRate >= 50 ? "warning" : "danger",
     },
     {
       title: highPriorityFollowUps > 0 ? "Call high intent students first" : "No high-priority queue pressure",
@@ -1985,9 +2006,9 @@ function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, o
       tone: highPriorityFollowUps > 0 ? "warning" : "neutral",
     },
     {
-      title: conversionRate >= 20 ? "Enrollment conversion looks healthy" : "Improve stage movement",
-      description: `${conversionRate}% of total leads are enrolled. Review stuck stages before adding more cold leads.`,
-      tone: conversionRate >= 20 ? "success" : "neutral",
+      title: enrollmentRate >= 20 ? "Enrollment conversion looks healthy" : "Improve admission movement",
+      description: `${enrollmentRate}% of period leads converted into enrollments.`,
+      tone: enrollmentRate >= 20 ? "success" : "neutral",
     },
   ];
 
@@ -1996,10 +2017,11 @@ function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, o
       <section className="dashboard-hero">
         <div>
           <span className="eyebrow">Admissions command center</span>
-          <h1>Counsellor Dashboard</h1>
-          <p>Live view of admission workload, lead movement, and follow-up pressure.</p>
+          <h1>Revenue Analytics Dashboard</h1>
+          <p>Track admissions pipeline, expected revenue, collected fees, and operational risks in one view.</p>
         </div>
         <div className="dashboard-hero-actions">
+          <span className="dashboard-range">{rangeLabel}</span>
           <span className="dashboard-sync">{loading ? "Refreshing live data..." : "Live CRM data"}</span>
           <button className="primary-button" onClick={onNewLead} disabled={!canManageLeads}>
             <Plus size={18} />
@@ -2009,13 +2031,110 @@ function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, o
       </section>
 
       <div className="metric-grid dashboard-metric-grid">
-        <Metric title="Total Leads" value={formatNumber(totalLeads)} trend={`${conversionRate}% enrolled`} />
-        <Metric title="New Today" value={formatNumber(newLeadsToday)} trend="Needs first touch" warning={newLeadsToday > 0} />
-        <Metric title="Contacted" value={formatNumber(contacted)} trend="Active conversations" />
-        <Metric title="Enrolled" value={formatNumber(enrolled)} trend="Converted students" />
+        <Metric title="Expected Revenue" value={formatCurrency(advancedSummary?.expectedRevenue || 0)} trend={`${collectionRate}% collected`} />
+        <Metric title="Collected Revenue" value={formatCurrency(advancedSummary?.collectedRevenue || 0)} trend="Payments received" />
+        <Metric title="Pending Balance" value={formatCurrency(advancedSummary?.pendingBalance || 0)} trend="Open fee balance" warning={Number(advancedSummary?.pendingBalance || 0) > 0} />
+        <Metric title="Enrollments" value={formatNumber(Number(advancedSummary?.enrollments ?? enrolled))} trend={`${enrollmentRate}% enrollment rate`} />
       </div>
 
       <div className="dashboard-grid dashboard-command-grid">
+        <Card title="Revenue Trend" badge={rangeLabel} className="wide-card dashboard-pipeline-card">
+          {loading && <StatePanel title="Loading revenue" message="Fetching live revenue analytics..." />}
+          {error && <StatePanel title="Could not load revenue" message={error} action={onRetry} />}
+          {!loading && !error && revenueTrend.length === 0 && <StatePanel title="No revenue data" message="Expected and collected revenue will appear once payment items are created." />}
+          {!loading && !error && (
+            <div className="chart-shell">
+              <ResponsiveContainer width="100%" height={238}>
+                <AreaChart data={revenueTrend} margin={{ top: 18, right: 12, left: -24, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="expectedRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.24} />
+                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+                    </linearGradient>
+                    <linearGradient id="collectedRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0f766e" stopOpacity={0.24} />
+                      <stop offset="95%" stopColor="#0f766e" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} minTickGap={18} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                  <Tooltip content={<CurrencyChartTooltip />} />
+                  <Area type="monotone" dataKey="expectedRevenue" name="Expected" stroke="#2563eb" strokeWidth={3} fill="url(#expectedRevenueFill)" />
+                  <Area type="monotone" dataKey="collectedRevenue" name="Collected" stroke="#0f766e" strokeWidth={3} fill="url(#collectedRevenueFill)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Risk Alerts" badge={`${formatNumber(alerts.reduce((sum, item) => sum + Number(item.count || 0), 0))} Open`} className="dashboard-focus-card">
+          {loading && <StatePanel title="Loading alerts" message="Checking follow-up, payment, and enrollment risk..." />}
+          {error && <StatePanel title="Could not load alerts" message={error} action={onRetry} />}
+          {!loading && !error && (
+            <div className="dashboard-alert-list">
+              {(alerts.length ? alerts : [{ key: "empty", title: "No alerts", count: 0, severity: "success", description: "No operational risks were found for this period." }]).map((item) => (
+                <article className={`dashboard-alert-item ${item.severity}`} key={item.key}>
+                  <strong>{formatNumber(Number(item.count || 0))}</strong>
+                  <div>
+                    <span>{item.title}</span>
+                    <p>{item.description}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Admission Funnel" className="dashboard-chart-card">
+          <div className="dashboard-health-grid">
+            <div className="chart-shell pie-chart-shell">
+              <ResponsiveContainer width="100%" height={230}>
+                <PieChart>
+                  <Tooltip content={<ChartTooltip unit="leads" />} />
+                  <Pie data={funnelWithCounts.length ? funnelWithCounts : [{ name: "No leads", count: 1, fill: "#e2e8f0" }]} dataKey="count" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={3}>
+                    {(funnelWithCounts.length ? funnelWithCounts : [{ name: "No leads", fill: "#e2e8f0" }]).map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="chart-center-label">
+                <strong>{enrollmentRate}%</strong>
+                <span>enrolled</span>
+              </div>
+            </div>
+            <div className="pipeline-legend">
+              {(funnelData.length ? funnelData : [{ name: "Leads", count: totalLeads, fill: DASHBOARD_CHART_COLORS[0] }]).slice(0, 5).map((item) => (
+                <div key={item.name}>
+                  <span style={{ background: item.fill }} />
+                  <p>{item.name}</p>
+                  <strong>{formatNumber(item.count)}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Admissions Activity" className="dashboard-chart-card">
+          <div className="chart-shell">
+            <ResponsiveContainer width="100%" height={230}>
+              <BarChart data={activityData} margin={{ top: 24, right: 10, left: -24, bottom: 2 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip unit="records" />} />
+                <Bar dataKey="value" radius={[0, 0, 0, 0]} barSize={38}>
+                  {activityData.map((entry, index) => <Cell key={entry.name} fill={DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length]} />)}
+                  <LabelList dataKey="value" position="top" fill="#0f172a" fontSize={12} fontWeight={700} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <DashboardPerformanceTable title="Course Revenue" rows={advancedDashboard?.courses || []} />
+        <DashboardPerformanceTable title="Counsellor Revenue" rows={advancedDashboard?.counselors || []} />
+        <DashboardPerformanceTable title="Branch Revenue" rows={advancedDashboard?.branches || []} className="wide-card" />
+
         <Card title="Admission Pipeline" badge={`${formatNumber(pipelineTotal)} Leads`} className="wide-card dashboard-pipeline-card">
           {loading && <StatePanel title="Loading pipeline" message="Fetching live stage counts..." />}
           {error && <StatePanel title="Could not load pipeline" message={error} action={onRetry} />}
@@ -2036,67 +2155,6 @@ function Dashboard({ dashboard, followUps = [], pipeline = [], loading, error, o
               </ResponsiveContainer>
             </div>
           )}
-        </Card>
-
-        <Card title="Today's Schedule" badge={`${formatNumber(scheduledFollowUps.length)} Pending`} className="dashboard-focus-card">
-          {loading && <StatePanel title="Loading follow-ups" message="Fetching the live queue..." />}
-          {error && <StatePanel title="Could not load follow-ups" message={error} action={onRetry} />}
-          {!loading && !error && scheduledFollowUps.length === 0 && <StatePanel title="No follow-ups" message="There are no scheduled follow-ups for this tenant." />}
-          {!loading && !error && scheduledFollowUps.length > 0 && (
-            <div className="schedule-list">
-              {scheduledFollowUps.slice(0, 4).map((item) => (
-                <FollowUpRow key={item.id} item={item} compact />
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card title="Admission Health" className="dashboard-chart-card">
-          <div className="dashboard-health-grid">
-            <div className="chart-shell pie-chart-shell">
-              <ResponsiveContainer width="100%" height={230}>
-                <PieChart>
-                  <Tooltip content={<ChartTooltip unit="leads" />} />
-                  <Pie data={pipelineWithLeads.length ? pipelineWithLeads : [{ name: "No leads", count: 1, fill: "#e2e8f0" }]} dataKey="count" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={3}>
-                    {(pipelineWithLeads.length ? pipelineWithLeads : [{ name: "No leads", fill: "#e2e8f0" }]).map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="chart-center-label">
-                <strong>{conversionRate}%</strong>
-                <span>conversion</span>
-              </div>
-            </div>
-            <div className="pipeline-legend">
-              {(pipelineWithLeads.length ? pipelineWithLeads : pipelineData.slice(0, 4)).slice(0, 5).map((item) => (
-                <div key={item.name}>
-                  <span style={{ background: item.fill }} />
-                  <p>{item.name}</p>
-                  <strong>{formatNumber(item.count)}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Lead Progress Snapshot" className="dashboard-chart-card">
-          <div className="chart-shell">
-            <ResponsiveContainer width="100%" height={230}>
-              <AreaChart data={progressData} margin={{ top: 18, right: 12, left: -24, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="leadProgressFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.28} />
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip unit="leads" />} />
-                <Area type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={3} fill="url(#leadProgressFill)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
         </Card>
 
         <Card title="Counsellor Focus" className="full-row dashboard-action-card">
@@ -6662,6 +6720,58 @@ function ChartTooltip({ active, payload, unit }) {
       <span>{item.payload?.name || name}</span>
       <strong>{formatNumber(value)} {unit}</strong>
     </div>
+  );
+}
+
+function CurrencyChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  return (
+    <div className="chart-tooltip">
+      <span>{label}</span>
+      {payload.map((item) => (
+        <strong key={item.dataKey}>{item.name}: {formatCurrency(item.value)}</strong>
+      ))}
+    </div>
+  );
+}
+
+function DashboardPerformanceTable({ title, rows = [], className = "" }) {
+  return (
+    <Card title={title} badge={`${formatNumber(rows.length)} Rows`} className={`dashboard-performance-card ${className}`}>
+      {rows.length === 0 ? (
+        <StatePanel title="No breakdown data" message="Performance rows will appear when leads, applications, or payments match this period." />
+      ) : (
+        <div className="dashboard-performance-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Leads</th>
+                <th>Enrollments</th>
+                <th>Collected</th>
+                <th>Balance</th>
+                <th>Collection</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id || row.name}>
+                  <td><strong>{row.name}</strong><small>{formatNumber(Number(row.applications || 0))} applications</small></td>
+                  <td>{formatNumber(Number(row.leads || 0))}</td>
+                  <td>{formatNumber(Number(row.enrollments || 0))}</td>
+                  <td>{formatCurrency(row.collectedRevenue || 0)}</td>
+                  <td>{formatCurrency(row.pendingBalance || 0)}</td>
+                  <td>{Number(row.collectionRate || 0)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

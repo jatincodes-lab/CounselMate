@@ -6809,8 +6809,8 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
         </thead>
         <tbody>
           {leads.map((lead) => (
-            <tr key={lead.id} className="clickable-row" onClick={() => onOpenLead(lead.id)}>
-              {canSelect && <td className="selection-cell"><input type="checkbox" checked={Boolean(selected[lead.id])} onChange={() => onToggleLead(lead)} onClick={(event) => event.stopPropagation()} aria-label={`Select ${lead.studentName}`} /></td>}
+            <tr key={lead.id}>
+              {canSelect && <td className="selection-cell"><input type="checkbox" checked={Boolean(selected[lead.id])} onChange={() => onToggleLead(lead)} aria-label={`Select ${lead.studentName}`} /></td>}
               <td>
                 <div className="student-cell">
                   <span>{initials(lead.studentName)}</span>
@@ -6829,7 +6829,11 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
               </td>
               <td>{lead.stage}</td>
               <td>{formatFollowUpLabel(lead.nextFollowUpAt)}</td>
-              <td><MoreVertical size={20} /></td>
+              <td>
+                <button className="icon-button table-action-button" type="button" onClick={() => onOpenLead(lead.id)} aria-label={`Open ${lead.studentName} details`} title="Open lead details">
+                  <MoreVertical size={18} />
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

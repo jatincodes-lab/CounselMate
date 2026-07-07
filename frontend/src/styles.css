@@ -1962,15 +1962,6 @@ h1 {
   border-bottom: 0;
 }
 
-.leads-workspace .clickable-row {
-  transition: background 0.15s ease, box-shadow 0.15s ease;
-}
-
-.leads-workspace .clickable-row:hover {
-  background: #f8fafc;
-  box-shadow: inset 3px 0 0 #2563eb;
-}
-
 .leads-workspace .selection-cell input {
   width: 16px;
   height: 16px;

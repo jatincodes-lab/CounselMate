@@ -1,0 +1,174 @@
+CounselMate CRM - Functionality Status
+Updated: 2026-07-07
+
+Project Summary
+CounselMate CRM is a multi-tenant SaaS CRM for coaching institutes and admission teams. It supports institute onboarding, branch and team management, lead management, follow-ups, admission pipeline tracking, documents, payments, applications, enrollments, notifications, reports, and role-based access.
+
+Technology Covered
+- Frontend: React + Vite CRM interface.
+- Backend: ASP.NET Core Web API.
+- Database: PostgreSQL with Entity Framework Core and Npgsql.
+- Background jobs: Hangfire foundation for reminders and automation.
+- Deployment notes: Neon PostgreSQL, Render backend, and Vercel frontend.
+
+Functionality Covered
+
+1. Planning and UI Foundation
+- Production scope and timeline prepared.
+- CRM UI direction reviewed from the admission counsellor reference screens.
+- React frontend project created with CRM shell, sidebar, header, navigation, responsive layout, loading states, empty states, and error states.
+- Main screens created: Dashboard, Leads, Pipeline, Follow-ups, Counsellors/Team, Reports, Settings, Platform, Applications.
+
+2. Multi-Tenant Backend and Database
+- ASP.NET Core backend project created.
+- EF Core PostgreSQL integration added.
+- Tenant-aware schema added for tenants, branches, users, courses, lead stages, lead sources, leads, follow-ups, and activities.
+- Demo tenant seed data added.
+- Neon database migrations applied for core schema, authentication, master data, lead management, follow-ups, documents, payments, notifications, and applications/enrollments.
+
+3. Authentication and Role Access
+- Login with tenant, email, and password added.
+- HMAC bearer token authentication added.
+- Password hashing with PBKDF2 added.
+- Current user/session restore and logout added on frontend.
+- Role-aware access implemented for Owner, Admin, Branch Manager, Counsellor, Telecaller, Accountant, and Read-only users.
+- Read-only users are blocked from write actions.
+
+4. Platform and Tenant Onboarding
+- Owner-only tenant list API added.
+- Owner-only create tenant API added.
+- New tenant creation includes tenant, main branch, tenant admin, default lead stages, lead sources, and starter courses.
+- Platform page added in frontend for owner tenant management.
+
+5. Team/User Management
+- Tenant-scoped user list, create, and update APIs added.
+- Role validation, duplicate tenant email protection, admin/owner restrictions, self-deactivation protection, and owner protection added.
+- Team Management UI added with filters, counts, create/edit/reset-password modals, and permission-aware actions.
+
+6. Master Data Management
+- Branches, courses, lead sources, and lead stages APIs added.
+- Owner/Admin writes supported; other roles have authenticated read access.
+- Normalized-name uniqueness, optimistic concurrency, safe deactivation, stage ordering, and default-stage selection added.
+- Settings UI added with tabs, search, filters, usage counts, modals, and read-only states.
+- Live master-data lookup sync added across Add Lead, Team, Pipeline, and Dashboard.
+
+7. Lead Management
+- Lead list API supports pagination, search, filters, sorting, and archive mode.
+- Lead detail API added.
+- Add lead workflow added with tenant validation, duplicate phone protection, and normalized phone index.
+- Lead profile editing added with validation and inactive historical values preserved.
+- Dedicated lead assign, stage move, archive, and restore APIs added.
+- Role-scoped lead visibility and mutation rules added.
+- Lead versioning, audit fields, archived state, and optimistic concurrency added.
+- Frontend lead table, filters, detail drawer, stage/status/priority/assignment update, activity notes, and follow-up scheduling added.
+
+8. Bulk Lead Actions
+- Atomic bulk assignment, unassignment, stage change, archive, and restore API added.
+- Limited to 100 unique leads per operation.
+- Access restricted to Owner, Admin, and Branch Manager roles.
+- Tenant/access-scope checks, target validation, branch-compatible assignment rules, archived-state restrictions, concurrency checks, no-op handling, and activity timeline records added.
+- Frontend current-page selection, select all, selected count, contextual targets, confirmation, duplicate-submit prevention, and accessible checkbox labels added.
+
+9. Follow-up Lifecycle
+- Follow-up create, reschedule, cancel, and complete workflows added.
+- Follow-up versioning, updated/completed/cancelled timestamps, immutable completed/cancelled states, and stale update checks added.
+- Lead NextFollowUpAt recalculation added after follow-up changes.
+- Lead drawer controls added for reschedule, cancel, complete, and grouped timeline sections.
+
+10. Pipeline
+- Pipeline API and frontend board added.
+- Stage movement, stage counts, lead cards, filters, and activity logging are covered through lead stage workflows.
+
+11. Documents Module
+- Lead document tracking with Cloudinary-backed storage and PostgreSQL metadata added.
+- Document types and lead documents schema added.
+- Default document checklist seeded for ID Proof, Address Proof, Academic Marksheet, Admission Form, and Payment Receipt.
+- APIs added for checklist, upload/replace, verify, reject, delete, and download proxy.
+- Validation added for formats, max 10 MB size, empty files, stale versions, inactive types, archived leads, verified replacement rules, tenant boundaries, and permissions.
+- Lead drawer Documents section added with role-aware upload, replace, download, and review actions.
+
+12. Payments Module
+- Tenant-scoped lead fee and immutable payment transaction records added.
+- Payment creation, editing, transaction recording, cancellation, balance calculation, receipt generation, and status derivation added.
+- Statuses covered: Pending, Partially Paid, Paid, Overdue, and Cancelled.
+- Owner/Admin/Accountant payment management added; other lead-access users can view.
+- Validation added for positive amounts, overpayments, methods, receipt uniqueness, archived leads, stale versions, tenant boundaries, and cancellation after transactions.
+- Payment activity events and Lead drawer Payments section added.
+
+13. Automation and Notifications
+- Hangfire background job foundation added with PostgreSQL storage, queues, recurring five-minute scans, locking, retries, and bounded workers.
+- Tenant-scoped notifications, delivery attempts, user preferences, deduplication keys, retention fields, and indexes added.
+- Follow-up due/overdue and payment due/overdue reminder production added with state revalidation.
+- Notification inbox APIs added for pagination, unread count, mark read, preferences, owner/admin automation status, and manual reminder scan.
+- Frontend notification panel added with unread badge, pagination, loading/error/empty states, read actions, polling, and lead deep links.
+
+14. Applications and Enrollments
+- Admission application, checklist item, immutable status history, and enrollment entities added.
+- Application/enrollment migration added.
+- APIs added for application list, create-from-lead, detail, status transitions, checklist review, and atomic enrollment.
+- Server-owned transition rules added for Draft, Submitted, Under Review, Changes Required, Approved, Rejected, Withdrawn, Cancelled, and Enrolled.
+- Approval gates added for active lead/course/branch, checklist completion/waiver, verified required documents, and cleared payment balance.
+- Atomic enrollment creates enrollment, marks application enrolled, moves lead to won stage, records history, and writes lead activity.
+- Applications workspace and lead drawer application creation entry point added.
+
+15. Reports and Insights
+- Owner/Admin conversion reports and export path preserved.
+- Counsellor/Telecaller My Work Insights API added.
+- Counsellor insights include overdue and due-today follow-ups, untouched leads, stale leads, high-priority leads without next action, open leads without next action, pipeline health, follow-up completion/on-time/late/overdue metrics, admission outcomes, and course/source breakdowns.
+- Frontend My Work Insights workspace added with filters, direct lead drawer actions, metric definitions, and empty/loading/error states.
+
+16. Verification Already Done
+- Multiple backend builds passed with zero warnings/errors.
+- Multiple frontend production builds passed.
+- Neon migrations applied for implemented modules.
+- API smoke tests passed for health, auth, dashboard, leads, lead detail, add lead, archive/restore, follow-up lifecycle, platform onboarding, user management, master data, notifications, payments, and documents where noted in progress docs.
+- Local frontend and backend URLs were verified during development.
+
+Pending Work
+
+1. QA Pending
+- Manual Owner/Admin/Branch Manager browser and API QA for bulk lead actions, including concurrent-edit and mixed archived-state cases.
+- Manual browser/API role QA for Applications and Enrollments across Owner, Admin, Branch Manager, Counsellor, Accountant, and Read-only users.
+- Manual browser QA for document workflows across Owner, Admin, Counsellor, and Read-only users.
+- Manual browser and API role QA for payments.
+- Manual browser QA for automation notification flows and live due-record reminder creation using disposable test data.
+- Rerun the counsellor insights live endpoint after restarting the temporary local API process, then complete browser QA.
+
+2. Configuration Pending
+- Apply the Applications/Enrollment EF migration to the target database when ready, if not already applied in the target environment.
+- Configure Cloudinary environment variables in production hosting.
+- Configure external email and WhatsApp provider credentials, consent rules, and templates before enabling external delivery.
+- Final production deployment configuration for Render backend and Vercel frontend.
+
+3. Product Features Pending / Future Scope
+- Activity communication templates.
+- Tenant profile/settings persistence.
+- Lead import/export.
+- Automated lead scoring based on engagement, source quality, response time, priority, and follow-up activity.
+- Lead score display, filters, and sorting in lead list and dashboards.
+- Lead scoring settings UI for tenant-specific scoring weights and thresholds.
+- Hot/warm/cold lead classification with activity/audit history for score changes.
+- Automated lead distribution rules beyond manual/default assignment.
+- Round-robin lead assignment by branch/team.
+- Workload-based lead assignment using active lead and follow-up load.
+- Source-based/course-based lead assignment rules.
+- Distribution rule settings UI with assignment audit/reason tracking.
+- Overflow handling for inactive, unavailable, or overloaded counsellors.
+- Configurable tenant-level admission requirement templates.
+- Intake/batch master data.
+- Tags and custom fields.
+- Saved filters and saved reports.
+- Full CSV/XLSX/PDF export workflows.
+- Integration settings for WhatsApp, SMS, email, payment gateway, and external APIs.
+- Advanced payment settings and billing configuration.
+- Additional reporting: branch performance, dropped reason, course demand, revenue report, and detailed productivity report.
+- Calendar view for follow-ups/tasks if needed.
+- More complete communication history for calls, WhatsApp, SMS, and email.
+
+Known Notes
+- PowerShell blocks direct npm script execution on this machine, so use npm.cmd for frontend commands.
+- Archived leads are read-only until restored.
+- Follow-up actions use optimistic version checks.
+- Lead writes use optimistic version checks.
+- Completed and cancelled follow-ups are immutable.
+- CRM timestamps are standardized to Indian Standard Time for persisted business data.

@@ -54,6 +54,7 @@ import {
   cancelLeadPayment,
   changePassword,
   createCommunicationTemplate,
+  createLeadDistributionRule,
   commitLeadImport,
   completeLeadFollowUp,
   createLead,
@@ -78,6 +79,7 @@ import {
   getEnrollments,
   getCommunicationTemplates,
   getCurrentTenant,
+  getLeadIntelligenceSettings,
   getPlatformTenants,
   getStoredAuth,
   getUsers,
@@ -88,6 +90,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
   previewLeadImport,
+  recalculateLeadIntelligence,
   createUser,
   createPlatformTenant,
   createMasterRecord,
@@ -99,6 +102,8 @@ import {
   updateMasterRecord,
   updateCurrentTenant,
   updateCommunicationTemplate,
+  updateLeadDistributionRule,
+  updateLeadIntelligenceSettings,
   updateStoredUser,
   updateUser,
   updateLead,
@@ -2201,7 +2206,7 @@ function LeadsPage({
   const [bulkAction, setBulkAction] = useState("");
   const [bulkTarget, setBulkTarget] = useState("");
   const [bulkStatus, setBulkStatus] = useState({ saving: false, error: "", message: "" });
-  const selectionKey = `${filters.search}|${filters.branchId}|${filters.courseId}|${filters.sourceId}|${filters.stageId}|${filters.assignedUserId}|${filters.priority}|${filters.archive}|${filters.sort}|${filters.page}|${filters.pageSize}`;
+  const selectionKey = `${filters.search}|${filters.branchId}|${filters.courseId}|${filters.sourceId}|${filters.stageId}|${filters.assignedUserId}|${filters.priority}|${filters.temperature}|${filters.minScore}|${filters.maxScore}|${filters.archive}|${filters.sort}|${filters.page}|${filters.pageSize}`;
   const selectedItems = items.filter((item) => selected[item.id]);
 
   useEffect(() => {
@@ -3163,6 +3168,7 @@ function LeadDetailDrawer({
                 <h3>{lead.studentName}</h3>
                 <p>{lead.course} · {lead.source}</p>
               </div>
+              <LeadScoreBadge lead={lead} />
               <Status status={archived ? "Archived" : lead.status} />
             </section>
 
@@ -3172,6 +3178,8 @@ function LeadDetailDrawer({
               <InfoItem label="Guardian" value={lead.guardianName || "Not added"} />
               <InfoItem label="City" value={lead.city || "Not added"} />
               <InfoItem label="Branch" value={lead.branch || "No branch"} />
+              <InfoItem label="Lead Score" value={`${lead.intelligenceScore ?? 0} / 100 (${lead.intelligenceTemperature || "Cold"})`} />
+              <InfoItem label="Score Updated" value={lead.intelligenceUpdatedAt ? formatDate(lead.intelligenceUpdatedAt) : "Not calculated"} />
               <InfoItem label="Created" value={formatDate(lead.createdAt)} />
               <InfoItem label="Updated" value={formatDate(lead.updatedAt)} />
             </div>
@@ -3638,6 +3646,31 @@ function LeadDetailDrawer({
             </section>
             <section className="drawer-section">
               <div className="section-heading">
+                <h3>Intelligence Timeline</h3>
+                <span>{lead.intelligenceEvents?.length || 0}</span>
+              </div>
+              <div className="timeline">
+                {(!lead.intelligenceEvents || lead.intelligenceEvents.length === 0) && <p className="muted-text">No score or distribution events recorded yet.</p>}
+                {(lead.intelligenceEvents || []).map((event) => (
+                  <div className="timeline-item" key={event.id}>
+                    <span className="timeline-dot note" />
+                    <div>
+                      <strong>{formatIntelligenceEventType(event.eventType)}</strong>
+                      <p>{event.reason}</p>
+                      <small>
+                        {event.newScore !== null && event.newScore !== undefined ? `Score ${event.previousScore ?? "-"} -> ${event.newScore}` : ""}
+                        {event.newAssignedUser ? `${event.newScore !== null && event.newScore !== undefined ? " · " : ""}Assigned to ${event.newAssignedUser}` : ""}
+                        {event.rule ? ` · Rule: ${event.rule}` : ""}
+                        {" · "}{formatFollowUpLabel(event.createdAt)}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="drawer-section">
+              <div className="section-heading">
                 <h3>Activity Timeline</h3>
                 <span>{lead.activities.length}</span>
               </div>
@@ -3761,7 +3794,7 @@ function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead
                 <article className="lead-card" key={lead.id} onClick={() => onOpenLead(lead.id)} role="button" tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onOpenLead(lead.id)}>
                   <div className="lead-card-top">
                     <Badge label={(lead.course || "Course").split(" ")[0]} />
-                    <span className="lead-card-index">#{stageIndex + 1}</span>
+                    <LeadScoreBadge lead={lead} />
                   </div>
                   <h4>{lead.studentName}</h4>
                   <p>{lead.course}</p>
@@ -5777,7 +5810,8 @@ const masterDataTabs = [
 
 const profileTab = { id: "profile", label: "Institute Profile", singular: "Profile", icon: Building2 };
 const templateTab = { id: "templates", label: "Communication Templates", singular: "Template", icon: FileText };
-const settingsTabs = [profileTab, ...masterDataTabs, templateTab];
+const intelligenceTab = { id: "intelligence", label: "Lead Intelligence", singular: "Rule", icon: BarChart3 };
+const settingsTabs = [profileTab, ...masterDataTabs, intelligenceTab, templateTab];
 const supportedTimeZones = [
   ["Asia/Kolkata", "India Standard Time (UTC+05:30)"],
   ["Asia/Dubai", "Dubai (UTC+04:00)"],
@@ -5817,6 +5851,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
   const [templates, setTemplates] = useState([]);
   const [tenantProfile, setTenantProfile] = useState(null);
   const [tenantUsers, setTenantUsers] = useState([]);
+  const [leadIntelligence, setLeadIntelligence] = useState(null);
   const [profileDirty, setProfileDirty] = useState(false);
   const [activeTab, setActiveTab] = useState("profile");
   const [query, setQuery] = useState("");
@@ -5827,22 +5862,25 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
   const tab = settingsTabs.find((item) => item.id === activeTab) || settingsTabs[0];
   const isProfileTab = activeTab === profileTab.id;
   const isTemplateTab = activeTab === templateTab.id;
+  const isIntelligenceTab = activeTab === intelligenceTab.id;
 
   const loadConfiguration = useCallback(async (silent = false) => {
     if (!silent) {
       setStatus((current) => ({ ...current, loading: true, error: "", message: "" }));
     }
     try {
-      const [profileResponse, response, templateResponse, userResponse] = await Promise.all([
+      const [profileResponse, response, templateResponse, userResponse, intelligenceResponse] = await Promise.all([
         getCurrentTenant(),
         getMasterData(),
         getCommunicationTemplates({ status: "all" }),
         getUsers(),
+        getLeadIntelligenceSettings(),
       ]);
       setTenantProfile(profileResponse);
       setMasterData(response);
       setTemplates(templateResponse);
       setTenantUsers(userResponse);
+      setLeadIntelligence(intelligenceResponse);
       setStatus((current) => ({ ...current, loading: false, error: "" }));
       return true;
     } catch (error) {
@@ -5859,18 +5897,20 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
     loadConfiguration();
   }, [loadConfiguration]);
 
-  const records = isProfileTab ? [] : isTemplateTab ? templates : masterData[activeTab] || [];
+  const records = isProfileTab ? [] : isIntelligenceTab ? leadIntelligence?.rules || [] : isTemplateTab ? templates : masterData[activeTab] || [];
   const visibleRecords = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return records.filter((record) => {
-      const searchText = isTemplateTab
+      const searchText = isIntelligenceTab
+        ? `${record.name} ${record.strategy || ""}`.toLocaleLowerCase()
+        : isTemplateTab
         ? `${record.name} ${record.channel || ""} ${record.category || ""} ${record.body || ""}`.toLocaleLowerCase()
         : `${record.name} ${record.city || ""}`.toLocaleLowerCase();
       const matchesQuery = !normalizedQuery || searchText.includes(normalizedQuery);
       const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? record.isActive : !record.isActive);
       return matchesQuery && matchesStatus;
     });
-  }, [isTemplateTab, query, records, statusFilter]);
+  }, [isIntelligenceTab, isTemplateTab, query, records, statusFilter]);
 
   const saveTenantProfile = async (payload) => {
     setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
@@ -5909,12 +5949,14 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
   };
 
   const refreshConfiguration = async () => {
-    const [refreshed, refreshedTemplates] = await Promise.all([
+    const [refreshed, refreshedTemplates, refreshedIntelligence] = await Promise.all([
       getMasterData(),
       getCommunicationTemplates({ status: "all" }),
+      getLeadIntelligenceSettings(),
     ]);
     setMasterData(refreshed);
     setTemplates(refreshedTemplates);
+    setLeadIntelligence(refreshedIntelligence);
   };
 
   const saveTemplate = async (record, payload) => {
@@ -5979,6 +6021,65 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
     }
   };
 
+  const saveLeadIntelligenceSettings = async (payload) => {
+    setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
+    try {
+      const response = await updateLeadIntelligenceSettings(payload);
+      setLeadIntelligence(response);
+      setStatus({ loading: false, saving: false, error: "", fieldErrors: {}, message: "Lead intelligence settings saved." });
+      return true;
+    } catch (error) {
+      setStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to save lead intelligence settings.",
+        fieldErrors: error?.errors || {},
+        message: "",
+      }));
+      return false;
+    }
+  };
+
+  const saveLeadDistributionRule = async (record, payload) => {
+    setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
+    try {
+      record ? await updateLeadDistributionRule(record.id, payload) : await createLeadDistributionRule(payload);
+      const response = await getLeadIntelligenceSettings();
+      setLeadIntelligence(response);
+      setEditor(null);
+      setStatus({ loading: false, saving: false, error: "", fieldErrors: {}, message: "Distribution rule saved." });
+      return true;
+    } catch (error) {
+      setStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to save distribution rule.",
+        fieldErrors: error?.errors || {},
+        message: "",
+      }));
+      return false;
+    }
+  };
+
+  const handleRecalculateLeadIntelligence = async () => {
+    setStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
+    try {
+      const response = await recalculateLeadIntelligence();
+      const refreshed = await getLeadIntelligenceSettings();
+      setLeadIntelligence(refreshed);
+      setStatus({ loading: false, saving: false, error: "", fieldErrors: {}, message: response.message || "Lead scores recalculated." });
+      onMasterDataChanged?.();
+    } catch (error) {
+      setStatus((current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : "Unable to recalculate lead scores.",
+        fieldErrors: error?.errors || {},
+        message: "",
+      }));
+    }
+  };
+
   const moveStage = async (stage, direction) => {
     const activeStages = masterData.stages.filter((item) => item.isActive).sort((left, right) => left.sortOrder - right.sortOrder);
     const currentIndex = activeStages.findIndex((item) => item.id === stage.id);
@@ -6017,7 +6118,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
         </div>
         <div className="settings-hero-actions">
           <span className="settings-pill">{canManage ? "Admin access" : "Read-only access"}</span>
-          {canManage && !isProfileTab && (
+          {canManage && !isProfileTab && !isIntelligenceTab && (
             <button className="settings-button" type="button" onClick={() => openEditor()} disabled={status.loading || status.saving}>
               <Plus size={18} />Add {tab.singular}
             </button>
@@ -6028,7 +6129,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
       <nav className="master-tabs" aria-label="Settings categories">
         {settingsTabs.map((item) => {
           const Icon = item.icon;
-          const itemRecords = item.id === profileTab.id ? [] : item.id === templateTab.id ? templates : masterData[item.id] || [];
+          const itemRecords = item.id === profileTab.id ? [] : item.id === intelligenceTab.id ? leadIntelligence?.rules || [] : item.id === templateTab.id ? templates : masterData[item.id] || [];
           return (
             <button
               key={item.id}
@@ -6081,7 +6182,23 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
         />
       )}
 
-      {!isProfileTab && !status.loading && (
+      {isIntelligenceTab && status.loading && <StatePanel title="Loading lead intelligence" message="Fetching scoring and distribution settings..." />}
+      {isIntelligenceTab && !status.loading && leadIntelligence && (
+        <LeadIntelligencePanel
+          settings={leadIntelligence}
+          options={masterData}
+          users={tenantUsers}
+          canManage={canManage}
+          saving={status.saving}
+          fieldErrors={status.fieldErrors}
+          onSaveSettings={saveLeadIntelligenceSettings}
+          onCreateRule={() => { clearActionStatus(); setEditor({ type: intelligenceTab.id, record: null }); }}
+          onEditRule={(record) => { clearActionStatus(); setEditor({ type: intelligenceTab.id, record }); }}
+          onRecalculate={handleRecalculateLeadIntelligence}
+        />
+      )}
+
+      {!isProfileTab && !isIntelligenceTab && !status.loading && (
         <div className="master-summary settings-summary">
           <span><strong>{records.length}</strong> total records</span>
           <span><strong>{activeCount}</strong> active</span>
@@ -6090,7 +6207,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
         </div>
       )}
 
-      {!isProfileTab && !status.loading && records.length > 0 && (
+      {!isProfileTab && !isIntelligenceTab && !status.loading && records.length > 0 && (
         <div className="master-toolbar">
           <label className="team-search">
             <span className="sr-only">Search {tab.label.toLowerCase()}</span>
@@ -6113,7 +6230,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
         </div>
       )}
 
-      {!isProfileTab && <div className="table-card master-table settings-table-card">
+      {!isProfileTab && !isIntelligenceTab && <div className="table-card master-table settings-table-card">
         {status.loading && <StatePanel title="Loading master data" message="Fetching tenant configuration..." />}
         {!status.loading && records.length === 0 && <StatePanel title={`No ${tab.label.toLowerCase()}`} message={`Add the first ${tab.singular.toLowerCase()} to this workspace.`} />}
         {!status.loading && records.length > 0 && visibleRecords.length === 0 && (
@@ -6182,7 +6299,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
         {!status.loading && records.length > 0 && <footer className="table-footer team-table-footer">Showing {visibleRecords.length} of {records.length} records</footer>}
       </div>}
 
-      {editor && editor.type !== templateTab.id && (
+      {editor && editor.type !== templateTab.id && editor.type !== intelligenceTab.id && (
         <MasterDataModal
           key={`${editor.type}-${editor.record?.id || "new"}`}
           type={editor.type}
@@ -6205,7 +6322,178 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
           onSubmit={(payload) => saveTemplate(editor.record, payload)}
         />
       )}
+      {editor?.type === intelligenceTab.id && (
+        <LeadDistributionRuleModal
+          key={`${editor.record?.id || "new"}-distribution-rule`}
+          record={editor.record}
+          options={masterData}
+          users={tenantUsers}
+          saving={status.saving}
+          error={status.error}
+          fieldErrors={status.fieldErrors}
+          onClose={() => { if (!status.saving) { setEditor(null); clearActionStatus(); } }}
+          onSubmit={(payload) => saveLeadDistributionRule(editor.record, payload)}
+        />
+      )}
     </section>
+  );
+}
+
+function LeadIntelligencePanel({ settings, options, users, canManage, saving, fieldErrors, onSaveSettings, onCreateRule, onEditRule, onRecalculate }) {
+  const [form, setForm] = useState(() => leadIntelligenceSettingsForm(settings));
+  const [clientErrors, setClientErrors] = useState({});
+  const getFieldError = (field) => clientErrors[field] || firstError(fieldErrors[field]);
+  const rules = settings.rules || [];
+
+  useEffect(() => {
+    setForm(leadIntelligenceSettingsForm(settings));
+    setClientErrors({});
+  }, [settings]);
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const payload = {
+      ...form,
+      priorityWeight: Number(form.priorityWeight),
+      sourceWeight: Number(form.sourceWeight),
+      responseWeight: Number(form.responseWeight),
+      engagementWeight: Number(form.engagementWeight),
+      freshnessWeight: Number(form.freshnessWeight),
+      profileWeight: Number(form.profileWeight),
+      hotThreshold: Number(form.hotThreshold),
+      warmThreshold: Number(form.warmThreshold),
+      maxActiveLeadsPerUser: Number(form.maxActiveLeadsPerUser),
+      version: settings.version,
+    };
+    const errors = validateLeadIntelligenceSettingsForm(payload);
+    setClientErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    await onSaveSettings(payload);
+  };
+
+  return (
+    <div className="lead-intelligence-panel">
+      <form className="settings-form intelligence-settings-form" onSubmit={submit}>
+        <div className="settings-section-header">
+          <div><h2>Scoring and Distribution</h2><p>Configure score calculation and optional automatic assignment.</p></div>
+          {canManage && <button className="settings-button" type="submit" disabled={saving}>Save settings</button>}
+        </div>
+        <div className="settings-form-grid">
+          <label className="master-checkbox"><input type="checkbox" checked={form.scoringEnabled} disabled={!canManage || saving} onChange={(event) => updateField("scoringEnabled", event.target.checked)} />Scoring enabled</label>
+          <label className="master-checkbox"><input type="checkbox" checked={form.distributionEnabled} disabled={!canManage || saving} onChange={(event) => updateField("distributionEnabled", event.target.checked)} />Distribution enabled</label>
+          <Field label="Default Distribution">
+            <select value={form.defaultDistributionStrategy} disabled={!canManage || saving} onChange={(event) => updateField("defaultDistributionStrategy", event.target.value)}>
+              {["RoundRobin", "Workload", "DefaultAssignee", "Disabled"].map((item) => <option key={item} value={item}>{formatDistributionStrategy(item)}</option>)}
+            </select>
+          </Field>
+          <Field label="Max Active Leads/User" error={getFieldError("maxActiveLeadsPerUser")}>
+            <input type="number" min="1" max="10000" value={form.maxActiveLeadsPerUser} disabled={!canManage || saving} onChange={(event) => updateField("maxActiveLeadsPerUser", event.target.value)} />
+          </Field>
+          <Field label="Hot Threshold" error={getFieldError("thresholds")}>
+            <input type="number" min="0" max="100" value={form.hotThreshold} disabled={!canManage || saving} onChange={(event) => updateField("hotThreshold", event.target.value)} />
+          </Field>
+          <Field label="Warm Threshold">
+            <input type="number" min="0" max="100" value={form.warmThreshold} disabled={!canManage || saving} onChange={(event) => updateField("warmThreshold", event.target.value)} />
+          </Field>
+          {["priorityWeight", "sourceWeight", "responseWeight", "engagementWeight", "freshnessWeight", "profileWeight"].map((field) => (
+            <Field key={field} label={formatWeightLabel(field)} error={getFieldError("weights")}>
+              <input type="number" min="0" max="100" value={form[field]} disabled={!canManage || saving} onChange={(event) => updateField(field, event.target.value)} />
+            </Field>
+          ))}
+        </div>
+      </form>
+
+      <div className="table-card master-table settings-table-card">
+        <div className="settings-section-header">
+          <div><h2>Distribution Rules</h2><p>Rules are evaluated in priority order before the default strategy.</p></div>
+          <div className="settings-hero-actions">
+            {canManage && <button className="secondary-button" type="button" disabled={saving} onClick={onRecalculate}>Recalculate scores</button>}
+            {canManage && <button className="settings-button" type="button" disabled={saving} onClick={onCreateRule}><Plus size={18} />Add rule</button>}
+          </div>
+        </div>
+        {rules.length === 0 ? <StatePanel title="No distribution rules" message="Default distribution will be used when enabled." /> : (
+          <table>
+            <thead><tr><th>Rule</th><th>Strategy</th><th>Scope</th><th>Targets</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {rules.map((rule) => (
+                <tr key={rule.id}>
+                  <td><strong>{rule.name}</strong><small>Priority {rule.priorityOrder}</small></td>
+                  <td><Badge label={formatDistributionStrategy(rule.strategy)} /></td>
+                  <td>{describeDistributionScope(rule, options)}</td>
+                  <td>{rule.targetUserIds?.length ? `${rule.targetUserIds.length} users` : "All eligible users"}</td>
+                  <td><Badge label={rule.isActive ? "Active" : "Inactive"} muted={!rule.isActive} /></td>
+                  <td>{canManage ? <button className="icon-button table-action-button" type="button" onClick={() => onEditRule(rule)} title="Edit"><Pencil size={17} /></button> : <span className="team-access-label">View only</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LeadDistributionRuleModal({ record, options, users, saving, error, fieldErrors, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => leadDistributionRuleForm(record));
+  const [clientErrors, setClientErrors] = useState({});
+  const getFieldError = (field) => clientErrors[field] || firstError(fieldErrors[field]);
+  const eligibleUsers = users.filter((user) => user.isActive && !["Accountant", "ReadOnly"].includes(user.role));
+
+  const updateField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const toggleTargetUser = (userId) => {
+    setForm((current) => {
+      const selected = new Set(current.targetUserIds);
+      selected.has(userId) ? selected.delete(userId) : selected.add(userId);
+      return { ...current, targetUserIds: [...selected] };
+    });
+  };
+
+  const submit = (event) => {
+    event.preventDefault();
+    const payload = {
+      ...form,
+      priorityOrder: Number(form.priorityOrder),
+      branchId: form.branchId || null,
+      courseId: form.courseId || null,
+      leadSourceId: form.leadSourceId || null,
+      version: record?.version || 1,
+    };
+    const errors = validateDistributionRuleForm(payload);
+    setClientErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onSubmit(payload);
+  };
+
+  return (
+    <Modal title={record ? "Edit Distribution Rule" : "Add Distribution Rule"} onClose={onClose}>
+      <form className="modal-form" onSubmit={submit}>
+        {error && <div className="form-error">{error}</div>}
+        <Field label="Rule Name" error={getFieldError("name")} required><input value={form.name} maxLength={160} onChange={(event) => updateField("name", event.target.value)} required /></Field>
+        <Field label="Priority Order" error={getFieldError("priorityOrder")} required><input type="number" min="1" max="10000" value={form.priorityOrder} onChange={(event) => updateField("priorityOrder", event.target.value)} required /></Field>
+        <Field label="Strategy" error={getFieldError("strategy")} required>
+          <select value={form.strategy} onChange={(event) => updateField("strategy", event.target.value)}>
+            {["RoundRobin", "Workload", "DefaultAssignee"].map((item) => <option key={item} value={item}>{formatDistributionStrategy(item)}</option>)}
+          </select>
+        </Field>
+        <label className="master-checkbox"><input type="checkbox" checked={form.isActive} onChange={(event) => updateField("isActive", event.target.checked)} />Active rule</label>
+        <Field label="Branch Scope"><select value={form.branchId} onChange={(event) => updateField("branchId", event.target.value)}><option value="">Any branch</option>{options.branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+        <Field label="Course Scope"><select value={form.courseId} onChange={(event) => updateField("courseId", event.target.value)}><option value="">Any course</option>{options.courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+        <Field label="Source Scope"><select value={form.leadSourceId} onChange={(event) => updateField("leadSourceId", event.target.value)}><option value="">Any source</option>{options.sources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+        <fieldset className="settings-fieldset">
+          <legend>Target users</legend>
+          <p className="field-hint">Leave all unchecked to use all eligible CRM users in scope.</p>
+          <div className="target-user-grid">
+            {eligibleUsers.map((user) => <label key={user.id} className="master-checkbox"><input type="checkbox" checked={form.targetUserIds.includes(user.id)} onChange={() => toggleTargetUser(user.id)} />{user.fullName}</label>)}
+          </div>
+          {getFieldError("targetUserIds") && <small className="field-error">{getFieldError("targetUserIds")}</small>}
+        </fieldset>
+        <div className="modal-actions"><button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving..." : "Save rule"}</button></div>
+      </form>
+    </Modal>
   );
 }
 
@@ -6227,6 +6515,86 @@ function tenantProfileForm(profile) {
     defaultBranchId: profile.defaultBranchId || "",
     defaultAssigneeUserId: profile.defaultAssigneeUserId || "",
   };
+}
+
+function leadIntelligenceSettingsForm(settings) {
+  return {
+    scoringEnabled: Boolean(settings?.scoringEnabled),
+    distributionEnabled: Boolean(settings?.distributionEnabled),
+    defaultDistributionStrategy: settings?.defaultDistributionStrategy || "DefaultAssignee",
+    priorityWeight: settings?.priorityWeight ?? 25,
+    sourceWeight: settings?.sourceWeight ?? 15,
+    responseWeight: settings?.responseWeight ?? 20,
+    engagementWeight: settings?.engagementWeight ?? 20,
+    freshnessWeight: settings?.freshnessWeight ?? 10,
+    profileWeight: settings?.profileWeight ?? 10,
+    hotThreshold: settings?.hotThreshold ?? 75,
+    warmThreshold: settings?.warmThreshold ?? 45,
+    maxActiveLeadsPerUser: settings?.maxActiveLeadsPerUser ?? 100,
+  };
+}
+
+function leadDistributionRuleForm(record) {
+  return {
+    name: record?.name || "",
+    isActive: record?.isActive ?? true,
+    priorityOrder: record?.priorityOrder ?? 100,
+    strategy: record?.strategy || "RoundRobin",
+    branchId: record?.branchId || "",
+    courseId: record?.courseId || "",
+    leadSourceId: record?.leadSourceId || "",
+    targetUserIds: record?.targetUserIds || [],
+  };
+}
+
+function validateLeadIntelligenceSettingsForm(form) {
+  const errors = {};
+  const weights = ["priorityWeight", "sourceWeight", "responseWeight", "engagementWeight", "freshnessWeight", "profileWeight"].map((field) => Number(form[field]));
+  if (weights.some((value) => Number.isNaN(value) || value < 0)) errors.weights = "Weights cannot be negative.";
+  if (weights.reduce((sum, value) => sum + value, 0) <= 0) errors.weights = "At least one weight must be greater than zero.";
+  if (Number(form.warmThreshold) < 0 || Number(form.hotThreshold) > 100 || Number(form.warmThreshold) >= Number(form.hotThreshold)) errors.thresholds = "Warm must be below hot; both must be 0-100.";
+  if (Number(form.maxActiveLeadsPerUser) < 1 || Number(form.maxActiveLeadsPerUser) > 10000) errors.maxActiveLeadsPerUser = "Enter 1 to 10000.";
+  return errors;
+}
+
+function validateDistributionRuleForm(form) {
+  const errors = {};
+  if (!form.name.trim()) errors.name = "Rule name is required.";
+  if (Number(form.priorityOrder) < 1 || Number(form.priorityOrder) > 10000) errors.priorityOrder = "Enter 1 to 10000.";
+  if (!["RoundRobin", "Workload", "DefaultAssignee"].includes(form.strategy)) errors.strategy = "Choose a supported strategy.";
+  if ((form.targetUserIds || []).length > 50) errors.targetUserIds = "Select at most 50 users.";
+  return errors;
+}
+
+function formatDistributionStrategy(strategy) {
+  return {
+    RoundRobin: "Round robin",
+    Workload: "Workload-based",
+    DefaultAssignee: "Default assignee",
+    Disabled: "Disabled",
+  }[strategy] || strategy || "Default";
+}
+
+function formatWeightLabel(field) {
+  return {
+    priorityWeight: "Priority Weight",
+    sourceWeight: "Source Weight",
+    responseWeight: "Response Weight",
+    engagementWeight: "Engagement Weight",
+    freshnessWeight: "Freshness Weight",
+    profileWeight: "Profile Weight",
+  }[field] || field;
+}
+
+function describeDistributionScope(rule, options) {
+  const parts = [];
+  const branch = options.branches.find((item) => item.id === rule.branchId);
+  const course = options.courses.find((item) => item.id === rule.courseId);
+  const source = options.sources.find((item) => item.id === rule.leadSourceId);
+  if (branch) parts.push(branch.name);
+  if (course) parts.push(course.name);
+  if (source) parts.push(source.name);
+  return parts.length ? parts.join(" / ") : "All leads";
 }
 
 function TenantProfilePanel({ profile, branches, users, canManage, saving, fieldErrors, onDirtyChange, onSubmit }) {
@@ -6868,6 +7236,24 @@ function FilterBar({ filters, options, total, loading, onChange, onReset }) {
       </label>
 
       <label>
+        <span>Temperature</span>
+        <select value={filters.temperature} onChange={(event) => onChange({ temperature: event.target.value })}>
+          <option value="">All temperatures</option>
+          {["Hot", "Warm", "Cold"].map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </label>
+
+      <label>
+        <span>Min Score</span>
+        <input type="number" min="0" max="100" value={filters.minScore} onChange={(event) => onChange({ minScore: event.target.value })} />
+      </label>
+
+      <label>
+        <span>Max Score</span>
+        <input type="number" min="0" max="100" value={filters.maxScore} onChange={(event) => onChange({ maxScore: event.target.value })} />
+      </label>
+
+      <label>
         <span>Archive</span>
         <select value={filters.archive} onChange={(event) => onChange({ archive: event.target.value })}>
           <option value="active">Active</option>
@@ -6882,8 +7268,10 @@ function FilterBar({ filters, options, total, loading, onChange, onReset }) {
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
           <option value="name">Name</option>
-          <option value="follow-up">Follow-up</option>
+          <option value="followUp">Follow-up</option>
           <option value="priority">Priority</option>
+          <option value="scoreHigh">Score high-low</option>
+          <option value="scoreLow">Score low-high</option>
         </select>
       </label>
 
@@ -6924,6 +7312,7 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
             <th>Course</th>
             <th>Counsellor</th>
             <th>Status</th>
+            <th>Score</th>
             <th>Stage</th>
             <th>Next Follow-up</th>
             <th>Actions</th>
@@ -6949,6 +7338,7 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
               <td>
                 <Status status={lead.archivedAt ? "Archived" : lead.status} />
               </td>
+              <td><LeadScoreBadge lead={lead} /></td>
               <td>{lead.stage}</td>
               <td>{formatFollowUpLabel(lead.nextFollowUpAt)}</td>
               <td>
@@ -7029,6 +7419,12 @@ function FollowUpRow({ item, compact = false, saving = false, canManageLeads = f
 
 function Badge({ label, muted, danger, warning }) {
   return <span className={`badge ${muted ? "muted" : ""} ${danger ? "danger" : ""} ${warning ? "warning" : ""}`}>{label}</span>;
+}
+
+function LeadScoreBadge({ lead }) {
+  const temperature = lead?.intelligenceTemperature || "Cold";
+  const score = Number.isFinite(Number(lead?.intelligenceScore)) ? Number(lead.intelligenceScore) : 0;
+  return <span className={`lead-score-badge ${temperature.toLowerCase()}`} title={lead?.intelligenceReason || "Lead intelligence score"}><strong>{score}</strong><small>{temperature}</small></span>;
 }
 
 function Status({ status }) {
@@ -7288,6 +7684,15 @@ function formatActivityType(type) {
   return labels[type] || type;
 }
 
+function formatIntelligenceEventType(type) {
+  const labels = {
+    ScoreChanged: "Score changed",
+    Distributed: "Lead distributed",
+    AssignmentChanged: "Assignment changed",
+  };
+  return labels[type] || type || "Intelligence event";
+}
+
 function emptyLeadOptions() {
   return {
     branches: [],
@@ -7318,6 +7723,9 @@ function defaultLeadFilters() {
     stageId: "",
     assignedUserId: "",
     priority: "",
+    temperature: "",
+    minScore: "",
+    maxScore: "",
     archive: "active",
     sort: "newest",
     page: 1,

@@ -336,6 +336,37 @@ export async function updateCurrentTenant(payload) {
   });
 }
 
+export async function getLeadIntelligenceSettings() {
+  return request("/lead-intelligence/settings");
+}
+
+export async function updateLeadIntelligenceSettings(payload) {
+  return request("/lead-intelligence/settings", {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function createLeadDistributionRule(payload) {
+  return request("/lead-intelligence/rules", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateLeadDistributionRule(ruleId, payload) {
+  return request(`/lead-intelligence/rules/${encodeURIComponent(ruleId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function recalculateLeadIntelligence() {
+  return request("/lead-intelligence/recalculate", {
+    method: "POST",
+  });
+}
+
 export async function createPlatformTenant(payload) {
   return request("/platform/tenants", {
     method: "POST",

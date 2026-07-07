@@ -18,6 +18,10 @@ public sealed class Lead
     public string? City { get; set; }
     public string Status { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
+    public int IntelligenceScore { get; set; }
+    public string IntelligenceTemperature { get; set; } = "Cold";
+    public string? IntelligenceReason { get; set; }
+    public DateTimeOffset? IntelligenceUpdatedAt { get; set; }
     public int Version { get; set; } = 1;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

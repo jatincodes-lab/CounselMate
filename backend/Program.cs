@@ -1352,6 +1352,176 @@ api.MapPatch("/tenants/current", async (
     return Results.Ok(ToTenantProfileResponse(tenant));
 });
 
+api.MapGet("/lead-intelligence/settings", async (
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (currentUser is null)
+    {
+        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var now = IndianClock.Now();
+    var settings = await GetOrCreateLeadIntelligenceSettingsAsync(db, currentUser.TenantId, now, cancellationToken);
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Ok(await ToLeadIntelligenceSettingsResponseAsync(db, settings, cancellationToken));
+});
+
+api.MapPatch("/lead-intelligence/settings", async (
+    UpdateLeadIntelligenceSettingsRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageTenantProfile(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can update lead intelligence settings." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var errors = ValidateLeadIntelligenceSettingsRequest(request);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var now = IndianClock.Now();
+    var settings = await GetOrCreateLeadIntelligenceSettingsAsync(db, currentUser!.TenantId, now, cancellationToken);
+    if (settings.Version != request.Version)
+    {
+        return Results.Conflict(new { message = "Lead intelligence settings changed. Refresh before saving again." });
+    }
+
+    settings.ScoringEnabled = request.ScoringEnabled;
+    settings.DistributionEnabled = request.DistributionEnabled;
+    settings.DefaultDistributionStrategy = NormalizeDistributionStrategy(request.DefaultDistributionStrategy);
+    settings.PriorityWeight = request.PriorityWeight;
+    settings.SourceWeight = request.SourceWeight;
+    settings.ResponseWeight = request.ResponseWeight;
+    settings.EngagementWeight = request.EngagementWeight;
+    settings.FreshnessWeight = request.FreshnessWeight;
+    settings.ProfileWeight = request.ProfileWeight;
+    settings.HotThreshold = request.HotThreshold;
+    settings.WarmThreshold = request.WarmThreshold;
+    settings.MaxActiveLeadsPerUser = request.MaxActiveLeadsPerUser;
+    settings.Version += 1;
+    settings.UpdatedAt = now;
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "Lead intelligence settings changed. Refresh before saving again." }); }
+    return Results.Ok(await ToLeadIntelligenceSettingsResponseAsync(db, settings, cancellationToken));
+});
+
+api.MapPost("/lead-intelligence/rules", async (
+    SaveLeadDistributionRuleRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageTenantProfile(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can create distribution rules." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var errors = await ValidateLeadDistributionRuleRequestAsync(db, currentUser!.TenantId, request, requireVersion: false, cancellationToken);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var now = IndianClock.Now();
+    var rule = new LeadDistributionRule
+    {
+        Id = Guid.NewGuid(),
+        TenantId = currentUser.TenantId,
+        Name = NormalizeName(request.Name),
+        IsActive = request.IsActive,
+        PriorityOrder = request.PriorityOrder,
+        Strategy = NormalizeDistributionStrategy(request.Strategy),
+        BranchId = request.BranchId,
+        CourseId = request.CourseId,
+        LeadSourceId = request.LeadSourceId,
+        TargetUserIds = string.Join(",", request.TargetUserIds.Distinct()),
+        CreatedAt = now,
+        UpdatedAt = now
+    };
+    db.LeadDistributionRules.Add(rule);
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Created($"/api/lead-intelligence/rules/{rule.Id}", ToLeadDistributionRuleResponse(rule));
+});
+
+api.MapPatch("/lead-intelligence/rules/{id:guid}", async (
+    Guid id,
+    SaveLeadDistributionRuleRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageTenantProfile(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can update distribution rules." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var errors = await ValidateLeadDistributionRuleRequestAsync(db, currentUser!.TenantId, request, requireVersion: true, cancellationToken);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var rule = await db.LeadDistributionRules.FirstOrDefaultAsync(item => item.TenantId == currentUser.TenantId && item.Id == id, cancellationToken);
+    if (rule is null)
+    {
+        return Results.NotFound(new { message = "Distribution rule not found." });
+    }
+    if (rule.Version != request.Version)
+    {
+        return Results.Conflict(new { message = "Distribution rule changed. Refresh before saving again." });
+    }
+
+    rule.Name = NormalizeName(request.Name);
+    rule.IsActive = request.IsActive;
+    rule.PriorityOrder = request.PriorityOrder;
+    rule.Strategy = NormalizeDistributionStrategy(request.Strategy);
+    rule.BranchId = request.BranchId;
+    rule.CourseId = request.CourseId;
+    rule.LeadSourceId = request.LeadSourceId;
+    rule.TargetUserIds = string.Join(",", request.TargetUserIds.Distinct());
+    rule.Version += 1;
+    rule.UpdatedAt = IndianClock.Now();
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "Distribution rule changed. Refresh before saving again." }); }
+    return Results.Ok(ToLeadDistributionRuleResponse(rule));
+});
+
+api.MapPost("/lead-intelligence/recalculate", async (
+    HttpContext httpContext,
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
+{
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (!CanManageTenantProfile(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can recalculate lead scores." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var now = IndianClock.Now();
+    var settings = await GetOrCreateLeadIntelligenceSettingsAsync(db, currentUser!.TenantId, now, cancellationToken);
+    var leads = await db.Leads
+        .Where(item => item.TenantId == currentUser.TenantId && item.ArchivedAt == null)
+        .ToListAsync(cancellationToken);
+    foreach (var lead in leads)
+    {
+        await ApplyLeadScoringAsync(db, lead, settings, "Manual recalculation", now, cancellationToken);
+    }
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.Ok(new LeadIntelligenceRecalculateResponse(leads.Count, $"Recalculated {leads.Count} active lead score{(leads.Count == 1 ? string.Empty : "s")}."));
+});
+
 api.MapGet("/communication-templates", async (
     string? status,
     string? channel,
@@ -1881,6 +2051,9 @@ api.MapGet("/leads", async (
     Guid? stageId,
     Guid? assignedUserId,
     string? priority,
+    string? temperature,
+    int? minScore,
+    int? maxScore,
     string? archive,
     string? sort,
     int? page,
@@ -1902,7 +2075,7 @@ api.MapGet("/leads", async (
     var take = Math.Clamp(pageSize ?? 25, 1, 100);
 
     var query = ApplyLeadAccessScope(db.Leads.AsNoTracking().Where(lead => lead.TenantId == tenant.TenantId), currentUser, accessScope);
-    query = ApplyLeadFilters(query, search, branchId, courseId, sourceId, stageId, assignedUserId, priority, archive);
+    query = ApplyLeadFilters(query, search, branchId, courseId, sourceId, stageId, assignedUserId, priority, temperature, minScore, maxScore, archive);
     query = ApplyLeadSort(query, sort);
 
     var total = await query.CountAsync(cancellationToken);
@@ -1928,7 +2101,11 @@ api.MapGet("/leads", async (
             lead.CreatedAt,
             lead.UpdatedAt,
             lead.ArchivedAt,
-            lead.NextFollowUpAt))
+            lead.NextFollowUpAt,
+            lead.IntelligenceScore,
+            lead.IntelligenceTemperature,
+            lead.IntelligenceReason,
+            lead.IntelligenceUpdatedAt))
         .ToListAsync(cancellationToken);
 
     return Results.Ok(new LeadListResponse(leads, pageNumber, take, total));
@@ -2136,6 +2313,9 @@ api.MapGet("/leads/export", async (
     Guid? stageId,
     Guid? assignedUserId,
     string? priority,
+    string? temperature,
+    int? minScore,
+    int? maxScore,
     string? archive,
     string? sort,
     string? format,
@@ -2158,7 +2338,7 @@ api.MapGet("/leads/export", async (
 
     var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
     var query = ApplyLeadAccessScope(db.Leads.AsNoTracking().Where(lead => lead.TenantId == tenant.TenantId), currentUser, accessScope);
-    query = ApplyLeadFilters(query, search, branchId, courseId, sourceId, stageId, assignedUserId, priority, archive);
+    query = ApplyLeadFilters(query, search, branchId, courseId, sourceId, stageId, assignedUserId, priority, temperature, minScore, maxScore, archive);
     query = ApplyLeadSort(query, sort);
 
     var total = await query.CountAsync(cancellationToken);
@@ -2667,7 +2847,6 @@ api.MapPatch("/enrollments/{enrollmentNumber}/status", async (
         Description = $"Enrollment {enrollment.EnrollmentNumber} moved from {previous} to {nextStatus}.{(string.IsNullOrWhiteSpace(request.Note) ? "" : $" Note: {NormalizeOptionalText(request.Note)}")}",
         CreatedAt = now
     });
-
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This enrollment changed. Refresh and try again." }); }
     return Results.Ok(await GetEnrollmentDetailResponseAsync(db, tenant.TenantId, enrollment.EnrollmentNumber, cancellationToken));
@@ -2711,7 +2890,10 @@ api.MapPost("/leads", async (
             .FirstAsync(cancellationToken)
         : null;
     var branchId = request.BranchId ?? tenantDefaults?.DefaultBranchId;
-    var assignedUserId = request.AssignedUserId ?? tenantDefaults?.DefaultAssigneeUserId;
+    var assignedUserId = request.AssignedUserId;
+    var now = IndianClock.Now();
+    var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
+    LeadDistributionDecision? distributionDecision = null;
 
     var validationErrors = ValidateCreateLeadRequest(request);
     if (validationErrors.Count > 0)
@@ -2789,6 +2971,12 @@ api.MapPost("/leads", async (
         }
     }
 
+    if (assignedUserId is null)
+    {
+        distributionDecision = await ResolveLeadDistributionAsync(db, intelligenceSettings, tenant.TenantId, branchId, request.CourseId, request.LeadSourceId, now, cancellationToken);
+        assignedUserId = distributionDecision.AssignedUserId ?? tenantDefaults?.DefaultAssigneeUserId;
+    }
+
     if (assignedUserId is not null)
     {
         var assignmentError = await ValidateLeadAssignmentAsync(db, tenant.TenantId, currentUser, accessScope, branchId, assignedUserId.Value, cancellationToken);
@@ -2801,7 +2989,6 @@ api.MapPost("/leads", async (
         }
     }
 
-    var now = IndianClock.Now();
     var lead = new Lead
     {
         Id = Guid.NewGuid(),
@@ -2828,6 +3015,8 @@ api.MapPost("/leads", async (
         UpdatedByUserId = currentUser?.UserId
     };
 
+    await ApplyLeadScoringAsync(db, lead, intelligenceSettings, "Lead created", now, cancellationToken);
+
     db.Leads.Add(lead);
     db.Activities.Add(new EducationCrm.Api.Models.Activity
     {
@@ -2839,6 +3028,21 @@ api.MapPost("/leads", async (
         Description = $"Lead {lead.LeadNumber} created for {lead.StudentName}.",
         CreatedAt = now
     });
+    if (distributionDecision?.AssignedUserId is not null)
+    {
+        db.LeadIntelligenceEvents.Add(new LeadIntelligenceEvent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            EventType = "Distributed",
+            PreviousAssignedUserId = null,
+            NewAssignedUserId = distributionDecision.AssignedUserId,
+            DistributionRuleId = distributionDecision.RuleId,
+            Reason = distributionDecision.Reason,
+            CreatedAt = now
+        });
+    }
 
     try
     {
@@ -2870,7 +3074,11 @@ api.MapPost("/leads", async (
             item.CreatedAt,
             item.UpdatedAt,
             item.ArchivedAt,
-            item.NextFollowUpAt))
+            item.NextFollowUpAt,
+            item.IntelligenceScore,
+            item.IntelligenceTemperature,
+            item.IntelligenceReason,
+            item.IntelligenceUpdatedAt))
         .FirstAsync(cancellationToken);
 
     return Results.Created($"/api/leads/{response.Id}", response);
@@ -2954,6 +3162,24 @@ api.MapGet("/leads/{id}", async (
                     activity.Description,
                     activity.CreatedByUser == null ? "System" : activity.CreatedByUser.FullName,
                     activity.CreatedAt
+                ))
+                .ToArray(),
+            db.LeadIntelligenceEvents
+                .Where(@event => @event.TenantId == item.TenantId && @event.LeadId == item.Id)
+                .OrderByDescending(@event => @event.CreatedAt)
+                .Take(20)
+                .Select(@event => new LeadIntelligenceEventResponse(
+                    @event.Id.ToString(),
+                    @event.EventType,
+                    @event.PreviousScore,
+                    @event.NewScore,
+                    @event.PreviousTemperature,
+                    @event.NewTemperature,
+                    @event.PreviousAssignedUser == null ? null : @event.PreviousAssignedUser.FullName,
+                    @event.NewAssignedUser == null ? null : @event.NewAssignedUser.FullName,
+                    @event.DistributionRule == null ? null : @event.DistributionRule.Name,
+                    @event.Reason,
+                    @event.CreatedAt
                 ))
                 .ToArray()
         ))
@@ -3179,6 +3405,9 @@ api.MapPatch("/leads/{id}", async (
         });
     }
 
+    var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, lead.UpdatedAt, cancellationToken);
+    await ApplyLeadScoringAsync(db, lead, intelligenceSettings, "Lead updated", lead.UpdatedAt, cancellationToken);
+
     try
     {
         await db.SaveChangesAsync(cancellationToken);
@@ -3222,6 +3451,7 @@ api.MapPatch("/leads/{id}/assign", async (
 
     if (lead.AssignedUserId != request.AssignedUserId)
     {
+        var previousAssignedUserId = lead.AssignedUserId;
         lead.AssignedUserId = request.AssignedUserId;
         lead.UpdatedAt = IndianClock.Now();
         lead.UpdatedByUserId = currentUser?.UserId;
@@ -3234,6 +3464,17 @@ api.MapPatch("/leads/{id}/assign", async (
             CreatedByUserId = currentUser?.UserId,
             Type = "LeadAssigned",
             Description = request.AssignedUserId is null ? $"Lead {lead.LeadNumber} unassigned." : $"Lead {lead.LeadNumber} assignment updated.",
+            CreatedAt = lead.UpdatedAt
+        });
+        db.LeadIntelligenceEvents.Add(new LeadIntelligenceEvent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            EventType = "AssignmentChanged",
+            PreviousAssignedUserId = previousAssignedUserId,
+            NewAssignedUserId = request.AssignedUserId,
+            Reason = currentUser is null ? "Assignment changed by system." : $"Assignment changed manually by {currentUser.FullName}.",
             CreatedAt = lead.UpdatedAt
         });
     }
@@ -3282,6 +3523,8 @@ api.MapPatch("/leads/{id}/stage", async (
             Description = $"Lead {lead.LeadNumber} moved to {stage.Name}.",
             CreatedAt = lead.UpdatedAt
         });
+        var stageIntelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, lead.UpdatedAt, cancellationToken);
+        await ApplyLeadScoringAsync(db, lead, stageIntelligenceSettings, "Stage changed", lead.UpdatedAt, cancellationToken);
     }
 
     try { await db.SaveChangesAsync(cancellationToken); }
@@ -3923,6 +4166,8 @@ api.MapPost("/leads/{id}/payments", async (
         Description = $"Payment item {payment.Title} created for {FormatMoney(payment.AmountDue, payment.Currency)}.",
         CreatedAt = now
     });
+    var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
+    await ApplyLeadScoringAsync(db, lead, intelligenceSettings, "Follow-up scheduled", now, cancellationToken);
 
     await db.SaveChangesAsync(cancellationToken);
     return Results.Created($"/api/leads/{id}/payments/{payment.Id}", await GetLeadPaymentsResponseAsync(db, tenant.TenantId, lead.Id, cancellationToken));
@@ -3982,7 +4227,6 @@ api.MapPatch("/leads/{id}/payments/{paymentId:guid}", async (
         Description = $"Payment item {payment.Title} updated. Balance: {FormatMoney(payment.AmountDue - paidTotal, payment.Currency)}.",
         CreatedAt = now
     });
-
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This payment was changed by another user. Refresh and try again." }); }
     return Results.Ok(await GetLeadPaymentsResponseAsync(db, tenant.TenantId, payment.LeadId, cancellationToken));
@@ -4067,7 +4311,6 @@ api.MapPost("/leads/{id}/payments/{paymentId:guid}/transactions", async (
         Description = $"{FormatMoney(amount, payment.Currency)} received for {payment.Title}. Balance: {FormatMoney(payment.AmountDue - nextPaidTotal, payment.Currency)}.",
         CreatedAt = now
     });
-
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This payment was changed by another user. Refresh and try again." }); }
     catch (DbUpdateException exception) when (IsUniqueViolation(exception)) { return Results.Conflict(new { message = "A payment transaction with this receipt number already exists." }); }
@@ -4119,7 +4362,6 @@ api.MapPost("/leads/{id}/payments/{paymentId:guid}/cancel", async (
         Description = $"Payment item {payment.Title} cancelled.",
         CreatedAt = now
     });
-
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This payment was changed by another user. Refresh and try again." }); }
     return Results.Ok(await GetLeadPaymentsResponseAsync(db, tenant.TenantId, payment.LeadId, cancellationToken));
@@ -4147,15 +4389,12 @@ api.MapPost("/leads/{id}/activities", async (
     }
 
     var lead = await db.Leads
-        .AsNoTracking()
-        .Where(item => item.TenantId == tenant.TenantId && item.LeadNumber == id)
-        .Select(item => new { item.Id, item.LeadNumber, item.AssignedUserId, item.BranchId, item.ArchivedAt })
-        .FirstOrDefaultAsync(cancellationToken);
+        .FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == id, cancellationToken);
     if (lead is null)
     {
         return Results.NotFound(new { message = "Lead not found." });
     }
-    if (!CanAccessLeadValues(currentUser, accessScope, lead.BranchId, lead.AssignedUserId))
+    if (!CanAccessLead(currentUser, accessScope, lead))
     {
         return Results.NotFound(new { message = "Lead not found." });
     }
@@ -4170,6 +4409,7 @@ api.MapPost("/leads/{id}/activities", async (
         return Results.ValidationProblem(validationErrors);
     }
 
+    var now = IndianClock.Now();
     db.Activities.Add(new EducationCrm.Api.Models.Activity
     {
         Id = Guid.NewGuid(),
@@ -4178,8 +4418,10 @@ api.MapPost("/leads/{id}/activities", async (
         CreatedByUserId = currentUser?.UserId,
         Type = NormalizeActivityType(request.Type),
         Description = NormalizeName(request.Description),
-        CreatedAt = IndianClock.Now()
+        CreatedAt = now
     });
+    var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
+    await ApplyLeadScoringAsync(db, lead, intelligenceSettings, "Activity added", now, cancellationToken);
 
     await db.SaveChangesAsync(cancellationToken);
     return Results.Created($"/api/leads/{lead.LeadNumber}", await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
@@ -4248,6 +4490,7 @@ api.MapPost("/leads/{id}/template-activities", async (
         renderedBody = $"{renderedBody}\n\nNote: {NormalizeTemplateBody(request.Note)}";
     }
 
+    var now = IndianClock.Now();
     db.Activities.Add(new EducationCrm.Api.Models.Activity
     {
         Id = Guid.NewGuid(),
@@ -4256,8 +4499,10 @@ api.MapPost("/leads/{id}/template-activities", async (
         CreatedByUserId = currentUser?.UserId,
         Type = NormalizeActivityType(template.Channel),
         Description = $"Template: {template.Name}\n{renderedBody}",
-        CreatedAt = IndianClock.Now()
+        CreatedAt = now
     });
+    var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
+    await ApplyLeadScoringAsync(db, lead, intelligenceSettings, "Communication template applied", now, cancellationToken);
 
     await db.SaveChangesAsync(cancellationToken);
     return Results.Created($"/api/leads/{lead.LeadNumber}", await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
@@ -4413,6 +4658,8 @@ api.MapPatch("/leads/{leadId}/follow-ups/{followUpId}/reschedule", async (
         Description = $"{followUp.Type} follow-up rescheduled for lead {lead.LeadNumber}.",
         CreatedAt = now
     });
+    var rescheduleIntelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
+    await ApplyLeadScoringAsync(db, lead, rescheduleIntelligenceSettings, "Follow-up rescheduled", now, cancellationToken);
 
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
@@ -4464,6 +4711,8 @@ api.MapPatch("/leads/{leadId}/follow-ups/{followUpId}/cancel", async (
         Description = $"{followUp.Type} follow-up cancelled for lead {lead.LeadNumber}.",
         CreatedAt = now
     });
+    var cancelIntelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
+    await ApplyLeadScoringAsync(db, lead, cancelIntelligenceSettings, "Follow-up cancelled", now, cancellationToken);
 
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
@@ -4529,9 +4778,9 @@ api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
         return Results.Conflict(new { message = "This follow-up is already completed." });
     }
 
+    var now = IndianClock.Now();
     if (followUp.Status == "Scheduled")
     {
-        var now = IndianClock.Now();
         followUp.Status = "Completed";
         followUp.CompletedAt = now;
         followUp.UpdatedAt = now;
@@ -4549,9 +4798,11 @@ api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
     }
 
     lead.NextFollowUpAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, followUp.Status, followUp.DueAt, cancellationToken);
-    lead.UpdatedAt = IndianClock.Now();
+    lead.UpdatedAt = now;
     lead.UpdatedByUserId = currentUser?.UserId;
     lead.Version += 1;
+    var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
+    await ApplyLeadScoringAsync(db, lead, intelligenceSettings, "Follow-up completed", now, cancellationToken);
 
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
@@ -4608,7 +4859,11 @@ api.MapGet("/pipeline", async (
                 lead.CreatedAt,
                 lead.UpdatedAt,
                 lead.ArchivedAt,
-                lead.NextFollowUpAt)
+                lead.NextFollowUpAt,
+                lead.IntelligenceScore,
+                lead.IntelligenceTemperature,
+                lead.IntelligenceReason,
+                lead.IntelligenceUpdatedAt)
         })
         .ToListAsync(cancellationToken);
 
@@ -5356,6 +5611,9 @@ static IQueryable<Lead> ApplyLeadFilters(
     Guid? stageId,
     Guid? assignedUserId,
     string? priority,
+    string? temperature,
+    int? minScore,
+    int? maxScore,
     string? archive)
 {
     var includeArchived = string.Equals(archive, "archived", StringComparison.OrdinalIgnoreCase);
@@ -5387,6 +5645,9 @@ static IQueryable<Lead> ApplyLeadFilters(
     if (stageId is not null) query = query.Where(lead => lead.LeadStageId == stageId);
     if (assignedUserId is not null) query = query.Where(lead => lead.AssignedUserId == assignedUserId);
     if (!string.IsNullOrWhiteSpace(priority)) query = query.Where(lead => lead.Priority == priority);
+    if (!string.IsNullOrWhiteSpace(temperature)) query = query.Where(lead => lead.IntelligenceTemperature == temperature);
+    if (minScore is not null) query = query.Where(lead => lead.IntelligenceScore >= Math.Clamp(minScore.Value, 0, 100));
+    if (maxScore is not null) query = query.Where(lead => lead.IntelligenceScore <= Math.Clamp(maxScore.Value, 0, 100));
 
     return query;
 }
@@ -5406,8 +5667,276 @@ static IOrderedQueryable<Lead> ApplyLeadSort(IQueryable<Lead> query, string? sor
             .OrderBy(lead => lead.NextFollowUpAt == null)
             .ThenBy(lead => lead.NextFollowUpAt)
             .ThenByDescending(lead => lead.CreatedAt),
+        "scoreHigh" => query
+            .OrderByDescending(lead => lead.IntelligenceScore)
+            .ThenByDescending(lead => lead.CreatedAt),
+        "scoreLow" => query
+            .OrderBy(lead => lead.IntelligenceScore)
+            .ThenByDescending(lead => lead.CreatedAt),
         _ => query.OrderByDescending(lead => lead.CreatedAt).ThenByDescending(lead => lead.LeadNumber)
     };
+}
+
+static async Task<LeadIntelligenceSettings> GetOrCreateLeadIntelligenceSettingsAsync(
+    AppDbContext db,
+    Guid tenantId,
+    DateTimeOffset now,
+    CancellationToken cancellationToken)
+{
+    var settings = await db.LeadIntelligenceSettings.FirstOrDefaultAsync(item => item.TenantId == tenantId, cancellationToken);
+    if (settings is not null)
+    {
+        return settings;
+    }
+
+    settings = new LeadIntelligenceSettings
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenantId,
+        CreatedAt = now,
+        UpdatedAt = now
+    };
+    db.LeadIntelligenceSettings.Add(settings);
+    return settings;
+}
+
+static async Task ApplyLeadScoringAsync(
+    AppDbContext db,
+    Lead lead,
+    LeadIntelligenceSettings settings,
+    string reason,
+    DateTimeOffset now,
+    CancellationToken cancellationToken)
+{
+    if (!settings.ScoringEnabled)
+    {
+        return;
+    }
+
+    var previousScore = lead.IntelligenceScore;
+    var previousTemperature = lead.IntelligenceTemperature;
+    var calculation = await CalculateLeadScoreAsync(db, lead, settings, now, cancellationToken);
+    lead.IntelligenceScore = calculation.Score;
+    lead.IntelligenceTemperature = calculation.Temperature;
+    lead.IntelligenceReason = calculation.Reason;
+    lead.IntelligenceUpdatedAt = now;
+
+    if (previousScore != calculation.Score || !string.Equals(previousTemperature, calculation.Temperature, StringComparison.Ordinal))
+    {
+        db.LeadIntelligenceEvents.Add(new LeadIntelligenceEvent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = lead.TenantId,
+            LeadId = lead.Id,
+            EventType = "ScoreChanged",
+            PreviousScore = previousScore,
+            NewScore = calculation.Score,
+            PreviousTemperature = previousTemperature,
+            NewTemperature = calculation.Temperature,
+            Reason = $"{reason}: {calculation.Reason}",
+            CreatedAt = now
+        });
+    }
+}
+
+static async Task<LeadScoreCalculation> CalculateLeadScoreAsync(
+    AppDbContext db,
+    Lead lead,
+    LeadIntelligenceSettings settings,
+    DateTimeOffset now,
+    CancellationToken cancellationToken)
+{
+    var sourceName = await db.LeadSources
+        .AsNoTracking()
+        .Where(item => item.TenantId == lead.TenantId && item.Id == lead.LeadSourceId)
+        .Select(item => item.Name)
+        .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+    var stage = await db.LeadStages
+        .AsNoTracking()
+        .Where(item => item.TenantId == lead.TenantId && item.Id == lead.LeadStageId)
+        .Select(item => new { item.IsWonStage, item.IsLostStage, item.SortOrder })
+        .FirstOrDefaultAsync(cancellationToken);
+    var activityCount = await db.Activities.CountAsync(item => item.TenantId == lead.TenantId && item.LeadId == lead.Id, cancellationToken);
+    var completedFollowUps = await db.FollowUps.CountAsync(item => item.TenantId == lead.TenantId && item.LeadId == lead.Id && item.Status == "Completed", cancellationToken);
+    var overdueFollowUps = await db.FollowUps.CountAsync(item => item.TenantId == lead.TenantId && item.LeadId == lead.Id && item.Status == "Scheduled" && item.DueAt < now, cancellationToken);
+
+    var priorityScore = lead.Priority switch
+    {
+        "Urgent" => 100,
+        "High" => 80,
+        "Medium" => 55,
+        "Low" => 30,
+        _ => 40
+    };
+    var sourceScore = sourceName.Contains("referral", StringComparison.OrdinalIgnoreCase) ? 90 :
+        sourceName.Contains("walk", StringComparison.OrdinalIgnoreCase) ? 80 :
+        sourceName.Contains("website", StringComparison.OrdinalIgnoreCase) ? 70 :
+        sourceName.Contains("google", StringComparison.OrdinalIgnoreCase) ? 65 :
+        sourceName.Contains("facebook", StringComparison.OrdinalIgnoreCase) ? 55 : 50;
+    var responseScore = lead.NextFollowUpAt is null ? 35 :
+        lead.NextFollowUpAt <= now.AddHours(24) ? 85 :
+        lead.NextFollowUpAt <= now.AddDays(3) ? 65 : 45;
+    var engagementScore = Math.Clamp(activityCount * 12 + completedFollowUps * 18 - overdueFollowUps * 20, 0, 100);
+    var ageDays = Math.Max(0, (now - lead.CreatedAt).TotalDays);
+    var freshnessScore = ageDays switch
+    {
+        <= 1 => 100,
+        <= 3 => 80,
+        <= 7 => 60,
+        <= 14 => 40,
+        _ => 25
+    };
+    var profileScore = 35;
+    if (!string.IsNullOrWhiteSpace(lead.Email)) profileScore += 20;
+    if (!string.IsNullOrWhiteSpace(lead.Phone)) profileScore += 20;
+    if (!string.IsNullOrWhiteSpace(lead.City)) profileScore += 15;
+    if (!string.IsNullOrWhiteSpace(lead.GuardianName)) profileScore += 10;
+    profileScore = Math.Clamp(profileScore, 0, 100);
+
+    if (stage?.IsWonStage == true)
+    {
+        priorityScore = Math.Max(priorityScore, 90);
+        engagementScore = Math.Max(engagementScore, 90);
+    }
+    else if (stage?.IsLostStage == true)
+    {
+        priorityScore = Math.Min(priorityScore, 15);
+        engagementScore = Math.Min(engagementScore, 15);
+    }
+
+    var weightedTotal =
+        priorityScore * settings.PriorityWeight +
+        sourceScore * settings.SourceWeight +
+        responseScore * settings.ResponseWeight +
+        engagementScore * settings.EngagementWeight +
+        freshnessScore * settings.FreshnessWeight +
+        profileScore * settings.ProfileWeight;
+    var weightTotal = Math.Max(1, settings.PriorityWeight + settings.SourceWeight + settings.ResponseWeight + settings.EngagementWeight + settings.FreshnessWeight + settings.ProfileWeight);
+    var score = Math.Clamp((int)Math.Round((decimal)weightedTotal / weightTotal), 0, 100);
+    var temperature = score >= settings.HotThreshold ? "Hot" : score >= settings.WarmThreshold ? "Warm" : "Cold";
+    var explanation = $"priority {priorityScore}, source {sourceScore}, response {responseScore}, engagement {engagementScore}, freshness {freshnessScore}, profile {profileScore}";
+    return new LeadScoreCalculation(score, temperature, explanation);
+}
+
+static async Task<LeadDistributionDecision> ResolveLeadDistributionAsync(
+    AppDbContext db,
+    LeadIntelligenceSettings settings,
+    Guid tenantId,
+    Guid? branchId,
+    Guid courseId,
+    Guid sourceId,
+    DateTimeOffset now,
+    CancellationToken cancellationToken)
+{
+    if (!settings.DistributionEnabled)
+    {
+        return LeadDistributionDecision.None("Distribution is disabled.");
+    }
+
+    var rules = await db.LeadDistributionRules
+        .Where(item => item.TenantId == tenantId && item.IsActive)
+        .OrderBy(item => item.PriorityOrder)
+        .ThenBy(item => item.Name)
+        .ToListAsync(cancellationToken);
+    var matchingRule = rules.FirstOrDefault(rule =>
+        (rule.BranchId == null || rule.BranchId == branchId) &&
+        (rule.CourseId == null || rule.CourseId == courseId) &&
+        (rule.LeadSourceId == null || rule.LeadSourceId == sourceId));
+
+    if (matchingRule is not null)
+    {
+        var targetUserIds = ParseDistributionTargetUsers(matchingRule.TargetUserIds);
+        var selected = await SelectDistributionUserAsync(db, tenantId, branchId, targetUserIds, matchingRule.Strategy, matchingRule.LastAssignedUserId, settings.MaxActiveLeadsPerUser, cancellationToken);
+        if (selected is not null)
+        {
+            matchingRule.LastAssignedUserId = selected.Value;
+            matchingRule.UpdatedAt = now;
+            matchingRule.Version += 1;
+            return LeadDistributionDecision.Assigned(selected.Value, matchingRule.Id, $"{matchingRule.Strategy} rule '{matchingRule.Name}' matched.");
+        }
+    }
+
+    if (!string.Equals(settings.DefaultDistributionStrategy, "Disabled", StringComparison.OrdinalIgnoreCase))
+    {
+        var selected = await SelectDistributionUserAsync(db, tenantId, branchId, [], settings.DefaultDistributionStrategy, null, settings.MaxActiveLeadsPerUser, cancellationToken);
+        if (selected is not null)
+        {
+            return LeadDistributionDecision.Assigned(selected.Value, null, $"{settings.DefaultDistributionStrategy} fallback selected an eligible user.");
+        }
+    }
+
+    return LeadDistributionDecision.None("No eligible distribution user was found.");
+}
+
+static async Task<Guid?> SelectDistributionUserAsync(
+    AppDbContext db,
+    Guid tenantId,
+    Guid? branchId,
+    IReadOnlyCollection<Guid> targetUserIds,
+    string strategy,
+    Guid? lastAssignedUserId,
+    int maxActiveLeadsPerUser,
+    CancellationToken cancellationToken)
+{
+    var eligibleRoles = new[] { UserRole.Owner, UserRole.Admin, UserRole.BranchManager, UserRole.Counselor, UserRole.Telecaller };
+    var users = await db.Users
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenantId && item.IsActive && eligibleRoles.Contains(item.Role))
+        .Where(item => targetUserIds.Count == 0 || targetUserIds.Contains(item.Id))
+        .Where(item => branchId == null || item.BranchId == null || item.BranchId == branchId)
+        .OrderBy(item => item.FullName)
+        .Select(item => new { item.Id, item.FullName })
+        .ToListAsync(cancellationToken);
+    if (users.Count == 0)
+    {
+        return null;
+    }
+
+    var activeLoad = await db.Leads
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenantId && item.ArchivedAt == null && item.AssignedUserId != null)
+        .Where(item => users.Select(user => user.Id).Contains(item.AssignedUserId!.Value))
+        .GroupBy(item => item.AssignedUserId!.Value)
+        .Select(group => new { UserId = group.Key, Count = group.Count() })
+        .ToDictionaryAsync(item => item.UserId, item => item.Count, cancellationToken);
+    var availableUsers = users
+        .Where(user => !activeLoad.TryGetValue(user.Id, out var load) || load < maxActiveLeadsPerUser)
+        .ToList();
+    if (availableUsers.Count == 0)
+    {
+        return null;
+    }
+
+    if (string.Equals(strategy, "Workload", StringComparison.OrdinalIgnoreCase))
+    {
+        return availableUsers
+            .OrderBy(user => activeLoad.TryGetValue(user.Id, out var load) ? load : 0)
+            .ThenBy(user => user.FullName)
+            .First().Id;
+    }
+
+    if (lastAssignedUserId is null)
+    {
+        return availableUsers.First().Id;
+    }
+
+    var lastIndex = availableUsers.FindIndex(user => user.Id == lastAssignedUserId);
+    return availableUsers[(lastIndex + 1 + availableUsers.Count) % availableUsers.Count].Id;
+}
+
+static IReadOnlyCollection<Guid> ParseDistributionTargetUsers(string targetUserIds)
+{
+    if (string.IsNullOrWhiteSpace(targetUserIds))
+    {
+        return [];
+    }
+
+    return targetUserIds
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(item => Guid.TryParse(item, out var id) ? id : Guid.Empty)
+        .Where(item => item != Guid.Empty)
+        .Distinct()
+        .ToArray();
 }
 
 static ReportDateRangeResult ResolveReportDateRange(string? startDate, string? endDate)
@@ -6109,6 +6638,7 @@ static async Task<LeadImportCommitResponse> CommitLeadImportAsync(
             .ToDictionaryAsync(item => item.Id, cancellationToken);
 
     var nextLeadNumber = await GetNextLeadNumberSeedAsync(db, tenantId, cancellationToken);
+    var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenantId, now, cancellationToken);
     var created = 0;
     var updated = 0;
 
@@ -6149,6 +6679,7 @@ static async Task<LeadImportCommitResponse> CommitLeadImportAsync(
                 Description = $"Lead {lead.LeadNumber} updated from import row {row.RowNumber}.",
                 CreatedAt = now
             });
+            await ApplyLeadScoringAsync(db, lead, intelligenceSettings, $"Lead import row {row.RowNumber} updated", now, cancellationToken);
             updated++;
             continue;
         }
@@ -6191,6 +6722,7 @@ static async Task<LeadImportCommitResponse> CommitLeadImportAsync(
             Description = $"Lead {leadNumber} imported for {row.StudentName}.",
             CreatedAt = now
         });
+        await ApplyLeadScoringAsync(db, newLead, intelligenceSettings, $"Lead import row {row.RowNumber} created", now, cancellationToken);
         created++;
     }
 
@@ -6511,6 +7043,24 @@ static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid t
                     activity.Description,
                     activity.CreatedByUser == null ? "System" : activity.CreatedByUser.FullName,
                     activity.CreatedAt
+                ))
+                .ToArray(),
+            db.LeadIntelligenceEvents
+                .Where(@event => @event.TenantId == item.TenantId && @event.LeadId == item.Id)
+                .OrderByDescending(@event => @event.CreatedAt)
+                .Take(20)
+                .Select(@event => new LeadIntelligenceEventResponse(
+                    @event.Id.ToString(),
+                    @event.EventType,
+                    @event.PreviousScore,
+                    @event.NewScore,
+                    @event.PreviousTemperature,
+                    @event.NewTemperature,
+                    @event.PreviousAssignedUser == null ? null : @event.PreviousAssignedUser.FullName,
+                    @event.NewAssignedUser == null ? null : @event.NewAssignedUser.FullName,
+                    @event.DistributionRule == null ? null : @event.DistributionRule.Name,
+                    @event.Reason,
+                    @event.CreatedAt
                 ))
                 .ToArray()
         ))
@@ -7035,6 +7585,110 @@ static Dictionary<string, string[]> ValidateTenantProfileRequest(UpdateTenantPro
     return errors;
 }
 
+static Dictionary<string, string[]> ValidateLeadIntelligenceSettingsRequest(UpdateLeadIntelligenceSettingsRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    var strategy = NormalizeDistributionStrategy(request.DefaultDistributionStrategy);
+    if (!IsSupportedDistributionStrategy(strategy) && strategy != "Disabled")
+    {
+        errors["defaultDistributionStrategy"] = ["Choose RoundRobin, Workload, DefaultAssignee, or Disabled."];
+    }
+    if (request.PriorityWeight < 0 || request.SourceWeight < 0 || request.ResponseWeight < 0 || request.EngagementWeight < 0 || request.FreshnessWeight < 0 || request.ProfileWeight < 0)
+    {
+        errors["weights"] = ["Scoring weights cannot be negative."];
+    }
+    if (request.PriorityWeight + request.SourceWeight + request.ResponseWeight + request.EngagementWeight + request.FreshnessWeight + request.ProfileWeight <= 0)
+    {
+        errors["weights"] = ["At least one scoring weight must be greater than zero."];
+    }
+    if (request.WarmThreshold < 0 || request.HotThreshold > 100 || request.WarmThreshold >= request.HotThreshold)
+    {
+        errors["thresholds"] = ["Warm threshold must be lower than hot threshold, and both must be between 0 and 100."];
+    }
+    if (request.MaxActiveLeadsPerUser is < 1 or > 10000)
+    {
+        errors["maxActiveLeadsPerUser"] = ["Max active leads per user must be between 1 and 10000."];
+    }
+    if (request.Version < 1)
+    {
+        errors["version"] = ["Version is required."];
+    }
+    return errors;
+}
+
+static async Task<Dictionary<string, string[]>> ValidateLeadDistributionRuleRequestAsync(
+    AppDbContext db,
+    Guid tenantId,
+    SaveLeadDistributionRuleRequest request,
+    bool requireVersion,
+    CancellationToken cancellationToken)
+{
+    var errors = new Dictionary<string, string[]>();
+    if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 160)
+    {
+        errors["name"] = ["Rule name is required and must be 160 characters or fewer."];
+    }
+    var strategy = NormalizeDistributionStrategy(request.Strategy);
+    if (!IsSupportedDistributionStrategy(strategy))
+    {
+        errors["strategy"] = ["Choose RoundRobin, Workload, or DefaultAssignee."];
+    }
+    if (request.PriorityOrder is < 1 or > 10000)
+    {
+        errors["priorityOrder"] = ["Priority order must be between 1 and 10000."];
+    }
+    if (requireVersion && request.Version < 1)
+    {
+        errors["version"] = ["Version is required."];
+    }
+    if (request.TargetUserIds.Count > 50)
+    {
+        errors["targetUserIds"] = ["A rule can target at most 50 users."];
+    }
+
+    if (request.BranchId is not null && !await db.Branches.AnyAsync(item => item.TenantId == tenantId && item.Id == request.BranchId && item.IsActive, cancellationToken))
+    {
+        errors["branchId"] = ["Select a valid active branch."];
+    }
+    if (request.CourseId is not null && !await db.Courses.AnyAsync(item => item.TenantId == tenantId && item.Id == request.CourseId && item.IsActive, cancellationToken))
+    {
+        errors["courseId"] = ["Select a valid active course."];
+    }
+    if (request.LeadSourceId is not null && !await db.LeadSources.AnyAsync(item => item.TenantId == tenantId && item.Id == request.LeadSourceId && item.IsActive, cancellationToken))
+    {
+        errors["leadSourceId"] = ["Select a valid active lead source."];
+    }
+    if (request.TargetUserIds.Count > 0)
+    {
+        var validUsers = await db.Users
+            .AsNoTracking()
+            .Where(item => item.TenantId == tenantId && request.TargetUserIds.Contains(item.Id) && item.IsActive && item.Role != UserRole.Accountant && item.Role != UserRole.ReadOnly)
+            .Select(item => item.Id)
+            .ToListAsync(cancellationToken);
+        if (validUsers.Count != request.TargetUserIds.Distinct().Count())
+        {
+            errors["targetUserIds"] = ["All target users must be active CRM working users from this institute."];
+        }
+    }
+    return errors;
+}
+
+static string NormalizeDistributionStrategy(string? strategy)
+{
+    return strategy?.Trim().ToLowerInvariant() switch
+    {
+        "workload" => "Workload",
+        "defaultassignee" or "default assignee" => "DefaultAssignee",
+        "disabled" => "Disabled",
+        _ => "RoundRobin"
+    };
+}
+
+static bool IsSupportedDistributionStrategy(string strategy)
+{
+    return strategy is "RoundRobin" or "Workload" or "DefaultAssignee";
+}
+
 static void ValidateOptionalHttpUrl(Dictionary<string, string[]> errors, string key, string? value, string label)
 {
     if (string.IsNullOrWhiteSpace(value) || errors.ContainsKey(key))
@@ -7356,6 +8010,53 @@ static TenantProfileResponse ToTenantProfileResponse(Tenant tenant)
         tenant.Version,
         tenant.CreatedAt,
         tenant.UpdatedAt ?? tenant.CreatedAt);
+}
+
+static async Task<LeadIntelligenceSettingsResponse> ToLeadIntelligenceSettingsResponseAsync(
+    AppDbContext db,
+    LeadIntelligenceSettings settings,
+    CancellationToken cancellationToken)
+{
+    var rules = await db.LeadDistributionRules
+        .AsNoTracking()
+        .Where(item => item.TenantId == settings.TenantId)
+        .OrderBy(item => item.PriorityOrder)
+        .ThenBy(item => item.Name)
+        .ToListAsync(cancellationToken);
+    var ruleResponses = rules.Select(ToLeadDistributionRuleResponse).ToArray();
+
+    return new LeadIntelligenceSettingsResponse(
+        settings.ScoringEnabled,
+        settings.DistributionEnabled,
+        settings.DefaultDistributionStrategy,
+        settings.PriorityWeight,
+        settings.SourceWeight,
+        settings.ResponseWeight,
+        settings.EngagementWeight,
+        settings.FreshnessWeight,
+        settings.ProfileWeight,
+        settings.HotThreshold,
+        settings.WarmThreshold,
+        settings.MaxActiveLeadsPerUser,
+        settings.Version,
+        ruleResponses);
+}
+
+static LeadDistributionRuleResponse ToLeadDistributionRuleResponse(LeadDistributionRule rule)
+{
+    return new LeadDistributionRuleResponse(
+        rule.Id,
+        rule.Name,
+        rule.IsActive,
+        rule.PriorityOrder,
+        rule.Strategy,
+        rule.BranchId,
+        rule.CourseId,
+        rule.LeadSourceId,
+        ParseDistributionTargetUsers(rule.TargetUserIds),
+        rule.Version,
+        rule.CreatedAt,
+        rule.UpdatedAt);
 }
 
 static IReadOnlyCollection<string> AllowedTemplatePlaceholders() =>
@@ -7939,6 +8640,64 @@ record UpdateTenantProfileRequest(
     Guid? DefaultAssigneeUserId,
     int Version);
 
+record LeadIntelligenceSettingsResponse(
+    bool ScoringEnabled,
+    bool DistributionEnabled,
+    string DefaultDistributionStrategy,
+    int PriorityWeight,
+    int SourceWeight,
+    int ResponseWeight,
+    int EngagementWeight,
+    int FreshnessWeight,
+    int ProfileWeight,
+    int HotThreshold,
+    int WarmThreshold,
+    int MaxActiveLeadsPerUser,
+    int Version,
+    IReadOnlyCollection<LeadDistributionRuleResponse> Rules);
+
+record UpdateLeadIntelligenceSettingsRequest(
+    bool ScoringEnabled,
+    bool DistributionEnabled,
+    string DefaultDistributionStrategy,
+    int PriorityWeight,
+    int SourceWeight,
+    int ResponseWeight,
+    int EngagementWeight,
+    int FreshnessWeight,
+    int ProfileWeight,
+    int HotThreshold,
+    int WarmThreshold,
+    int MaxActiveLeadsPerUser,
+    int Version);
+
+record LeadDistributionRuleResponse(
+    Guid Id,
+    string Name,
+    bool IsActive,
+    int PriorityOrder,
+    string Strategy,
+    Guid? BranchId,
+    Guid? CourseId,
+    Guid? LeadSourceId,
+    IReadOnlyCollection<Guid> TargetUserIds,
+    int Version,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+record SaveLeadDistributionRuleRequest(
+    string Name,
+    bool IsActive,
+    int PriorityOrder,
+    string Strategy,
+    Guid? BranchId,
+    Guid? CourseId,
+    Guid? LeadSourceId,
+    IReadOnlyCollection<Guid> TargetUserIds,
+    int Version);
+
+record LeadIntelligenceRecalculateResponse(int Updated, string Message);
+
 record MasterDataResponse(
     IReadOnlyCollection<BranchMasterResponse> Branches,
     IReadOnlyCollection<NamedMasterResponse> Courses,
@@ -8237,7 +8996,11 @@ record LeadResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? ArchivedAt,
-    DateTimeOffset? NextFollowUpAt);
+    DateTimeOffset? NextFollowUpAt,
+    int IntelligenceScore,
+    string IntelligenceTemperature,
+    string? IntelligenceReason,
+    DateTimeOffset? IntelligenceUpdatedAt);
 
 record LeadListResponse(
     IReadOnlyCollection<LeadResponse> Items,
@@ -8270,7 +9033,21 @@ record LeadDetailResponse(
     DateTimeOffset? ArchivedAt,
     DateTimeOffset? NextFollowUpAt,
     IReadOnlyCollection<FollowUpResponse> FollowUps,
-    IReadOnlyCollection<ActivityResponse> Activities);
+    IReadOnlyCollection<ActivityResponse> Activities,
+    IReadOnlyCollection<LeadIntelligenceEventResponse> IntelligenceEvents);
+
+record LeadIntelligenceEventResponse(
+    string Id,
+    string EventType,
+    int? PreviousScore,
+    int? NewScore,
+    string? PreviousTemperature,
+    string? NewTemperature,
+    string? PreviousAssignedUser,
+    string? NewAssignedUser,
+    string? Rule,
+    string Reason,
+    DateTimeOffset CreatedAt);
 
 record FollowUpResponse(
     string Id,
@@ -8395,3 +9172,11 @@ record NotificationPreferenceRequest(
     bool FollowUpRemindersEnabled,
     bool PaymentRemindersEnabled,
     int Version);
+
+record LeadScoreCalculation(int Score, string Temperature, string Reason);
+
+record LeadDistributionDecision(Guid? AssignedUserId, Guid? RuleId, string Reason)
+{
+    public static LeadDistributionDecision Assigned(Guid assignedUserId, Guid? ruleId, string reason) => new(assignedUserId, ruleId, reason);
+    public static LeadDistributionDecision None(string reason) => new(null, null, reason);
+}

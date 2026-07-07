@@ -36,6 +36,9 @@ public sealed class Tenant
     public ICollection<NotificationPreference> NotificationPreferences { get; set; } = [];
     public ICollection<AdmissionApplication> AdmissionApplications { get; set; } = [];
     public ICollection<Enrollment> Enrollments { get; set; } = [];
+    public LeadIntelligenceSettings? LeadIntelligenceSettings { get; set; }
+    public ICollection<LeadDistributionRule> LeadDistributionRules { get; set; } = [];
+    public ICollection<LeadIntelligenceEvent> LeadIntelligenceEvents { get; set; } = [];
     public Branch? DefaultBranch { get; set; }
     public AppUser? DefaultAssigneeUser { get; set; }
 }

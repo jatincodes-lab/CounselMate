@@ -1,0 +1,70 @@
+CounselMate CRM - Missing Functionality List
+Generated: 2026-07-07
+
+LEAD CAPTURE (basics-level gap)
+- Facebook/Instagram/Google Lead Ads integration
+- Website form embed / landing page capture
+- WhatsApp Business API inbound capture
+- IVR / missed-call / click-to-call telephony capture
+- Lead import/export (CSV/XLSX)
+
+COMMUNICATION (basics-level gap)
+- Outbound WhatsApp sending from CRM
+- Outbound SMS sending from CRM
+- Outbound email sending from CRM
+- Communication templates
+- Call logging via CTI (auto-logged calls/recordings, not just manual notes)
+- Unified communication history (calls + WhatsApp + SMS + email in one timeline)
+
+LEAD INTELLIGENCE
+- Automated lead scoring based on engagement, source quality, response time, priority, and follow-up activity
+- Lead score display, filters, and sorting in lead list and dashboards
+- Lead scoring settings UI for tenant-specific scoring weights and thresholds
+- Hot/warm/cold lead classification with activity/audit history for score changes
+- Auto-distribution rules beyond manual/default assignment
+- Round-robin lead assignment by branch/team
+- Workload-based lead assignment using active lead and follow-up load
+- Source-based/course-based lead assignment rules
+- Distribution rule settings UI with assignment audit/reason tracking
+- Overflow handling for inactive, unavailable, or overloaded counsellors
+
+PAYMENTS
+- Live payment gateway integration (Razorpay/Stripe/etc. - online collection)
+- Advanced payment settings/billing configuration
+
+STUDENT-FACING
+- Student/parent self-service portal (status check, document upload, online payment)
+
+POST-ADMISSION
+- Onboarding workflow after enrollment
+- Alumni/retention engagement
+- Referral capture and tracking
+
+REPORTING
+- Branch performance report
+- Drop-reason analysis report
+- Course demand report
+- Revenue report
+- Detailed productivity report
+- Saved filters / saved reports
+- Full CSV/XLSX/PDF export workflows
+
+CONFIGURATION/SETTINGS
+- Tenant profile/settings persistence
+- Configurable tenant-level admission requirement templates
+- Intake/batch master data
+- Tags and custom fields
+- Integration settings UI (WhatsApp, SMS, email, payment gateway, external APIs)
+- Calendar view for follow-ups/tasks
+
+PLATFORM/ACCESS
+- SSO (Google Workspace/Microsoft)
+- MFA
+- Mobile app (iOS/Android)
+
+ENGINEERING HYGIENE
+- Automated test suite (currently manual QA only, across bulk actions, applications, documents, payments, notifications)
+- Cloudinary production environment config
+- Email/WhatsApp provider credentials, consent rules, templates
+- Final production deployment config (Render/Vercel)
+- Applications/Enrollment migration applied to target environment

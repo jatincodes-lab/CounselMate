@@ -29,6 +29,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AdmissionChecklistItem> AdmissionChecklistItems => Set<AdmissionChecklistItem>();
     public DbSet<AdmissionStatusHistory> AdmissionStatusHistories => Set<AdmissionStatusHistory>();
     public DbSet<Enrollment> Enrollments => Set<Enrollment>();
+    public DbSet<LeadIntelligenceSettings> LeadIntelligenceSettings => Set<LeadIntelligenceSettings>();
+    public DbSet<LeadDistributionRule> LeadDistributionRules => Set<LeadDistributionRule>();
+    public DbSet<LeadIntelligenceEvent> LeadIntelligenceEvents => Set<LeadIntelligenceEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +57,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         ConfigureAdmissionChecklistItems(modelBuilder);
         ConfigureAdmissionStatusHistories(modelBuilder);
         ConfigureEnrollments(modelBuilder);
+        ConfigureLeadIntelligenceSettings(modelBuilder);
+        ConfigureLeadDistributionRules(modelBuilder);
+        ConfigureLeadIntelligenceEvents(modelBuilder);
         SeedDemoTenant(modelBuilder);
     }
 
@@ -229,6 +235,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(item => new { item.TenantId, item.AssignedUserId });
             entity.HasIndex(item => new { item.TenantId, item.BranchId });
             entity.HasIndex(item => new { item.TenantId, item.LeadStageId });
+            entity.HasIndex(item => new { item.TenantId, item.IntelligenceScore });
+            entity.HasIndex(item => new { item.TenantId, item.IntelligenceTemperature });
             entity.Property(item => item.LeadNumber).HasMaxLength(40).IsRequired();
             entity.Property(item => item.StudentName).HasMaxLength(160).IsRequired();
             entity.Property(item => item.GuardianName).HasMaxLength(160);
@@ -238,6 +246,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.City).HasMaxLength(120);
             entity.Property(item => item.Status).HasMaxLength(80).IsRequired();
             entity.Property(item => item.Priority).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.IntelligenceTemperature).HasMaxLength(20).IsRequired();
+            entity.Property(item => item.IntelligenceReason).HasMaxLength(1000);
             entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany(item => item.Leads)
@@ -274,6 +284,91 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasOne(item => item.ArchivedByUser)
                 .WithMany()
                 .HasForeignKey(item => item.ArchivedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureLeadIntelligenceSettings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LeadIntelligenceSettings>(entity =>
+        {
+            entity.ToTable("lead_intelligence_settings");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => item.TenantId).IsUnique();
+            entity.Property(item => item.DefaultDistributionStrategy).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant)
+                .WithOne(item => item.LeadIntelligenceSettings)
+                .HasForeignKey<LeadIntelligenceSettings>(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureLeadDistributionRules(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LeadDistributionRule>(entity =>
+        {
+            entity.ToTable("lead_distribution_rules");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.IsActive, item.PriorityOrder });
+            entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Strategy).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.TargetUserIds).HasMaxLength(2000).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasOne(item => item.Tenant)
+                .WithMany(item => item.LeadDistributionRules)
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.Branch)
+                .WithMany()
+                .HasForeignKey(item => item.BranchId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.Course)
+                .WithMany()
+                .HasForeignKey(item => item.CourseId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.LeadSource)
+                .WithMany()
+                .HasForeignKey(item => item.LeadSourceId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.LastAssignedUser)
+                .WithMany()
+                .HasForeignKey(item => item.LastAssignedUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureLeadIntelligenceEvents(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LeadIntelligenceEvent>(entity =>
+        {
+            entity.ToTable("lead_intelligence_events");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantId, item.LeadId, item.CreatedAt });
+            entity.HasIndex(item => new { item.TenantId, item.EventType, item.CreatedAt });
+            entity.Property(item => item.EventType).HasMaxLength(60).IsRequired();
+            entity.Property(item => item.PreviousTemperature).HasMaxLength(20);
+            entity.Property(item => item.NewTemperature).HasMaxLength(20);
+            entity.Property(item => item.Reason).HasMaxLength(1000).IsRequired();
+            entity.HasOne(item => item.Tenant)
+                .WithMany(item => item.LeadIntelligenceEvents)
+                .HasForeignKey(item => item.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.Lead)
+                .WithMany()
+                .HasForeignKey(item => item.LeadId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.PreviousAssignedUser)
+                .WithMany()
+                .HasForeignKey(item => item.PreviousAssignedUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.NewAssignedUser)
+                .WithMany()
+                .HasForeignKey(item => item.NewAssignedUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.DistributionRule)
+                .WithMany()
+                .HasForeignKey(item => item.DistributionRuleId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
     }

@@ -5932,16 +5932,22 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
   const activeCount = records.filter((record) => record.isActive).length;
 
   return (
-    <>
-      <PageTitle
-        title="Settings"
-        subtitle="Manage the institute profile, lead configuration, and communication templates."
-        action={canManage && !isProfileTab ? (
-          <button className="primary-button" type="button" onClick={() => openEditor()} disabled={status.loading || status.saving}>
-            <Plus size={18} />Add {tab.singular}
-          </button>
-        ) : null}
-      />
+    <section className="settings-workspace">
+      <div className="settings-hero">
+        <div>
+          <span className="settings-eyebrow">Workspace configuration</span>
+          <h1>Settings</h1>
+          <p>Manage the institute profile, lead configuration, and communication templates.</p>
+        </div>
+        <div className="settings-hero-actions">
+          <span className="settings-pill">{canManage ? "Admin access" : "Read-only access"}</span>
+          {canManage && !isProfileTab && (
+            <button className="settings-button" type="button" onClick={() => openEditor()} disabled={status.loading || status.saving}>
+              <Plus size={18} />Add {tab.singular}
+            </button>
+          )}
+        </div>
+      </div>
 
       <nav className="master-tabs" aria-label="Settings categories">
         {settingsTabs.map((item) => {
@@ -6000,8 +6006,8 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
       )}
 
       {!isProfileTab && !status.loading && (
-        <div className="master-summary">
-          <span><strong>{records.length}</strong> total</span>
+        <div className="master-summary settings-summary">
+          <span><strong>{records.length}</strong> total records</span>
           <span><strong>{activeCount}</strong> active</span>
           <span><strong>{records.length - activeCount}</strong> inactive</span>
           {!canManage && <span className="read-only-note">Read-only access</span>}
@@ -6031,7 +6037,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
         </div>
       )}
 
-      {!isProfileTab && <div className="table-card master-table">
+      {!isProfileTab && <div className="table-card master-table settings-table-card">
         {status.loading && <StatePanel title="Loading master data" message="Fetching tenant configuration..." />}
         {!status.loading && records.length === 0 && <StatePanel title={`No ${tab.label.toLowerCase()}`} message={`Add the first ${tab.singular.toLowerCase()} to this workspace.`} />}
         {!status.loading && records.length > 0 && visibleRecords.length === 0 && (
@@ -6123,7 +6129,7 @@ function SettingsPage({ currentUser, onMasterDataChanged, onTenantProfileChanged
           onSubmit={(payload) => saveTemplate(editor.record, payload)}
         />
       )}
-    </>
+    </section>
   );
 }
 

@@ -3,29 +3,39 @@ const TOKEN_STORAGE_KEY = "counselmate_access_token";
 const USER_STORAGE_KEY = "counselmate_user";
 
 export function getStoredAuth() {
-  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-  const userJson = localStorage.getItem(USER_STORAGE_KEY);
+  for (const storage of [localStorage, sessionStorage]) {
+    const token = storage.getItem(TOKEN_STORAGE_KEY);
+    const userJson = storage.getItem(USER_STORAGE_KEY);
+    if (!token || !userJson) {
+      continue;
+    }
 
-  if (!token || !userJson) {
-    return { token: "", user: null };
+    try {
+      return { token, user: JSON.parse(userJson) };
+    } catch {
+      storage.removeItem(TOKEN_STORAGE_KEY);
+      storage.removeItem(USER_STORAGE_KEY);
+    }
   }
 
-  try {
-    return { token, user: JSON.parse(userJson) };
-  } catch {
-    clearStoredAuth();
-    return { token: "", user: null };
-  }
+  return { token: "", user: null };
 }
 
 export function clearStoredAuth() {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
   localStorage.removeItem(USER_STORAGE_KEY);
+  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  sessionStorage.removeItem(USER_STORAGE_KEY);
 }
 
 export function updateStoredUser(user) {
-  if (user) {
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  if (!user) {
+    return;
+  }
+
+  const storage = localStorage.getItem(TOKEN_STORAGE_KEY) ? localStorage : sessionStorage;
+  if (storage.getItem(TOKEN_STORAGE_KEY)) {
+    storage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
   }
 }
 
@@ -106,8 +116,10 @@ export async function login(payload) {
     },
   });
 
-  localStorage.setItem(TOKEN_STORAGE_KEY, response.token);
-  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
+  clearStoredAuth();
+  const storage = payload.remember === false ? sessionStorage : localStorage;
+  storage.setItem(TOKEN_STORAGE_KEY, response.token);
+  storage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
   return response;
 }
 

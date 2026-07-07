@@ -1,8 +1,11 @@
 export { Badge } from "./badge";
+export { Alert } from "./alert";
 export { Button } from "./button";
 export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./card";
+export { Checkbox } from "./checkbox";
 export { Input } from "./input";
 export { Label } from "./label";
 export { Select } from "./select";
 export { Separator } from "./separator";
+export { Spinner } from "./spinner";
 export { Switch } from "./switch";

@@ -15,6 +15,7 @@
 }
 
 .ui-button:focus-visible,
+.ui-checkbox:focus-visible,
 .ui-input:focus-visible,
 .ui-select:focus-visible,
 .ui-switch:focus-visible {
@@ -250,4 +251,66 @@
   width: 1px;
   align-self: stretch;
   background: #e2e8f0;
+}
+
+.ui-checkbox {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.ui-alert {
+  display: flex;
+  gap: 10px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ui-alert-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.ui-alert-copy strong {
+  color: inherit;
+  font-size: 12px;
+}
+
+.ui-alert--destructive {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.ui-alert--success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.ui-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: ui-spin 650ms linear infinite;
+}
+
+@keyframes ui-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-spinner { animation-duration: 1.5s; }
 }

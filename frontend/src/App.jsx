@@ -131,13 +131,42 @@ const ACTIVE_PAGE_STORAGE_KEY = "counselmate.activePage";
 const defaultActivePage = "dashboard";
 const navItemIds = new Set(navItems.map((item) => item.id));
 
+function normalizePageId(pageId) {
+  return navItemIds.has(pageId) ? pageId : defaultActivePage;
+}
+
+function getPageFromHash() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const hashPage = window.location.hash.replace(/^#\/?/, "");
+  return navItemIds.has(hashPage) ? hashPage : "";
+}
+
+function updatePageHash(pageId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const nextHash = `#/${pageId}`;
+  if (window.location.hash !== nextHash) {
+    window.history.replaceState(null, "", nextHash);
+  }
+}
+
 function getInitialActivePage() {
   try {
     if (typeof window === "undefined") {
       return defaultActivePage;
     }
+    const hashPage = getPageFromHash();
+    if (hashPage) {
+      return hashPage;
+    }
+
     const stored = window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY);
-    return navItemIds.has(stored) ? stored : defaultActivePage;
+    return normalizePageId(stored);
   } catch {
     return defaultActivePage;
   }
@@ -241,10 +270,13 @@ function App() {
   const [notificationData, setNotificationData] = useState({ items: [], total: 0, unreadCount: 0, page: 1 });
   const [notificationStatus, setNotificationStatus] = useState({ loading: false, error: "", saving: false });
   const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
+  const changeActivePage = useCallback((pageId) => {
+    setActivePage(normalizePageId(pageId));
+  }, []);
 
   useEffect(() => {
     if (!navItemIds.has(activePage)) {
-      setActivePage(defaultActivePage);
+      changeActivePage(defaultActivePage);
       return;
     }
 
@@ -253,13 +285,26 @@ function App() {
     } catch {
       // Ignore storage failures; navigation still works for the current session.
     }
-  }, [activePage]);
+    updatePageHash(activePage);
+  }, [activePage, changeActivePage]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hashPage = getPageFromHash();
+      if (hashPage) {
+        changeActivePage(hashPage);
+      }
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, [changeActivePage]);
 
   useEffect(() => {
     if (currentUser && activePage === "platform" && currentUser.role !== "Owner") {
-      setActivePage(defaultActivePage);
+      changeActivePage(defaultActivePage);
     }
-  }, [activePage, currentUser]);
+  }, [activePage, changeActivePage, currentUser]);
 
   const loadNotifications = useCallback(async ({ page = 1, append = false, silent = false } = {}) => {
     if (!currentUser) {
@@ -754,7 +799,7 @@ function App() {
       await createLead(payload);
       setLeadModalOpen(false);
       setLeadModalDefaults({});
-      setActivePage("leads");
+      changeActivePage("leads");
       await loadCrmData();
       await loadLeadList();
       setCreateStatus({ saving: false, error: "", fieldErrors: {} });
@@ -782,7 +827,7 @@ function App() {
   };
 
   const handleLeadImportFinished = async () => {
-    setActivePage("leads");
+    changeActivePage("leads");
     await loadCrmData();
     await loadLeadList();
   };
@@ -886,7 +931,7 @@ function App() {
       "Application created.",
     );
     if (detail) {
-      setActivePage("applications");
+      changeActivePage("applications");
     }
     return detail;
   };
@@ -1085,7 +1130,7 @@ function App() {
                 key={item.id}
                 className={`nav-item ${activePage === item.id ? "active" : ""}`}
                 onClick={() => {
-                  setActivePage(item.id);
+                  changeActivePage(item.id);
                   setSidebarOpen(false);
                 }}
               >
@@ -4473,62 +4518,77 @@ function ReportsPage({
 
   const summary = reports?.summary || {};
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(defaultReportFilters());
+  const reportScope = reports ? `${reports.access.scope} access` : "Tenant-wide analytics";
+  const reportPeriod = reports ? `${reports.startDate} to ${reports.endDate}` : "Select a date range to generate report insights.";
+  const generatedLabel = status.loading ? "Refreshing..." : reports ? `Generated ${formatFollowUpLabel(reports.generatedAt)}` : "No report loaded";
 
   return (
-    <>
-      <PageTitle
-        title="Admissions Reports"
-        subtitle={reports ? `${reports.access.scope} | ${reports.startDate} to ${reports.endDate}` : "Performance metrics and conversion insights."}
-        action={
-          canExportReports && (
-            <div className="page-actions">
-              <button className="secondary-button" onClick={() => onExport("csv")} disabled={Boolean(status.exporting)}>
+    <section className="reports-workspace">
+      <div className="reports-header">
+        <div>
+          <span className="reports-eyebrow">Reports</span>
+          <h1>Admissions Reports</h1>
+          <p>{reportPeriod}</p>
+        </div>
+        <div className="reports-header-actions">
+          <span className="reports-status-pill">{reportScope}</span>
+          {canExportReports && (
+            <div className="reports-export-group" aria-label="Export reports">
+              <button className="reports-button reports-button-outline" onClick={() => onExport("csv")} disabled={Boolean(status.exporting)}>
                 <Download size={18} />
                 {status.exporting === "csv" ? "Exporting..." : "CSV"}
               </button>
-              <button className="primary-button" onClick={() => onExport("xlsx")} disabled={Boolean(status.exporting)}>
+              <button className="reports-button" onClick={() => onExport("xlsx")} disabled={Boolean(status.exporting)}>
                 <Download size={18} />
                 {status.exporting === "xlsx" ? "Exporting..." : "XLSX"}
               </button>
             </div>
-          )
-        }
-      />
+          )}
+        </div>
+      </div>
 
-      <div className="report-filter-panel">
-        <Field label="Start Date">
-          <input type="date" value={filters.startDate} onChange={(event) => onFiltersChange({ startDate: event.target.value })} />
-        </Field>
-        <Field label="End Date">
-          <input type="date" value={filters.endDate} onChange={(event) => onFiltersChange({ endDate: event.target.value })} />
-        </Field>
-        <Field label="Branch">
-          <select value={filters.branchId} onChange={(event) => onFiltersChange({ branchId: event.target.value })}>
-            <option value="">All branches</option>
-            {options.branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Course">
-          <select value={filters.courseId} onChange={(event) => onFiltersChange({ courseId: event.target.value })}>
-            <option value="">All courses</option>
-            {options.courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Source">
-          <select value={filters.sourceId} onChange={(event) => onFiltersChange({ sourceId: event.target.value })}>
-            <option value="">All sources</option>
-            {options.sources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Counsellor">
-          <select value={filters.assignedUserId} onChange={(event) => onFiltersChange({ assignedUserId: event.target.value })}>
-            <option value="">All counsellors</option>
-            {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </Field>
-        <div className="lead-filter-actions">
-          <strong>{status.loading ? "Loading..." : reports ? `Generated ${formatFollowUpLabel(reports.generatedAt)}` : "No report loaded"}</strong>
-          <button className="soft-button" type="button" onClick={onResetFilters} disabled={!hasFilters || status.loading}>Reset</button>
+      <div className="reports-card reports-filter-card">
+        <div className="reports-card-heading">
+          <div>
+            <h2>Filters</h2>
+            <p>{generatedLabel}</p>
+          </div>
+          <button className="reports-button reports-button-ghost" type="button" onClick={onResetFilters} disabled={!hasFilters || status.loading}>
+            <RotateCcw size={16} />
+            Reset
+          </button>
+        </div>
+        <div className="reports-filter-grid">
+          <ReportField label="Start Date">
+            <input type="date" value={filters.startDate} onChange={(event) => onFiltersChange({ startDate: event.target.value })} />
+          </ReportField>
+          <ReportField label="End Date">
+            <input type="date" value={filters.endDate} onChange={(event) => onFiltersChange({ endDate: event.target.value })} />
+          </ReportField>
+          <ReportField label="Branch">
+            <select value={filters.branchId} onChange={(event) => onFiltersChange({ branchId: event.target.value })}>
+              <option value="">All branches</option>
+              {options.branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </ReportField>
+          <ReportField label="Course">
+            <select value={filters.courseId} onChange={(event) => onFiltersChange({ courseId: event.target.value })}>
+              <option value="">All courses</option>
+              {options.courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </ReportField>
+          <ReportField label="Source">
+            <select value={filters.sourceId} onChange={(event) => onFiltersChange({ sourceId: event.target.value })}>
+              <option value="">All sources</option>
+              {options.sources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </ReportField>
+          <ReportField label="Counsellor">
+            <select value={filters.assignedUserId} onChange={(event) => onFiltersChange({ assignedUserId: event.target.value })}>
+              <option value="">All counsellors</option>
+              {options.counselors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </ReportField>
         </div>
       </div>
 
@@ -4538,81 +4598,98 @@ function ReportsPage({
       {!status.loading && !status.error && !reports && <StatePanel title="No reports loaded" message="Use the filters to load admissions reports." action={onRetry} actionLabel="Load reports" />}
 
       {reports && (
-        <div className="reports-grid">
-          <div className="metric-stack">
-            <Metric title="Total Leads" value={formatNumber(summary.totalLeads)} />
-            <Metric title="Conversion Rate" value={`${summary.conversionRate || 0}%`} />
-            <Metric title="Open Leads" value={formatNumber(summary.openLeads)} />
-            <Metric title="Overdue Follow-ups" value={formatNumber(summary.overdueFollowUps)} warning={summary.overdueFollowUps > 0} />
+        <div className="reports-content">
+          <div className="reports-metric-grid">
+            <ReportMetricCard title="Total Leads" value={formatNumber(summary.totalLeads)} detail="Created in selected period" />
+            <ReportMetricCard title="Conversion Rate" value={`${summary.conversionRate || 0}%`} detail="Won leads / total leads" tone="success" />
+            <ReportMetricCard title="Open Leads" value={formatNumber(summary.openLeads)} detail="Still active in pipeline" />
+            <ReportMetricCard title="Overdue Follow-ups" value={formatNumber(summary.overdueFollowUps)} detail="Needs immediate attention" tone={summary.overdueFollowUps > 0 ? "danger" : "success"} />
           </div>
 
-          <Card title="Pipeline Funnel" className="funnel-card">
-            <div className="funnel">
+          <div className="reports-grid">
+            <section className="reports-card reports-funnel-card">
+              <div className="reports-card-heading">
+                <div>
+                  <h2>Pipeline Funnel</h2>
+                  <p>Stage share across the filtered admission pipeline.</p>
+                </div>
+                <span className="reports-status-pill">{formatNumber(summary.totalLeads)} leads</span>
+              </div>
               {reports.stages.length === 0 && <StatePanel title="No stage data" message="No leads were created in this period." />}
               {reports.stages.map((stage) => (
-                <div key={stage.stageId} style={{ width: `${Math.max(18, stage.percentage || 0)}%` }}>
-                  <strong>{stage.stage}</strong>
-                  <span>{formatNumber(stage.totalLeads)} | {stage.percentage}%</span>
+                <div className="reports-funnel-row" key={stage.stageId}>
+                  <div className="reports-funnel-copy">
+                    <strong>{stage.stage}</strong>
+                    <span>{formatNumber(stage.totalLeads)} leads</span>
+                  </div>
+                  <div className="reports-funnel-track" aria-label={`${stage.stage} ${stage.percentage}%`}>
+                    <span style={{ width: `${Math.max(4, stage.percentage || 0)}%` }} />
+                  </div>
+                  <span className="reports-funnel-value">{stage.percentage}%</span>
                 </div>
               ))}
-            </div>
-          </Card>
+            </section>
 
-          <ReportTable
-            title="Lead Source Performance"
-            emptyTitle="No source data"
-            emptyMessage="No leads match the current source filters."
-            columns={["Source", "Leads", "Won", "Lost", "Open", "Conversion"]}
-            rows={reports.sources}
-            renderRow={(item) => (
-              <tr key={item.sourceId}>
-                <td><strong>{item.source}</strong></td>
-                <td>{formatNumber(item.totalLeads)}</td>
-                <td>{formatNumber(item.wonLeads)}</td>
-                <td>{formatNumber(item.lostLeads)}</td>
-                <td>{formatNumber(item.openLeads)}</td>
-                <td>{item.conversionRate}%</td>
-              </tr>
-            )}
-          />
+            <ReportTable
+              title="Lead Source Performance"
+              description="Compare lead quality and conversion by acquisition channel."
+              emptyTitle="No source data"
+              emptyMessage="No leads match the current source filters."
+              columns={["Source", "Leads", "Won", "Lost", "Open", "Conversion"]}
+              rows={reports.sources}
+              renderRow={(item) => (
+                <tr key={item.sourceId}>
+                  <td><strong>{item.source}</strong></td>
+                  <td>{formatNumber(item.totalLeads)}</td>
+                  <td><span className="reports-table-badge success">{formatNumber(item.wonLeads)}</span></td>
+                  <td><span className="reports-table-badge danger">{formatNumber(item.lostLeads)}</span></td>
+                  <td>{formatNumber(item.openLeads)}</td>
+                  <td><strong>{item.conversionRate}%</strong></td>
+                </tr>
+              )}
+            />
 
-          <ReportTable
-            title="Counsellor Performance"
-            emptyTitle="No counsellor data"
-            emptyMessage="No assigned lead or follow-up activity matches this period."
-            columns={["Counsellor", "Leads", "Won", "Scheduled", "Completed", "Overdue", "Conversion"]}
-            rows={reports.counselors}
-            renderRow={(item) => (
-              <tr key={item.userId || item.counselor}>
-                <td><strong>{item.counselor}</strong></td>
-                <td>{formatNumber(item.totalLeads)}</td>
-                <td>{formatNumber(item.wonLeads)}</td>
-                <td>{formatNumber(item.scheduledFollowUps)}</td>
-                <td>{formatNumber(item.completedFollowUps)}</td>
-                <td>{formatNumber(item.overdueFollowUps)}</td>
-                <td>{item.conversionRate}%</td>
-              </tr>
-            )}
-          />
+            <ReportTable
+              title="Counsellor Performance"
+              description="Track ownership, follow-up discipline, and admission outcomes."
+              emptyTitle="No counsellor data"
+              emptyMessage="No assigned lead or follow-up activity matches this period."
+              columns={["Counsellor", "Leads", "Won", "Scheduled", "Completed", "Overdue", "Conversion"]}
+              rows={reports.counselors}
+              wide
+              renderRow={(item) => (
+                <tr key={item.userId || item.counselor}>
+                  <td><strong>{item.counselor}</strong></td>
+                  <td>{formatNumber(item.totalLeads)}</td>
+                  <td>{formatNumber(item.wonLeads)}</td>
+                  <td>{formatNumber(item.scheduledFollowUps)}</td>
+                  <td>{formatNumber(item.completedFollowUps)}</td>
+                  <td><span className={item.overdueFollowUps > 0 ? "reports-table-badge danger" : "reports-table-badge"}>{formatNumber(item.overdueFollowUps)}</span></td>
+                  <td><strong>{item.conversionRate}%</strong></td>
+                </tr>
+              )}
+            />
 
-          <ReportTable
-            title="Stage Distribution"
-            emptyTitle="No stage data"
-            emptyMessage="No pipeline stage activity matches this period."
-            columns={["Stage", "Leads", "Share", "Type"]}
-            rows={reports.stages}
-            renderRow={(item) => (
-              <tr key={item.stageId}>
-                <td><strong>{item.stage}</strong></td>
-                <td>{formatNumber(item.totalLeads)}</td>
-                <td>{item.percentage}%</td>
-                <td>{item.isWonStage ? "Won" : item.isLostStage ? "Lost" : "Open"}</td>
-              </tr>
-            )}
-          />
+            <ReportTable
+              title="Stage Distribution"
+              description="Understand where leads are concentrated in the process."
+              emptyTitle="No stage data"
+              emptyMessage="No pipeline stage activity matches this period."
+              columns={["Stage", "Leads", "Share", "Type"]}
+              rows={reports.stages}
+              renderRow={(item) => (
+                <tr key={item.stageId}>
+                  <td><strong>{item.stage}</strong></td>
+                  <td>{formatNumber(item.totalLeads)}</td>
+                  <td>{item.percentage}%</td>
+                  <td><span className={`reports-table-badge ${item.isWonStage ? "success" : item.isLostStage ? "danger" : ""}`}>{item.isWonStage ? "Won" : item.isLostStage ? "Lost" : "Open"}</span></td>
+                </tr>
+              )}
+            />
+          </div>
         </div>
       )}
-    </>
+    </section>
   );
 }
 
@@ -5570,9 +5647,36 @@ function InsightBreakdown({ title, rows, empty }) {
   );
 }
 
-function ReportTable({ title, emptyTitle, emptyMessage, columns, rows, renderRow }) {
+function ReportField({ label, children }) {
   return (
-    <Card title={title} className="report-table-card wide-card">
+    <label className="reports-field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function ReportMetricCard({ title, value, detail, tone = "" }) {
+  return (
+    <article className={`reports-metric-card ${tone}`}>
+      <div>
+        <span>{title}</span>
+        <strong>{value}</strong>
+      </div>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
+function ReportTable({ title, description, emptyTitle, emptyMessage, columns, rows, renderRow, wide = false }) {
+  return (
+    <section className={`reports-card report-table-card ${wide ? "wide-card" : ""}`}>
+      <div className="reports-card-heading">
+        <div>
+          <h2>{title}</h2>
+          {description && <p>{description}</p>}
+        </div>
+      </div>
       {rows.length === 0 && <StatePanel title={emptyTitle} message={emptyMessage} />}
       {rows.length > 0 && (
         <div className="report-table">
@@ -5584,7 +5688,7 @@ function ReportTable({ title, emptyTitle, emptyMessage, columns, rows, renderRow
           </table>
         </div>
       )}
-    </Card>
+    </section>
   );
 }
 

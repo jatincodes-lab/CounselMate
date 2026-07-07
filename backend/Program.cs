@@ -28,6 +28,13 @@ builder.Services.Configure<FormOptions>(options =>
 });
 builder.Services.AddHttpClient<ILeadDocumentStorage, CloudinaryLeadDocumentStorage>();
 builder.Services.AddScoped<ReminderNotificationJob>();
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    };
+});
 
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
 builder.Services.AddHangfire(configuration => configuration
@@ -71,6 +78,10 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler();
+}
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
 app.Use(async (httpContext, next) =>
@@ -1928,6 +1939,10 @@ api.MapGet("/reports/counsellor-workspace", async (
     {
         var count = await query.CountAsync(cancellationToken);
         var rows = await query
+            .OrderBy(lead => lead.Priority == "Urgent" ? 0 : lead.Priority == "High" ? 1 : lead.Priority == "Medium" ? 2 : 3)
+            .ThenBy(lead => lead.NextFollowUpAt == null)
+            .ThenBy(lead => lead.NextFollowUpAt)
+            .ThenBy(lead => lead.StudentName)
             .Select(lead => new
             {
                 lead.LeadNumber,
@@ -1939,13 +1954,8 @@ api.MapGet("/reports/counsellor-workspace", async (
                 LastActivityAt = lead.Activities
                     .Where(activity => activity.Type != "LeadCreated")
                     .Select(activity => (DateTimeOffset?)activity.CreatedAt)
-                    .Max() ?? lead.CreatedAt,
-                PriorityRank = lead.Priority == "Urgent" ? 0 : lead.Priority == "High" ? 1 : lead.Priority == "Medium" ? 2 : 3
+                    .Max() ?? lead.CreatedAt
             })
-            .OrderBy(row => row.PriorityRank)
-            .ThenBy(row => row.NextFollowUpAt == null)
-            .ThenBy(row => row.NextFollowUpAt)
-            .ThenBy(row => row.StudentName)
             .Take(8)
             .ToListAsync(cancellationToken);
         var items = rows
@@ -1971,26 +1981,61 @@ api.MapGet("/reports/counsellor-workspace", async (
         await LoadAttentionAsync("noNextAction", "No next action", "Every open lead should have a clear next step.", noNextAction)
     };
 
-    var pipeline = await portfolio
+    var pipelineRows = await portfolio
         .GroupBy(lead => new { lead.LeadStageId, lead.LeadStage.Name, lead.LeadStage.SortOrder, lead.LeadStage.IsWonStage, lead.LeadStage.IsLostStage })
-        .Select(group => new CounsellorPipelineInsight(
-            group.Key.LeadStageId,
-            group.Key.Name,
+        .Select(group => new
+        {
+            StageId = group.Key.LeadStageId,
+            Stage = group.Key.Name,
             group.Key.SortOrder,
-            group.Count(),
-            group.Count(lead => !lead.Activities.Any(activity => activity.Type == "StageChanged" && activity.CreatedAt >= stageStuckCutoff) && lead.CreatedAt < stageStuckCutoff),
+            TotalLeads = group.Count(),
             group.Key.IsWonStage,
-            group.Key.IsLostStage))
-        .OrderBy(item => item.SortOrder)
+            group.Key.IsLostStage
+        })
         .ToListAsync(cancellationToken);
+    var stuckLeadsByStage = await portfolio
+        .Where(lead =>
+            lead.CreatedAt < stageStuckCutoff &&
+            !lead.Activities.Any(activity => activity.Type == "StageChanged" && activity.CreatedAt >= stageStuckCutoff))
+        .GroupBy(lead => lead.LeadStageId)
+        .Select(group => new { StageId = group.Key, Count = group.Count() })
+        .ToDictionaryAsync(item => item.StageId, item => item.Count, cancellationToken);
+    var pipeline = pipelineRows
+        .Select(item => new CounsellorPipelineInsight(
+            item.StageId,
+            item.Stage,
+            item.SortOrder,
+            item.TotalLeads,
+            stuckLeadsByStage.GetValueOrDefault(item.StageId),
+            item.IsWonStage,
+            item.IsLostStage))
+        .OrderBy(item => item.SortOrder)
+        .ToList();
 
-    var periodFollowUps = followUps.Where(item => item.DueAt >= range.Start && item.DueAt < range.EndExclusive);
-    var scheduledCount = await periodFollowUps.CountAsync(cancellationToken);
-    var completedCount = await periodFollowUps.CountAsync(item => item.Status == "Completed", cancellationToken);
-    var completedOnTime = await periodFollowUps.CountAsync(item => item.Status == "Completed" && item.CompletedAt <= item.DueAt, cancellationToken);
-    var completedLate = await periodFollowUps.CountAsync(item => item.Status == "Completed" && item.CompletedAt > item.DueAt, cancellationToken);
-    var cancelledCount = await periodFollowUps.CountAsync(item => item.Status == "Cancelled", cancellationToken);
-    var currentlyOverdue = await followUps.CountAsync(item => item.Status == "Scheduled" && item.DueAt < now, cancellationToken);
+    var followUpMetrics = await followUps
+        .GroupBy(_ => 1)
+        .Select(group => new
+        {
+            Scheduled = group.Count(item => item.DueAt >= range.Start && item.DueAt < range.EndExclusive),
+            Completed = group.Count(item =>
+                item.DueAt >= range.Start && item.DueAt < range.EndExclusive && item.Status == "Completed"),
+            CompletedOnTime = group.Count(item =>
+                item.DueAt >= range.Start && item.DueAt < range.EndExclusive &&
+                item.Status == "Completed" && item.CompletedAt != null && item.CompletedAt <= item.DueAt),
+            CompletedLate = group.Count(item =>
+                item.DueAt >= range.Start && item.DueAt < range.EndExclusive &&
+                item.Status == "Completed" && item.CompletedAt != null && item.CompletedAt > item.DueAt),
+            Cancelled = group.Count(item =>
+                item.DueAt >= range.Start && item.DueAt < range.EndExclusive && item.Status == "Cancelled"),
+            CurrentlyOverdue = group.Count(item => item.Status == "Scheduled" && item.DueAt < now)
+        })
+        .SingleOrDefaultAsync(cancellationToken);
+    var scheduledCount = followUpMetrics?.Scheduled ?? 0;
+    var completedCount = followUpMetrics?.Completed ?? 0;
+    var completedOnTime = followUpMetrics?.CompletedOnTime ?? 0;
+    var completedLate = followUpMetrics?.CompletedLate ?? 0;
+    var cancelledCount = followUpMetrics?.Cancelled ?? 0;
+    var currentlyOverdue = followUpMetrics?.CurrentlyOverdue ?? 0;
     var completionRate = scheduledCount == 0 ? 0m : Math.Round((decimal)completedCount / scheduledCount * 100m, 1);
 
     var periodPortfolio = portfolio.Where(lead => lead.CreatedAt >= range.Start && lead.CreatedAt < range.EndExclusive);
@@ -2008,28 +2053,64 @@ api.MapGet("/reports/counsellor-workspace", async (
     var openLeads = await openPortfolio.CountAsync(cancellationToken);
     var conversionRate = newLeads == 0 ? 0m : Math.Round((decimal)wonLeads / newLeads * 100m, 1);
 
-    var courseInsights = await periodPortfolio
-        .GroupBy(lead => new { lead.CourseId, lead.Course.Name })
+    var courseStageRows = await periodPortfolio
+        .GroupBy(lead => new
+        {
+            lead.CourseId,
+            Course = lead.Course.Name,
+            lead.LeadStage.IsWonStage,
+            lead.LeadStage.IsLostStage
+        })
+        .Select(group => new
+        {
+            group.Key.CourseId,
+            group.Key.Course,
+            group.Key.IsWonStage,
+            group.Key.IsLostStage,
+            Count = group.Count()
+        })
+        .ToListAsync(cancellationToken);
+    var courseInsights = courseStageRows
+        .GroupBy(item => new { item.CourseId, item.Course })
         .Select(group => new CounsellorBreakdownInsight(
             group.Key.CourseId,
-            group.Key.Name,
-            group.Count(),
-            group.Count(lead => lead.LeadStage.IsWonStage),
-            group.Count(lead => !lead.LeadStage.IsWonStage && !lead.LeadStage.IsLostStage)))
+            group.Key.Course,
+            group.Sum(item => item.Count),
+            group.Where(item => item.IsWonStage).Sum(item => item.Count),
+            group.Where(item => !item.IsWonStage && !item.IsLostStage).Sum(item => item.Count)))
         .OrderByDescending(item => item.TotalLeads)
+        .ThenBy(item => item.Name)
         .Take(8)
+        .ToList();
+    var sourceStageRows = await periodPortfolio
+        .GroupBy(lead => new
+        {
+            lead.LeadSourceId,
+            Source = lead.LeadSource.Name,
+            lead.LeadStage.IsWonStage,
+            lead.LeadStage.IsLostStage
+        })
+        .Select(group => new
+        {
+            group.Key.LeadSourceId,
+            group.Key.Source,
+            group.Key.IsWonStage,
+            group.Key.IsLostStage,
+            Count = group.Count()
+        })
         .ToListAsync(cancellationToken);
-    var sourceInsights = await periodPortfolio
-        .GroupBy(lead => new { lead.LeadSourceId, lead.LeadSource.Name })
+    var sourceInsights = sourceStageRows
+        .GroupBy(item => new { item.LeadSourceId, item.Source })
         .Select(group => new CounsellorBreakdownInsight(
             group.Key.LeadSourceId,
-            group.Key.Name,
-            group.Count(),
-            group.Count(lead => lead.LeadStage.IsWonStage),
-            group.Count(lead => !lead.LeadStage.IsWonStage && !lead.LeadStage.IsLostStage)))
+            group.Key.Source,
+            group.Sum(item => item.Count),
+            group.Where(item => item.IsWonStage).Sum(item => item.Count),
+            group.Where(item => !item.IsWonStage && !item.IsLostStage).Sum(item => item.Count)))
         .OrderByDescending(item => item.TotalLeads)
+        .ThenBy(item => item.Name)
         .Take(8)
-        .ToListAsync(cancellationToken);
+        .ToList();
 
     return Results.Ok(new CounsellorWorkspaceResponse(
         range.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -5962,9 +6043,14 @@ static ReportDateRangeResult ResolveReportDateRange(string? startDate, string? e
     {
         errors["dateRange"] = ["Start date must be on or before end date."];
     }
-    if (errors.Count == 0 && parsedStart < parsedEnd.AddDays(-366))
+    if (errors.Count == 0 && parsedEnd.DayNumber - parsedStart.DayNumber > 366)
     {
         errors["dateRange"] = ["Reports can cover at most 367 days at a time."];
+    }
+    if (errors.Count == 0 &&
+        (parsedStart == DateOnly.MinValue || parsedEnd == DateOnly.MaxValue))
+    {
+        errors["dateRange"] = ["The requested date range is outside the supported timestamp range."];
     }
 
     if (errors.Count > 0)

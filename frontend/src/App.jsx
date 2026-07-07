@@ -4789,7 +4789,7 @@ function EnrollmentsPage({
                   <td>{item.course}{item.intake ? <small> · {item.intake}</small> : null}</td>
                   <td>{item.branch || "No branch"}</td>
                   <td><Status status={item.status} /></td>
-                  <td>{formatCurrency(item.feeBalance, "INR")}</td>
+                  <td><PaymentBalanceCell amount={item.feeBalance} currency="INR" /></td>
                   <td><Badge label={item.documentsReady ? "Ready" : "Pending"} muted={!item.documentsReady} /></td>
                   <td>{formatDate(item.enrolledAt)}</td>
                 </tr>
@@ -4889,6 +4889,18 @@ function EnrollmentDetailPanel({ enrollment, currentUser, saving, onClose, onSta
         </div>
       </aside>
     </div>
+  );
+}
+
+function PaymentBalanceCell({ amount, currency }) {
+  const balance = Number(amount || 0);
+  const isClear = balance <= 0;
+
+  return (
+    <span className={`payment-balance-cell ${isClear ? "clear" : "due"}`}>
+      <strong>{formatCurrency(balance, currency)}</strong>
+      <small>{isClear ? "Clear" : "Due"}</small>
+    </span>
   );
 }
 

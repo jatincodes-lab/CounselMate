@@ -5182,6 +5182,52 @@ td {
   border-radius: 2px;
 }
 
+.payment-balance-cell {
+  width: fit-content;
+  min-width: 112px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+
+.payment-balance-cell strong {
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.payment-balance-cell small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.payment-balance-cell.clear {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.payment-balance-cell.clear strong,
+.payment-balance-cell.clear small {
+  color: #166534;
+}
+
+.payment-balance-cell.due {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.payment-balance-cell.due strong,
+.payment-balance-cell.due small {
+  color: #9a3412;
+}
+
 .enrollments-workspace .table-footer {
   min-height: 58px;
   padding: 12px 16px;

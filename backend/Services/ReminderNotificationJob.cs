@@ -5,10 +5,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EducationCrm.Api.Services;
 
-public sealed class ReminderNotificationJob(AppDbContext db, ILogger<ReminderNotificationJob> logger)
+public sealed class ReminderNotificationJob(
+    AppDbContext db,
+    ILogger<ReminderNotificationJob> logger,
+    IConfiguration configuration)
 {
-    private const int LookAheadMinutes = 15;
-    private const int MaximumPastDueDays = 30;
+    private int FollowUpDueSoonMinutes => GetConfiguredInt("Automation:FollowUpDueSoonMinutes", defaultValue: 30, min: 1, max: 1440);
+    private int FollowUpOverdueGraceMinutes => GetConfiguredInt("Automation:FollowUpOverdueGraceMinutes", defaultValue: 15, min: 0, max: 10080);
+    private int FollowUpEscalationHours => GetConfiguredInt("Automation:FollowUpEscalationHours", defaultValue: 2, min: 1, max: 168);
+    private int MaximumPastDueDays => GetConfiguredInt("Automation:ReminderMaximumPastDueDays", defaultValue: 30, min: 1, max: 180);
+    private int PaymentLookAheadHours => GetConfiguredInt("Automation:PaymentLookAheadHours", defaultValue: 24, min: 1, max: 720);
 
     [AutomaticRetry(Attempts = 3, DelaysInSeconds = [60, 300, 900], OnAttemptsExceeded = AttemptsExceededAction.Fail)]
     [DisableConcurrentExecution(timeoutInSeconds: 240)]
@@ -18,12 +24,14 @@ public sealed class ReminderNotificationJob(AppDbContext db, ILogger<ReminderNot
         var now = IndianClock.Now();
         var dismissed = await DismissObsoleteNotificationsAsync(now, cancellationToken);
         var followUpCount = await CreateFollowUpNotificationsAsync(now, cancellationToken);
+        var escalationCount = await CreateFollowUpEscalationNotificationsAsync(now, cancellationToken);
         var paymentCount = await CreatePaymentNotificationsAsync(now, cancellationToken);
         var deleted = await DeleteExpiredNotificationsAsync(now, cancellationToken);
 
         logger.LogInformation(
-            "Reminder scan completed. Created {FollowUpCount} follow-up and {PaymentCount} payment notifications; dismissed {DismissedCount}; deleted {DeletedCount} expired records.",
+            "Reminder scan completed. Created {FollowUpCount} follow-up, {EscalationCount} escalation and {PaymentCount} payment notifications; dismissed {DismissedCount}; deleted {DeletedCount} expired records.",
             followUpCount,
+            escalationCount,
             paymentCount,
             dismissed,
             deleted);
@@ -79,7 +87,8 @@ public sealed class ReminderNotificationJob(AppDbContext db, ILogger<ReminderNot
     private async Task<int> CreateFollowUpNotificationsAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var lowerBound = now.AddDays(-MaximumPastDueDays);
-        var upperBound = now.AddMinutes(LookAheadMinutes);
+        var upperBound = now.AddMinutes(FollowUpDueSoonMinutes);
+        var overdueCutoff = now.AddMinutes(-FollowUpOverdueGraceMinutes);
         var followUps = await db.FollowUps
             .AsNoTracking()
             .Where(item => item.Status == "Scheduled" &&
@@ -121,6 +130,14 @@ public sealed class ReminderNotificationJob(AppDbContext db, ILogger<ReminderNot
             CanUserAccessLead(user.Role, user.Id, user.BranchId, item.LeadAssignedUserId, item.LeadBranchId)))
         {
             var overdue = followUp.DueAt < now;
+            if (overdue && followUp.DueAt > overdueCutoff)
+            {
+                continue;
+            }
+
+            var highPriority =
+                string.Equals(followUp.Priority, "High", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(followUp.Priority, "Urgent", StringComparison.OrdinalIgnoreCase);
             var type = overdue ? "FollowUpOverdue" : "FollowUpDue";
             var key = $"{type}:{followUp.Id:N}:v{followUp.Version}";
             pending.Add(CreateNotification(
@@ -132,8 +149,8 @@ public sealed class ReminderNotificationJob(AppDbContext db, ILogger<ReminderNot
                 followUp.Version,
                 type,
                 overdue ? "Follow-up overdue" : "Follow-up due soon",
-                $"{followUp.Type} with {followUp.StudentName} is {(overdue ? "overdue" : "due")} at {followUp.DueAt:dd MMM yyyy, hh:mm tt}.",
-                overdue || string.Equals(followUp.Priority, "High", StringComparison.OrdinalIgnoreCase) ? "Warning" : "Info",
+                $"{followUp.Type} with {followUp.StudentName} is {(overdue ? "overdue since" : "due at")} {followUp.DueAt:dd MMM yyyy, hh:mm tt}.",
+                overdue ? (highPriority ? "Critical" : "Warning") : (highPriority ? "Warning" : "Info"),
                 key,
                 followUp.DueAt,
                 now));
@@ -142,10 +159,98 @@ public sealed class ReminderNotificationJob(AppDbContext db, ILogger<ReminderNot
         return await AddMissingNotificationsAsync(pending, cancellationToken);
     }
 
+    private async Task<int> CreateFollowUpEscalationNotificationsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var escalationCutoff = now.AddHours(-FollowUpEscalationHours);
+        var lowerBound = now.AddDays(-MaximumPastDueDays);
+        var followUps = await db.FollowUps
+            .AsNoTracking()
+            .Where(item => item.Status == "Scheduled" &&
+                item.DueAt >= lowerBound &&
+                item.DueAt <= escalationCutoff &&
+                item.Lead.ArchivedAt == null &&
+                item.Tenant.IsActive &&
+                (item.Priority == "High" || item.Priority == "Urgent"))
+            .Select(item => new
+            {
+                item.Id,
+                item.TenantId,
+                item.LeadId,
+                item.Version,
+                item.DueAt,
+                item.Type,
+                item.Priority,
+                StudentName = item.Lead.StudentName,
+                LeadAssignedUserId = item.Lead.AssignedUserId,
+                LeadBranchId = item.Lead.BranchId
+            })
+            .OrderBy(item => item.DueAt)
+            .Take(1000)
+            .ToListAsync(cancellationToken);
+
+        if (followUps.Count == 0)
+        {
+            return 0;
+        }
+
+        var tenantIds = followUps.Select(item => item.TenantId).Distinct().ToArray();
+        var branchIds = followUps
+            .Select(item => item.LeadBranchId)
+            .Where(item => item is not null)
+            .Select(item => item!.Value)
+            .Distinct()
+            .ToArray();
+        var recipients = await db.Users
+            .AsNoTracking()
+            .Where(item => tenantIds.Contains(item.TenantId) &&
+                item.IsActive &&
+                item.Tenant.IsActive &&
+                (item.Role == UserRole.Owner ||
+                    item.Role == UserRole.Admin ||
+                    (item.Role == UserRole.BranchManager && item.BranchId != null && branchIds.Contains(item.BranchId.Value))))
+            .Select(item => new { item.Id, item.TenantId, item.Role, item.BranchId })
+            .ToListAsync(cancellationToken);
+
+        if (recipients.Count == 0)
+        {
+            return 0;
+        }
+
+        var enabledUsers = await GetEnabledUsersAsync(recipients.Select(item => item.Id).ToArray(), followUp: true, cancellationToken);
+        var pending = new List<Notification>();
+
+        foreach (var followUp in followUps)
+        {
+            foreach (var recipient in recipients.Where(item =>
+                item.TenantId == followUp.TenantId &&
+                enabledUsers.Contains(item.Id) &&
+                CanUserAccessLead(item.Role, item.Id, item.BranchId, followUp.LeadAssignedUserId, followUp.LeadBranchId)))
+            {
+                var key = $"FollowUpEscalation:{followUp.Id:N}:v{followUp.Version}:h{FollowUpEscalationHours}";
+                pending.Add(CreateNotification(
+                    followUp.TenantId,
+                    recipient.Id,
+                    followUp.LeadId,
+                    followUp.Id,
+                    null,
+                    followUp.Version,
+                    "FollowUpEscalation",
+                    "High priority follow-up overdue",
+                    $"{followUp.Priority} priority {followUp.Type} with {followUp.StudentName} is overdue since {followUp.DueAt:dd MMM yyyy, hh:mm tt}.",
+                    "Critical",
+                    key,
+                    followUp.DueAt,
+                    now));
+            }
+        }
+
+        return await AddMissingNotificationsAsync(pending, cancellationToken);
+    }
+
     private async Task<int> CreatePaymentNotificationsAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var lowerBound = now.AddDays(-MaximumPastDueDays);
-        var upperBound = now.AddHours(24);
+        var upperBound = now.AddHours(PaymentLookAheadHours);
         var payments = await db.LeadPayments
             .AsNoTracking()
             .Where(item => item.DueDate != null &&
@@ -346,5 +451,11 @@ public sealed class ReminderNotificationJob(AppDbContext db, ILogger<ReminderNot
             UserRole.Counselor or UserRole.Telecaller => leadAssignedUserId == userId,
             _ => false
         };
+    }
+
+    private int GetConfiguredInt(string key, int defaultValue, int min, int max)
+    {
+        var configured = configuration.GetValue<int?>(key) ?? defaultValue;
+        return Math.Clamp(configured, min, max);
     }
 }

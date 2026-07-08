@@ -696,14 +696,14 @@ api.MapGet("/users", async (
     CancellationToken cancellationToken) =>
 {
     var currentUser = TenantResolver.GetCurrentUser(httpContext);
-    if (currentUser is null)
+    if (!CanManageUsers(currentUser))
     {
-        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+        return Results.Json(new { message = "Only owners and admins can view users." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var users = await db.Users
         .AsNoTracking()
-        .Where(user => user.TenantId == currentUser.TenantId)
+        .Where(user => user.TenantId == currentUser!.TenantId)
         .OrderBy(user => user.FullName)
         .Select(user => new UserResponse(
             user.Id,
@@ -889,12 +889,12 @@ masterDataApi.MapGet("", async (
     CancellationToken cancellationToken) =>
 {
     var currentUser = TenantResolver.GetCurrentUser(httpContext);
-    if (currentUser is null)
+    if (!CanManageUsers(currentUser))
     {
-        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+        return Results.Json(new { message = "Only owners and admins can view master data settings." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    return Results.Ok(await GetMasterDataResponseAsync(db, currentUser.TenantId, cancellationToken));
+    return Results.Ok(await GetMasterDataResponseAsync(db, currentUser!.TenantId, cancellationToken));
 });
 
 masterDataApi.MapPost("/branches", async (
@@ -1253,14 +1253,14 @@ api.MapGet("/tenants/current", async (
     CancellationToken cancellationToken) =>
 {
     var currentUser = TenantResolver.GetCurrentUser(httpContext);
-    if (currentUser is null)
+    if (!CanManageTenantProfile(currentUser))
     {
-        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+        return Results.Json(new { message = "Only owners and admins can view the institute profile." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var tenant = await db.Tenants
         .AsNoTracking()
-        .FirstOrDefaultAsync(item => item.Id == currentUser.TenantId && item.IsActive, cancellationToken);
+        .FirstOrDefaultAsync(item => item.Id == currentUser!.TenantId && item.IsActive, cancellationToken);
 
     return tenant is null
         ? Results.NotFound(new { message = "Tenant not found." })
@@ -1369,13 +1369,13 @@ api.MapGet("/lead-intelligence/settings", async (
     CancellationToken cancellationToken) =>
 {
     var currentUser = TenantResolver.GetCurrentUser(httpContext);
-    if (currentUser is null)
+    if (!CanManageTenantProfile(currentUser))
     {
-        return Results.Json(new { message = "Authentication token is required." }, statusCode: StatusCodes.Status401Unauthorized);
+        return Results.Json(new { message = "Only owners and admins can view lead intelligence settings." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var now = IndianClock.Now();
-    var settings = await GetOrCreateLeadIntelligenceSettingsAsync(db, currentUser.TenantId, now, cancellationToken);
+    var settings = await GetOrCreateLeadIntelligenceSettingsAsync(db, currentUser!.TenantId, now, cancellationToken);
     await db.SaveChangesAsync(cancellationToken);
     return Results.Ok(await ToLeadIntelligenceSettingsResponseAsync(db, settings, cancellationToken));
 });
@@ -1547,6 +1547,11 @@ api.MapGet("/communication-templates", async (
     }
 
     var statusMode = NormalizeOptionalText(status)?.ToLowerInvariant() ?? "active";
+    if (statusMode != "active" && !CanManageUsers(currentUser))
+    {
+        return Results.Json(new { message = "Only owners and admins can view inactive communication templates." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
     var normalizedChannel = NormalizeOptionalText(channel);
     var query = db.CommunicationTemplates
         .AsNoTracking()

@@ -136,24 +136,29 @@ import {
 } from "./components/ui";
 
 const navItems = [
-  { id: "platform", label: "Platform", icon: Users, ownerOnly: true },
+  { id: "platform", label: "Platform", icon: Users, allowedRoles: ["Owner"] },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "leads", label: "Leads", icon: Search },
   { id: "pipeline", label: "Pipeline", icon: BarChart3 },
   { id: "followups", label: "Follow-ups", icon: CalendarDays },
   { id: "applications", label: "Applications", icon: BookOpen },
   { id: "enrollments", label: "Enrollments", icon: UserCheck },
-  { id: "counselors", label: "Counsellors", icon: Users },
+  { id: "counselors", label: "Counsellors", icon: Users, allowedRoles: ["Owner", "Admin"] },
   { id: "reports", label: "Reports", icon: FileText },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "settings", label: "Settings", icon: Settings, allowedRoles: ["Owner", "Admin"] },
 ];
 
 const ACTIVE_PAGE_STORAGE_KEY = "counselmate.activePage";
 const defaultActivePage = "dashboard";
 const navItemIds = new Set(navItems.map((item) => item.id));
 
-function normalizePageId(pageId) {
-  return navItemIds.has(pageId) ? pageId : defaultActivePage;
+function canAccessPage(pageId, role) {
+  const item = navItems.find((navItem) => navItem.id === pageId);
+  return Boolean(item) && (!item.allowedRoles || item.allowedRoles.includes(role));
+}
+
+function normalizePageId(pageId, role) {
+  return canAccessPage(pageId, role) ? pageId : defaultActivePage;
 }
 
 function getPageFromHash() {
@@ -181,13 +186,14 @@ function getInitialActivePage() {
     if (typeof window === "undefined") {
       return defaultActivePage;
     }
+    const role = getStoredAuth().user?.role;
     const hashPage = getPageFromHash();
     if (hashPage) {
-      return hashPage;
+      return normalizePageId(hashPage, role);
     }
 
     const stored = window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY);
-    return normalizePageId(stored);
+    return normalizePageId(stored, role);
   } catch {
     return defaultActivePage;
   }
@@ -291,13 +297,13 @@ function App() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationData, setNotificationData] = useState({ items: [], total: 0, unreadCount: 0, page: 1 });
   const [notificationStatus, setNotificationStatus] = useState({ loading: false, error: "", saving: false });
-  const activeLabel = navItems.find((item) => item.id === activePage)?.label || "Dashboard";
+  const activeLabel = navItems.find((item) => item.id === normalizePageId(activePage, currentUser?.role))?.label || "Dashboard";
   const changeActivePage = useCallback((pageId) => {
-    setActivePage(normalizePageId(pageId));
-  }, []);
+    setActivePage(normalizePageId(pageId, currentUser?.role));
+  }, [currentUser?.role]);
 
   useEffect(() => {
-    if (!navItemIds.has(activePage)) {
+    if (!canAccessPage(activePage, currentUser?.role)) {
       changeActivePage(defaultActivePage);
       return;
     }
@@ -308,7 +314,7 @@ function App() {
       // Ignore storage failures; navigation still works for the current session.
     }
     updatePageHash(activePage);
-  }, [activePage, changeActivePage]);
+  }, [activePage, changeActivePage, currentUser?.role]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -321,12 +327,6 @@ function App() {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, [changeActivePage]);
-
-  useEffect(() => {
-    if (currentUser && activePage === "platform" && currentUser.role !== "Owner") {
-      changeActivePage(defaultActivePage);
-    }
-  }, [activePage, changeActivePage, currentUser]);
 
   const loadNotifications = useCallback(async ({ page = 1, append = false, silent = false } = {}) => {
     if (!currentUser) {
@@ -704,7 +704,7 @@ function App() {
   };
 
   const loadTenantUsers = useCallback(async (options = {}) => {
-    if (!currentUser) {
+    if (!currentUser || !canAccessPage("counselors", currentUser.role)) {
       return false;
     }
 
@@ -731,10 +731,10 @@ function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (activePage === "counselors") {
+    if (activePage === "counselors" && canAccessPage("counselors", currentUser?.role)) {
       loadTenantUsers();
     }
-  }, [activePage, loadTenantUsers]);
+  }, [activePage, currentUser?.role, loadTenantUsers]);
 
   const runUserAction = async (action, getSuccessMessage) => {
     setUsersStatus((current) => ({ ...current, saving: true, error: "", fieldErrors: {}, message: "" }));
@@ -1148,7 +1148,7 @@ function App() {
 
         <nav className="nav-list" aria-label="Primary navigation">
           <span className="nav-section-label">Workspace</span>
-          {navItems.filter((item) => !item.ownerOnly || currentUser.role === "Owner").map((item) => {
+          {navItems.filter((item) => canAccessPage(item.id, currentUser.role)).map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
             return (
@@ -1162,7 +1162,6 @@ function App() {
               >
                 <Icon size={20} />
                 <span>{item.label}</span>
-                {isActive && <small>Current</small>}
               </button>
             );
           })}
@@ -1390,7 +1389,7 @@ function App() {
               onStatusUpdate={handleEnrollmentStatusUpdate}
             />
           )}
-          {activePage === "counselors" && (
+          {activePage === "counselors" && canManageUsers && (
             <CounselorsPage
               users={tenantUsers}
               branches={crmData.leadOptions.branches}
@@ -1423,7 +1422,7 @@ function App() {
               onOpenLead={openLeadDetail}
             />
           )}
-          {activePage === "settings" && (
+          {activePage === "settings" && canManageUsers && (
             <SettingsPage
               currentUser={currentUser}
               onMasterDataChanged={loadCrmData}

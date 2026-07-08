@@ -1796,6 +1796,51 @@ function PageTitle({ title, subtitle, action }) {
 }
 
 const DASHBOARD_CHART_COLORS = ["#2563eb", "#0f766e", "#f59e0b", "#7c3aed", "#dc2626", "#64748b"];
+const PIPELINE_STAGE_MIN_WIDTH = 118;
+const PIPELINE_CHART_MIN_WIDTH = 620;
+
+function splitPipelineStageLabel(value) {
+  const label = String(value || "").trim();
+  if (label.length <= 18) {
+    return [label];
+  }
+
+  const words = label.split(/\s+/);
+  if (words.length === 1) {
+    return [`${label.slice(0, 17)}…`];
+  }
+
+  let splitIndex = 1;
+  let smallestDifference = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < words.length; index += 1) {
+    const firstLine = words.slice(0, index).join(" ");
+    const secondLine = words.slice(index).join(" ");
+    const difference = Math.abs(firstLine.length - secondLine.length);
+    if (difference < smallestDifference) {
+      splitIndex = index;
+      smallestDifference = difference;
+    }
+  }
+
+  return [words.slice(0, splitIndex).join(" "), words.slice(splitIndex).join(" ")]
+    .map((line) => (line.length > 22 ? `${line.slice(0, 21)}…` : line));
+}
+
+function DashboardPipelineAxisTick({ x = 0, y = 0, payload }) {
+  const label = String(payload?.value || "");
+  const lines = splitPipelineStageLabel(label);
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{label}</title>
+      <text fill="#64748b" fontSize={11.5} fontWeight={600} textAnchor="middle">
+        {lines.map((line, index) => (
+          <tspan key={`${line}-${index}`} x={0} dy={index === 0 ? 14 : 15}>{line}</tspan>
+        ))}
+      </text>
+    </g>
+  );
+}
 
 function Dashboard({ dashboard, advancedDashboard, followUps = [], pipeline = [], loading, error, onRetry, onNewLead, canManageLeads }) {
   const now = Date.now();
@@ -1832,6 +1877,7 @@ function Dashboard({ dashboard, advancedDashboard, followUps = [], pipeline = []
   }, [pipeline]);
 
   const pipelineTotal = pipelineData.reduce((sum, item) => sum + item.count, 0);
+  const pipelineChartMinWidth = Math.max(PIPELINE_CHART_MIN_WIDTH, pipelineData.length * PIPELINE_STAGE_MIN_WIDTH);
   const funnelData = (advancedDashboard?.funnel || []).map((item, index) => ({
     name: item.label,
     count: Number(item.count || 0),
@@ -1991,19 +2037,29 @@ function Dashboard({ dashboard, advancedDashboard, followUps = [], pipeline = []
           {error && <StatePanel title="Could not load pipeline" message={error} action={onRetry} />}
           {!loading && !error && pipelineData.length === 0 && <StatePanel title="No pipeline data" message="Pipeline stages will appear here once leads are available." />}
           {!loading && !error && (
-            <div className="chart-shell">
-              <ResponsiveContainer width="100%" height={238}>
-                <BarChart data={pipelineData} margin={{ top: 24, right: 10, left: -24, bottom: 2 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} interval={0} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
-                  <Tooltip content={<ChartTooltip unit="leads" />} cursor={{ fill: "rgba(37, 99, 235, 0.06)" }} />
-                  <Bar dataKey="count" radius={[0, 0, 0, 0]} barSize={44}>
-                    {pipelineData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
-                    <LabelList dataKey="count" position="top" fill="#0f172a" fontSize={12} fontWeight={700} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="chart-shell dashboard-pipeline-chart-shell">
+              <div className="dashboard-pipeline-chart" style={{ minWidth: `${pipelineChartMinWidth}px` }}>
+                <ResponsiveContainer width="100%" height={270}>
+                  <BarChart data={pipelineData} margin={{ top: 24, right: 16, left: -18, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="name"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={<DashboardPipelineAxisTick />}
+                      tickMargin={8}
+                      interval={0}
+                      height={54}
+                    />
+                    <YAxis tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                    <Tooltip content={<ChartTooltip unit="leads" />} cursor={{ fill: "rgba(37, 99, 235, 0.06)" }} />
+                    <Bar dataKey="count" radius={[0, 0, 0, 0]} barSize={44}>
+                      {pipelineData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+                      <LabelList dataKey="count" position="top" fill="#0f172a" fontSize={12} fontWeight={700} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
         </Card>

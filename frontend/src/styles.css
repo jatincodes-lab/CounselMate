@@ -1407,6 +1407,18 @@ h1 {
   min-height: 238px;
 }
 
+.dashboard-pipeline-chart-shell {
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  padding-bottom: 4px;
+  scrollbar-gutter: stable;
+}
+
+.dashboard-pipeline-chart {
+  width: 100%;
+}
+
 .dashboard-focus-card {
   min-height: 348px;
 }

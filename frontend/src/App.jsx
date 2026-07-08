@@ -3726,6 +3726,7 @@ function FollowUpsPage({
   canManageLeads,
 }) {
   const [activeTab, setActiveTab] = useState("my-day");
+  const [showAnalyticsDetails, setShowAnalyticsDetails] = useState(false);
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -3791,6 +3792,9 @@ function FollowUpsPage({
   const analyticsTypeData = useMemo(() => (analytics?.byType || []).slice(0, 6), [analytics]);
   const analyticsCounsellors = useMemo(() => (analytics?.byCounsellor || []).slice(0, 6), [analytics]);
   const analyticsDateRange = analytics?.from && analytics?.to ? `${formatDate(analytics.from)} - ${formatDate(analytics.to)}` : "Current month";
+  const canViewTeamAnalytics = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role);
+  const analyticsScopeLabel = canViewTeamAnalytics ? "Team scope" : "Your assigned leads";
+  const overdueRiskRows = analytics?.overdueRisk || [];
   const ownerOptions = useMemo(() => [...new Set(followUps.map((item) => item.assignedTo).filter(Boolean))].sort(), [followUps]);
   const typeOptions = useMemo(() => [...new Set(followUps.map((item) => item.type).filter(Boolean))].sort(), [followUps]);
   const canFilterOwner = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role);
@@ -3823,6 +3827,7 @@ function FollowUpsPage({
     typeFilter !== "all" && { key: "type", label: typeFilter, clear: () => setTypeFilter("all") },
     ownerFilter !== "all" && { key: "owner", label: ownerFilter, clear: () => setOwnerFilter("all") },
   ].filter(Boolean);
+  const hasQueueFilters = Boolean(query.trim()) || activeFilters.length > 0 || sortMode !== "due";
 
   const startReschedule = (item) => {
     onClearStatus();
@@ -3996,22 +4001,42 @@ function FollowUpsPage({
       <section className="followup-analytics" aria-label="Follow-up analytics">
         <div className="followup-analytics-header">
           <div>
-            <span className="eyebrow">Analytics</span>
-            <h2>Follow-up performance</h2>
-            <p>{analyticsDateRange} · {["Owner", "Admin", "BranchManager"].includes(currentUser?.role) ? "Team scope" : "Your assigned leads"}</p>
+            <span className="eyebrow">Insights</span>
+            <h2>{canViewTeamAnalytics ? "Team performance" : "Your performance"}</h2>
+            <p>{analyticsDateRange} · {analyticsScopeLabel}</p>
           </div>
           {analytics?.generatedAt && <span className="followup-analytics-updated">Updated {formatFollowUpLabel(analytics.generatedAt)}</span>}
         </div>
 
         <div className="followup-analytics-metrics">
-          <Metric title="Scheduled" value={loading ? "..." : formatNumber(analyticsSummary.scheduled)} trend={`${formatNumber(analyticsSummary.open)} open`} />
           <Metric title="Completion Rate" value={loading ? "..." : formatPercent(analyticsSummary.completionRate)} trend={`${formatNumber(analyticsSummary.completed)} completed`} />
           <Metric title="On-time Rate" value={loading ? "..." : formatPercent(analyticsSummary.onTimeRate)} trend={`${formatNumber(analyticsSummary.completedOnTime)} on time`} />
-          <Metric title="Avg Delay" value={loading ? "..." : formatMinutes(analyticsSummary.averageDelayMinutes)} trend={`${formatNumber(analyticsSummary.completedLate)} late`} />
           <Metric title="Overdue" value={loading ? "..." : formatNumber(analyticsSummary.overdue)} trend="Open past due" warning={analyticsSummary.overdue > 0} />
-          <Metric title="Converted Leads" value={loading ? "..." : formatNumber(analyticsSummary.convertedLeads)} trend="Won leads with completed follow-up" />
+          <Metric title="Avg Delay" value={loading ? "..." : formatMinutes(analyticsSummary.averageDelayMinutes)} trend={`${formatNumber(analyticsSummary.completedLate)} late`} warning={analyticsSummary.completedLate > 0} />
         </div>
 
+        <div className="followup-insight-strip" aria-label="Follow-up analytics quick totals">
+          <span><strong>{formatNumber(analyticsSummary.scheduled)}</strong> scheduled</span>
+          <span><strong>{formatNumber(analyticsSummary.open)}</strong> open</span>
+          <span><strong>{formatNumber(analyticsSummary.convertedLeads)}</strong> converted</span>
+        </div>
+
+        {overdueRiskRows.length > 0 && (
+          <div className="followup-risk-preview">
+            <div>
+              <strong>{formatNumber(overdueRiskRows.length)} overdue risk{overdueRiskRows.length === 1 ? "" : "s"}</strong>
+              <span>{overdueRiskRows[0].studentName} · {formatOverdueHours(overdueRiskRows[0].hoursOverdue)}</span>
+            </div>
+            <button type="button" className="ghost-button" onClick={() => setActiveTab("overdue")}>View queue</button>
+          </div>
+        )}
+
+        <button type="button" className="followup-details-toggle" onClick={() => setShowAnalyticsDetails((current) => !current)} aria-expanded={showAnalyticsDetails}>
+          {showAnalyticsDetails ? "Hide analytics details" : "View analytics details"}
+        </button>
+
+        {showAnalyticsDetails && (
+        <>
         <div className="followup-analytics-grid">
           <Card title="Scheduled vs Completed" badge="Last 14 days" className="followup-analytics-card">
             {loading ? (
@@ -4051,6 +4076,7 @@ function FollowUpsPage({
         </div>
 
         <div className="followup-analytics-tables">
+          {canViewTeamAnalytics && (
           <Card title="Counsellor Performance" badge={`${formatNumber(analyticsCounsellors.length)} Rows`} className="followup-analytics-table-card">
             {analyticsCounsellors.length === 0 ? (
               <StatePanel title="No counsellor data" message="Performance rows will appear when follow-ups exist in this period." />
@@ -4074,6 +4100,7 @@ function FollowUpsPage({
               </div>
             )}
           </Card>
+          )}
 
           <Card title="Overdue Risk" badge={`${formatNumber((analytics?.overdueRisk || []).length)} Open`} className="followup-analytics-table-card">
             {(analytics?.overdueRisk || []).length === 0 ? (
@@ -4098,6 +4125,8 @@ function FollowUpsPage({
             )}
           </Card>
         </div>
+        </>
+        )}
       </section>
 
       <div className="followup-workspace followup-workspace-single">
@@ -4123,7 +4152,7 @@ function FollowUpsPage({
 
           {actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}
 
-          <div className={`followup-toolbar ${canFilterOwner ? "has-owner-filter" : ""}`}>
+          <div className={`followup-toolbar ${canFilterOwner ? "has-owner-filter" : ""} ${hasQueueFilters ? "has-clear" : ""}`}>
             <label className="lead-search-field">
               <span>Search</span>
               <div className="lead-search-input">
@@ -4162,7 +4191,7 @@ function FollowUpsPage({
                 <option value="student">Student name</option>
               </select>
             </label>
-            <button className="soft-button" type="button" onClick={clearFilters} disabled={!query && activeFilters.length === 0 && sortMode === "due"}>Clear</button>
+            {hasQueueFilters && <button className="soft-button" type="button" onClick={clearFilters}>Clear</button>}
           </div>
 
           {activeFilters.length > 0 && (

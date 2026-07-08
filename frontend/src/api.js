@@ -187,12 +187,13 @@ async function createApiError(response) {
 }
 
 export async function getCrmData() {
-  const [dashboard, advancedDashboard, leads, pipeline, followUps, leadOptions, communicationTemplates] = await Promise.all([
+  const [dashboard, advancedDashboard, leads, pipeline, followUps, followUpAnalytics, leadOptions, communicationTemplates] = await Promise.all([
     request("/dashboard"),
     request("/dashboard/advanced"),
     request("/leads"),
     request("/pipeline"),
     request("/follow-ups"),
+    request("/follow-ups/analytics"),
     request("/leads/options"),
     request("/communication-templates"),
   ]);
@@ -203,9 +204,21 @@ export async function getCrmData() {
     leads: normalizeLeadList(leads),
     pipeline,
     followUps,
+    followUpAnalytics: normalizeFollowUpAnalytics(followUpAnalytics),
     leadOptions,
     communicationTemplates,
   };
+}
+
+export async function getFollowUpAnalytics(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+
+  return normalizeFollowUpAnalytics(await request(`/follow-ups/analytics${query.toString() ? `?${query}` : ""}`));
 }
 
 export async function getLeads(params = {}) {
@@ -663,6 +676,33 @@ function normalizeLeadList(response) {
     page: response?.page || 1,
     pageSize: response?.pageSize || 25,
     total: response?.total || 0,
+  };
+}
+
+function normalizeFollowUpAnalytics(response) {
+  return {
+    from: response?.from || null,
+    to: response?.to || null,
+    generatedAt: response?.generatedAt || null,
+    summary: {
+      scheduled: Number(response?.summary?.scheduled || 0),
+      completed: Number(response?.summary?.completed || 0),
+      cancelled: Number(response?.summary?.cancelled || 0),
+      open: Number(response?.summary?.open || 0),
+      overdue: Number(response?.summary?.overdue || 0),
+      completedOnTime: Number(response?.summary?.completedOnTime || 0),
+      completedLate: Number(response?.summary?.completedLate || 0),
+      averageDelayMinutes: Number(response?.summary?.averageDelayMinutes || 0),
+      completionRate: Number(response?.summary?.completionRate || 0),
+      onTimeRate: Number(response?.summary?.onTimeRate || 0),
+      convertedLeads: Number(response?.summary?.convertedLeads || 0),
+    },
+    byStatus: Array.isArray(response?.byStatus) ? response.byStatus : [],
+    byType: Array.isArray(response?.byType) ? response.byType : [],
+    byPriority: Array.isArray(response?.byPriority) ? response.byPriority : [],
+    byCounsellor: Array.isArray(response?.byCounsellor) ? response.byCounsellor : [],
+    trend: Array.isArray(response?.trend) ? response.trend : [],
+    overdueRisk: Array.isArray(response?.overdueRisk) ? response.overdueRisk : [],
   };
 }
 

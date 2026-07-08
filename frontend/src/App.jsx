@@ -229,6 +229,7 @@ function App() {
     leads: emptyLeadList(),
     pipeline: [],
     followUps: [],
+    followUpAnalytics: emptyFollowUpAnalytics(),
     leadOptions: emptyLeadOptions(),
     communicationTemplates: [],
   });
@@ -656,6 +657,7 @@ function App() {
       leads: emptyLeadList(),
       pipeline: [],
       followUps: [],
+      followUpAnalytics: emptyFollowUpAnalytics(),
       leadOptions: emptyLeadOptions(),
       communicationTemplates: [],
     });
@@ -1288,6 +1290,8 @@ function App() {
           {activePage === "followups" && (
             <FollowUpsPage
               followUps={crmData.followUps}
+              analytics={crmData.followUpAnalytics}
+              currentUser={currentUser}
               loading={crmStatus.loading}
               error={crmStatus.error}
               actionStatus={followUpQueueStatus}
@@ -3706,6 +3710,7 @@ function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead
 
 function FollowUpsPage({
   followUps,
+  analytics,
   currentUser,
   loading,
   error,
@@ -3778,6 +3783,14 @@ function FollowUpsPage({
   }, [createOpen, leadSearch]);
 
   const counts = useMemo(() => getFollowUpQueueCounts(followUps, nowMs), [followUps, nowMs]);
+  const analyticsSummary = analytics?.summary || emptyFollowUpAnalytics().summary;
+  const analyticsTrend = useMemo(() => (analytics?.trend || []).slice(-14).map((item) => ({
+    ...item,
+    label: formatShortDate(item.date),
+  })), [analytics]);
+  const analyticsTypeData = useMemo(() => (analytics?.byType || []).slice(0, 6), [analytics]);
+  const analyticsCounsellors = useMemo(() => (analytics?.byCounsellor || []).slice(0, 6), [analytics]);
+  const analyticsDateRange = analytics?.from && analytics?.to ? `${formatDate(analytics.from)} - ${formatDate(analytics.to)}` : "Current month";
   const ownerOptions = useMemo(() => [...new Set(followUps.map((item) => item.assignedTo).filter(Boolean))].sort(), [followUps]);
   const typeOptions = useMemo(() => [...new Set(followUps.map((item) => item.type).filter(Boolean))].sort(), [followUps]);
   const canFilterOwner = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role);
@@ -3979,6 +3992,113 @@ function FollowUpsPage({
           {canManageLeads && <button className="primary-button" type="button" onClick={openCreate}><Plus size={17} /> Add Follow-up</button>}
         </div>
       </div>
+
+      <section className="followup-analytics" aria-label="Follow-up analytics">
+        <div className="followup-analytics-header">
+          <div>
+            <span className="eyebrow">Analytics</span>
+            <h2>Follow-up performance</h2>
+            <p>{analyticsDateRange} · {["Owner", "Admin", "BranchManager"].includes(currentUser?.role) ? "Team scope" : "Your assigned leads"}</p>
+          </div>
+          {analytics?.generatedAt && <span className="followup-analytics-updated">Updated {formatFollowUpLabel(analytics.generatedAt)}</span>}
+        </div>
+
+        <div className="followup-analytics-metrics">
+          <Metric title="Scheduled" value={loading ? "..." : formatNumber(analyticsSummary.scheduled)} trend={`${formatNumber(analyticsSummary.open)} open`} />
+          <Metric title="Completion Rate" value={loading ? "..." : formatPercent(analyticsSummary.completionRate)} trend={`${formatNumber(analyticsSummary.completed)} completed`} />
+          <Metric title="On-time Rate" value={loading ? "..." : formatPercent(analyticsSummary.onTimeRate)} trend={`${formatNumber(analyticsSummary.completedOnTime)} on time`} />
+          <Metric title="Avg Delay" value={loading ? "..." : formatMinutes(analyticsSummary.averageDelayMinutes)} trend={`${formatNumber(analyticsSummary.completedLate)} late`} />
+          <Metric title="Overdue" value={loading ? "..." : formatNumber(analyticsSummary.overdue)} trend="Open past due" warning={analyticsSummary.overdue > 0} />
+          <Metric title="Converted Leads" value={loading ? "..." : formatNumber(analyticsSummary.convertedLeads)} trend="Won leads with completed follow-up" />
+        </div>
+
+        <div className="followup-analytics-grid">
+          <Card title="Scheduled vs Completed" badge="Last 14 days" className="followup-analytics-card">
+            {loading ? (
+              <StatePanel title="Loading analytics" message="Calculating follow-up performance..." />
+            ) : analyticsTrend.length === 0 ? (
+              <StatePanel title="No trend data" message="There are no follow-ups in this period yet." />
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={analyticsTrend}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                  <Tooltip />
+                  <Bar dataKey="scheduled" name="Scheduled" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="completed" name="Completed" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+
+          <Card title="By Type" badge={`${formatNumber(analyticsTypeData.length)} Types`} className="followup-analytics-card">
+            {loading ? (
+              <StatePanel title="Loading types" message="Grouping follow-ups by type..." />
+            ) : analyticsTypeData.length === 0 ? (
+              <StatePanel title="No type data" message="Types will appear after follow-ups are scheduled." />
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={analyticsTypeData} dataKey="count" nameKey="label" innerRadius={52} outerRadius={82} paddingAngle={3}>
+                    {analyticsTypeData.map((entry, index) => <Cell key={entry.label} fill={DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+        </div>
+
+        <div className="followup-analytics-tables">
+          <Card title="Counsellor Performance" badge={`${formatNumber(analyticsCounsellors.length)} Rows`} className="followup-analytics-table-card">
+            {analyticsCounsellors.length === 0 ? (
+              <StatePanel title="No counsellor data" message="Performance rows will appear when follow-ups exist in this period." />
+            ) : (
+              <div className="responsive-table">
+                <table>
+                  <thead><tr><th>Name</th><th>Scheduled</th><th>Completed</th><th>On-time</th><th>Overdue</th><th>Rate</th></tr></thead>
+                  <tbody>
+                    {analyticsCounsellors.map((item) => (
+                      <tr key={item.name}>
+                        <td><strong>{item.name}</strong></td>
+                        <td>{formatNumber(item.scheduled)}</td>
+                        <td>{formatNumber(item.completed)}</td>
+                        <td>{formatNumber(item.completedOnTime)}</td>
+                        <td><span className={item.overdue > 0 ? "reports-table-badge danger" : "reports-table-badge"}>{formatNumber(item.overdue)}</span></td>
+                        <td>{formatPercent(item.completionRate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card title="Overdue Risk" badge={`${formatNumber((analytics?.overdueRisk || []).length)} Open`} className="followup-analytics-table-card">
+            {(analytics?.overdueRisk || []).length === 0 ? (
+              <StatePanel title="No overdue risk" message="No scheduled follow-ups are overdue in this period." />
+            ) : (
+              <div className="responsive-table">
+                <table>
+                  <thead><tr><th>Student</th><th>Type</th><th>Priority</th><th>Owner</th><th>Overdue</th></tr></thead>
+                  <tbody>
+                    {analytics.overdueRisk.map((item) => (
+                      <tr key={item.id}>
+                        <td><strong>{item.studentName}</strong><small>{item.leadId}</small></td>
+                        <td>{item.type}</td>
+                        <td><span className={["Urgent", "High"].includes(item.priority) ? "reports-table-badge danger" : "reports-table-badge"}>{item.priority}</span></td>
+                        <td>{item.assignedTo}</td>
+                        <td>{formatOverdueHours(item.hoursOverdue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      </section>
 
       <div className="followup-workspace followup-workspace-single">
         <section>
@@ -7833,6 +7953,41 @@ function formatNumber(value) {
   return typeof value === "number" ? new Intl.NumberFormat("en-IN").format(value) : "-";
 }
 
+function formatPercent(value) {
+  const numeric = Number(value || 0);
+  return `${Number.isFinite(numeric) ? numeric.toFixed(numeric % 1 === 0 ? 0 : 1) : "0"}%`;
+}
+
+function formatMinutes(value) {
+  const minutes = Number(value || 0);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return "0m";
+  }
+
+  if (minutes < 60) {
+    return `${Math.round(minutes)}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remaining = Math.round(minutes % 60);
+  return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
+}
+
+function formatOverdueHours(value) {
+  const hours = Number(value || 0);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return "Due now";
+  }
+
+  if (hours < 24) {
+    return `${Math.floor(hours)}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remaining = Math.floor(hours % 24);
+  return remaining > 0 ? `${days}d ${remaining}h` : `${days}d`;
+}
+
 function formatDate(value) {
   if (!value) {
     return "No date";
@@ -7842,6 +7997,17 @@ function formatDate(value) {
     day: "numeric",
     month: "short",
     year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatShortDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
   }).format(new Date(value));
 }
 
@@ -8095,6 +8261,33 @@ function emptyLeadList() {
     page: 1,
     pageSize: 25,
     total: 0,
+  };
+}
+
+function emptyFollowUpAnalytics() {
+  return {
+    from: null,
+    to: null,
+    generatedAt: null,
+    summary: {
+      scheduled: 0,
+      completed: 0,
+      cancelled: 0,
+      open: 0,
+      overdue: 0,
+      completedOnTime: 0,
+      completedLate: 0,
+      averageDelayMinutes: 0,
+      completionRate: 0,
+      onTimeRate: 0,
+      convertedLeads: 0,
+    },
+    byStatus: [],
+    byType: [],
+    byPriority: [],
+    byCounsellor: [],
+    trend: [],
+    overdueRisk: [],
   };
 }
 

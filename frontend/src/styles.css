@@ -4646,6 +4646,79 @@ td {
   color: #b91c1c;
 }
 
+.followup-analytics {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #dbe3ef;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.04);
+}
+
+.followup-analytics-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.followup-analytics-header h2 {
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.followup-analytics-header p,
+.followup-analytics-updated {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.followup-analytics-updated {
+  white-space: nowrap;
+}
+
+.followup-analytics-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.followup-analytics-metrics .metric-card {
+  min-height: 112px;
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+.followup-analytics-grid,
+.followup-analytics-tables {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  gap: 14px;
+}
+
+.followup-analytics-card,
+.followup-analytics-table-card {
+  min-height: 290px;
+  border-radius: 2px;
+}
+
+.followup-analytics-table-card .state-panel {
+  min-height: 180px;
+}
+
+.followup-analytics-table-card table td small {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .followup-page .followup-workspace {
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 18px;
@@ -7024,6 +7097,15 @@ td {
     grid-template-columns: 1fr;
   }
 
+  .followup-analytics-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .followup-analytics-grid,
+  .followup-analytics-tables {
+    grid-template-columns: 1fr;
+  }
+
   .filter-bar {
     grid-template-columns: 1fr 1fr;
   }
@@ -7251,9 +7333,20 @@ td {
   .followup-summary,
   .followup-toolbar,
   .followup-page .followup-toolbar.has-owner-filter,
+  .followup-analytics-metrics,
+  .followup-analytics-grid,
+  .followup-analytics-tables,
   .team-toolbar,
     .master-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .followup-analytics-header {
+    flex-direction: column;
+  }
+
+  .followup-analytics-updated {
+    white-space: normal;
   }
 
   .attention-grid,

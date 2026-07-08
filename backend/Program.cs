@@ -5077,6 +5077,178 @@ api.MapGet("/pipeline", async (
     return Results.Ok(pipeline);
 });
 
+api.MapGet("/follow-ups/analytics", async (
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    DateTimeOffset? from,
+    DateTimeOffset? to,
+    Guid? branchId,
+    Guid? assignedUserId,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null)
+    {
+        return Results.NotFound(new { message = "Tenant not found." });
+    }
+
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    if (currentUser is null)
+    {
+        return Results.Json(new { message = "Sign in again to view follow-up analytics." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var now = IndianClock.Now();
+    var range = NormalizeFollowUpAnalyticsRange(from, to, now);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    var query = db.FollowUps
+        .AsNoTracking()
+        .Where(item => item.TenantId == tenant.TenantId &&
+            item.Lead.ArchivedAt == null &&
+            item.DueAt >= range.From &&
+            item.DueAt <= range.To);
+
+    if (accessScope.CanViewAll)
+    {
+        if (branchId is not null)
+        {
+            query = query.Where(item => item.Lead.BranchId == branchId);
+        }
+    }
+    else if (currentUser.Role == nameof(UserRole.BranchManager) && accessScope.BranchId is not null)
+    {
+        var scopedBranchId = accessScope.BranchId.Value;
+        var currentUserId = currentUser.UserId;
+        query = query.Where(item => item.Lead.BranchId == scopedBranchId || item.Lead.AssignedUserId == currentUserId);
+    }
+    else
+    {
+        var currentUserId = currentUser.UserId;
+        query = query.Where(item => item.Lead.AssignedUserId == currentUserId);
+    }
+
+    if (assignedUserId is not null)
+    {
+        query = query.Where(item => (item.AssignedUserId ?? item.Lead.AssignedUserId) == assignedUserId);
+    }
+
+    var followUps = await query
+        .Select(item => new
+        {
+            item.Id,
+            item.LeadId,
+            item.Type,
+            item.Priority,
+            item.Status,
+            item.DueAt,
+            item.CompletedAt,
+            item.CompletionOutcome,
+            StudentName = item.Lead.StudentName,
+            LeadNumber = item.Lead.LeadNumber,
+            AssignedTo = item.AssignedUser == null
+                ? item.Lead.AssignedUser == null ? "Unassigned" : item.Lead.AssignedUser.FullName
+                : item.AssignedUser.FullName,
+            IsWonLead = item.Lead.LeadStage.IsWonStage
+        })
+        .ToListAsync(cancellationToken);
+
+    var scheduled = followUps.Count;
+    var completed = followUps.Count(item => string.Equals(item.Status, "Completed", StringComparison.OrdinalIgnoreCase));
+    var cancelled = followUps.Count(item => string.Equals(item.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
+    var overdue = followUps.Count(item => string.Equals(item.Status, "Scheduled", StringComparison.OrdinalIgnoreCase) && item.DueAt < now);
+    var open = followUps.Count(item => string.Equals(item.Status, "Scheduled", StringComparison.OrdinalIgnoreCase) && item.DueAt >= now);
+    var actionable = Math.Max(0, scheduled - cancelled);
+    var completedWithTime = followUps
+        .Where(item => string.Equals(item.Status, "Completed", StringComparison.OrdinalIgnoreCase) && item.CompletedAt is not null)
+        .ToArray();
+    var completedOnTime = completedWithTime.Count(item => item.CompletedAt!.Value <= item.DueAt);
+    var completedLate = completedWithTime.Count(item => item.CompletedAt!.Value > item.DueAt);
+    var averageDelayMinutes = completedWithTime.Length == 0
+        ? 0
+        : (int)Math.Round(completedWithTime.Average(item => Math.Max(0, (item.CompletedAt!.Value - item.DueAt).TotalMinutes)));
+    var convertedLeadIds = followUps
+        .Where(item => string.Equals(item.Status, "Completed", StringComparison.OrdinalIgnoreCase) && item.IsWonLead)
+        .Select(item => item.LeadId)
+        .Distinct()
+        .Count();
+
+    var response = new FollowUpAnalyticsResponse(
+        range.From,
+        range.To,
+        now,
+        new FollowUpAnalyticsSummary(
+            scheduled,
+            completed,
+            cancelled,
+            open,
+            overdue,
+            completedOnTime,
+            completedLate,
+            averageDelayMinutes,
+            Rate(completed, actionable),
+            Rate(completedOnTime, completedWithTime.Length),
+            convertedLeadIds),
+        followUps
+            .GroupBy(item => string.IsNullOrWhiteSpace(item.Status) ? "Unknown" : item.Status)
+            .Select(group => new FollowUpAnalyticsBreakdown(group.Key, group.Count(), Rate(group.Count(), scheduled)))
+            .OrderByDescending(item => item.Count)
+            .ThenBy(item => item.Label)
+            .ToArray(),
+        followUps
+            .GroupBy(item => string.IsNullOrWhiteSpace(item.Type) ? "Unknown" : item.Type)
+            .Select(group => new FollowUpAnalyticsBreakdown(group.Key, group.Count(), Rate(group.Count(), scheduled)))
+            .OrderByDescending(item => item.Count)
+            .ThenBy(item => item.Label)
+            .ToArray(),
+        followUps
+            .GroupBy(item => string.IsNullOrWhiteSpace(item.Priority) ? "Unknown" : item.Priority)
+            .Select(group => new FollowUpAnalyticsBreakdown(group.Key, group.Count(), Rate(group.Count(), scheduled)))
+            .OrderBy(item => FollowUpPriorityRank(item.Label))
+            .ThenBy(item => item.Label)
+            .ToArray(),
+        followUps
+            .GroupBy(item => string.IsNullOrWhiteSpace(item.AssignedTo) ? "Unassigned" : item.AssignedTo)
+            .Select(group =>
+            {
+                var rows = group.ToArray();
+                var rowCompleted = rows.Count(item => string.Equals(item.Status, "Completed", StringComparison.OrdinalIgnoreCase));
+                var rowCancelled = rows.Count(item => string.Equals(item.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
+                var rowOverdue = rows.Count(item => string.Equals(item.Status, "Scheduled", StringComparison.OrdinalIgnoreCase) && item.DueAt < now);
+                var rowOnTime = rows.Count(item => string.Equals(item.Status, "Completed", StringComparison.OrdinalIgnoreCase) && item.CompletedAt is not null && item.CompletedAt.Value <= item.DueAt);
+                return new FollowUpCounsellorAnalyticsRow(
+                    group.Key,
+                    rows.Length,
+                    rowCompleted,
+                    rowOverdue,
+                    rowOnTime,
+                    Rate(rowCompleted, Math.Max(0, rows.Length - rowCancelled)),
+                    Rate(rowOnTime, rowCompleted));
+            })
+            .OrderByDescending(item => item.Overdue)
+            .ThenByDescending(item => item.Scheduled)
+            .ThenBy(item => item.Name)
+            .Take(12)
+            .ToArray(),
+        BuildFollowUpTrend(followUps.Select(item => new FollowUpTrendSource(item.Status, item.DueAt, item.CompletedAt)), range.From, range.To),
+        followUps
+            .Where(item => string.Equals(item.Status, "Scheduled", StringComparison.OrdinalIgnoreCase) && item.DueAt < now)
+            .OrderBy(item => item.DueAt)
+            .Take(10)
+            .Select(item => new FollowUpOverdueRiskRow(
+                item.Id.ToString(),
+                item.LeadNumber,
+                item.StudentName,
+                item.Type,
+                item.Priority,
+                item.AssignedTo,
+                item.DueAt,
+                (int)Math.Max(0, Math.Floor((now - item.DueAt).TotalHours))))
+            .ToArray());
+
+    return Results.Ok(response);
+});
+
 api.MapGet("/follow-ups", async (
     HttpContext httpContext,
     AppDbContext db,
@@ -5797,6 +5969,75 @@ static IQueryable<Lead> ApplyLeadAccessScope(IQueryable<Lead> query, Authenticat
 
     var currentUserId = currentUser.UserId;
     return query.Where(item => item.AssignedUserId == currentUserId);
+}
+
+static FollowUpAnalyticsRange NormalizeFollowUpAnalyticsRange(DateTimeOffset? from, DateTimeOffset? to, DateTimeOffset now)
+{
+    var defaultFrom = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, now.Offset);
+    var start = from is null
+        ? defaultFrom
+        : IndianClock.ToIndianTime(from.Value).Date;
+    var end = to is null
+        ? now
+        : IndianClock.ToIndianTime(to.Value).Date.AddDays(1).AddTicks(-1);
+
+    if (start > end)
+    {
+        (start, end) = (end.Date, start.Date.AddDays(1).AddTicks(-1));
+    }
+
+    var maxStart = end.AddDays(-366);
+    if (start < maxStart)
+    {
+        start = maxStart;
+    }
+
+    return new FollowUpAnalyticsRange(start, end);
+}
+
+static decimal Rate(int numerator, int denominator)
+{
+    return denominator <= 0 ? 0m : Math.Round((decimal)numerator / denominator * 100m, 1);
+}
+
+static int FollowUpPriorityRank(string priority)
+{
+    return priority switch
+    {
+        "Urgent" => 0,
+        "High" => 1,
+        "Medium" => 2,
+        "Low" => 3,
+        _ => 4
+    };
+}
+
+static IReadOnlyCollection<FollowUpTrendPoint> BuildFollowUpTrend(
+    IEnumerable<FollowUpTrendSource> followUps,
+    DateTimeOffset from,
+    DateTimeOffset to)
+{
+    var rows = followUps.ToArray();
+    var dayCount = Math.Min(367, Math.Max(1, (int)Math.Ceiling((to.Date - from.Date).TotalDays) + 1));
+    var points = new List<FollowUpTrendPoint>(dayCount);
+
+    for (var index = 0; index < dayCount; index++)
+    {
+        var date = from.Date.AddDays(index);
+        var scheduled = rows.Count(item => item.DueAt.Date == date);
+        var completed = rows.Count(item =>
+            string.Equals(item.Status, "Completed", StringComparison.OrdinalIgnoreCase) &&
+            item.CompletedAt is not null &&
+            item.CompletedAt.Value.Date == date);
+        var overdue = rows.Count(item =>
+            string.Equals(item.Status, "Scheduled", StringComparison.OrdinalIgnoreCase) &&
+            item.DueAt.Date == date &&
+            item.DueAt < IndianClock.Now());
+
+        points.Add(new FollowUpTrendPoint(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), scheduled, completed, overdue));
+    }
+
+    return points;
 }
 
 static IQueryable<Lead> ApplyLeadFilters(
@@ -9314,6 +9555,58 @@ record FollowUpResponse(
     string? CompletionOutcome,
     string? CompletionNotes,
     string AssignedTo);
+
+record FollowUpAnalyticsRange(DateTimeOffset From, DateTimeOffset To);
+
+record FollowUpTrendSource(string Status, DateTimeOffset DueAt, DateTimeOffset? CompletedAt);
+
+record FollowUpAnalyticsResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    DateTimeOffset GeneratedAt,
+    FollowUpAnalyticsSummary Summary,
+    IReadOnlyCollection<FollowUpAnalyticsBreakdown> ByStatus,
+    IReadOnlyCollection<FollowUpAnalyticsBreakdown> ByType,
+    IReadOnlyCollection<FollowUpAnalyticsBreakdown> ByPriority,
+    IReadOnlyCollection<FollowUpCounsellorAnalyticsRow> ByCounsellor,
+    IReadOnlyCollection<FollowUpTrendPoint> Trend,
+    IReadOnlyCollection<FollowUpOverdueRiskRow> OverdueRisk);
+
+record FollowUpAnalyticsSummary(
+    int Scheduled,
+    int Completed,
+    int Cancelled,
+    int Open,
+    int Overdue,
+    int CompletedOnTime,
+    int CompletedLate,
+    int AverageDelayMinutes,
+    decimal CompletionRate,
+    decimal OnTimeRate,
+    int ConvertedLeads);
+
+record FollowUpAnalyticsBreakdown(string Label, int Count, decimal Percentage);
+
+record FollowUpCounsellorAnalyticsRow(
+    string Name,
+    int Scheduled,
+    int Completed,
+    int Overdue,
+    int CompletedOnTime,
+    decimal CompletionRate,
+    decimal OnTimeRate);
+
+record FollowUpTrendPoint(string Date, int Scheduled, int Completed, int Overdue);
+
+record FollowUpOverdueRiskRow(
+    string Id,
+    string LeadId,
+    string StudentName,
+    string Type,
+    string Priority,
+    string AssignedTo,
+    DateTimeOffset DueAt,
+    int HoursOverdue);
 
 record ActivityResponse(
     string Id,

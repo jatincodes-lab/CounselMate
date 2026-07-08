@@ -1242,6 +1242,7 @@ function App() {
               dashboard={crmData.dashboard}
               advancedDashboard={crmData.advancedDashboard}
               followUps={crmData.followUps}
+              currentUser={currentUser}
               pipeline={crmData.pipeline}
               loading={crmStatus.loading}
               error={crmStatus.error}
@@ -1291,6 +1292,11 @@ function App() {
               actionStatus={followUpQueueStatus}
               onRetry={loadCrmData}
               onOpenLead={openLeadDetail}
+              onClearStatus={() => setFollowUpQueueStatus({ savingId: "", error: "", fieldErrors: {} })}
+              onCreate={(leadId, payload) => runFollowUpQueueAction(
+                { id: "create" },
+                () => createLeadFollowUp(leadId, payload),
+              )}
               onComplete={(followUp) => runFollowUpQueueAction(
                 followUp,
                 () => completeLeadFollowUp(followUp.leadId, followUp.id, { version: followUp.version }),
@@ -3695,41 +3701,102 @@ function PipelinePage({ pipeline, loading, error, onRetry, onNewLead, onOpenLead
 
 function FollowUpsPage({
   followUps,
+  currentUser,
   loading,
   error,
   actionStatus,
   onRetry,
   onOpenLead,
+  onClearStatus,
+  onCreate,
   onComplete,
   onCancel,
   onReschedule,
   canManageLeads,
 }) {
-  const [activeTab, setActiveTab] = useState("today");
+  const [activeTab, setActiveTab] = useState("my-day");
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [sortMode, setSortMode] = useState("due");
+  const [visibleLimit, setVisibleLimit] = useState(30);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [rescheduling, setRescheduling] = useState(null);
+  const [rescheduleErrors, setRescheduleErrors] = useState({});
+  const [cancelling, setCancelling] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [leadSearch, setLeadSearch] = useState("");
+  const [leadSearchStatus, setLeadSearchStatus] = useState({ loading: false, error: "", items: [] });
+  const [createForm, setCreateForm] = useState({ lead: null, type: "Call", priority: "Medium", dueAt: defaultFutureDateTimeLocal() });
+  const [createErrors, setCreateErrors] = useState({});
+  const leadSearchRequestId = useRef(0);
 
-  const counts = useMemo(() => getFollowUpQueueCounts(followUps), [followUps]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!createOpen) {
+      return undefined;
+    }
+
+    const requestId = leadSearchRequestId.current + 1;
+    leadSearchRequestId.current = requestId;
+    const timer = window.setTimeout(async () => {
+      setLeadSearchStatus((current) => ({ ...current, loading: true, error: "" }));
+      try {
+        const response = await getLeads({ search: leadSearch.trim(), page: 1, pageSize: 8 });
+        if (leadSearchRequestId.current === requestId) {
+          setLeadSearchStatus({ loading: false, error: "", items: response.items || [] });
+        }
+      } catch (searchError) {
+        if (leadSearchRequestId.current === requestId) {
+          setLeadSearchStatus({ loading: false, error: searchError instanceof Error ? searchError.message : "Unable to search leads.", items: [] });
+        }
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [createOpen, leadSearch]);
+
+  const counts = useMemo(() => getFollowUpQueueCounts(followUps, nowMs), [followUps, nowMs]);
+  const ownerOptions = useMemo(() => [...new Set(followUps.map((item) => item.assignedTo).filter(Boolean))].sort(), [followUps]);
+  const typeOptions = useMemo(() => [...new Set(followUps.map((item) => item.type).filter(Boolean))].sort(), [followUps]);
+  const canFilterOwner = ["Owner", "Admin", "BranchManager"].includes(currentUser?.role);
   const filteredFollowUps = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return followUps
-      .filter((item) => followUpMatchesQueue(item, activeTab))
+      .filter((item) => followUpMatchesQueue(item, activeTab, nowMs))
       .filter((item) => priorityFilter === "all" || item.priority === priorityFilter)
+      .filter((item) => typeFilter === "all" || item.type === typeFilter)
+      .filter((item) => ownerFilter === "all" || item.assignedTo === ownerFilter)
       .filter((item) => {
         if (!normalizedQuery) {
           return true;
         }
         return `${item.studentName} ${item.leadId} ${item.assignedTo} ${item.type}`.toLocaleLowerCase().includes(normalizedQuery);
       })
-      .sort(compareFollowUpsForQueue);
-  }, [activeTab, followUps, priorityFilter, query]);
+      .sort((left, right) => compareFollowUpsForQueue(left, right, sortMode, nowMs));
+  }, [activeTab, followUps, nowMs, ownerFilter, priorityFilter, query, sortMode, typeFilter]);
+
+  useEffect(() => {
+    setVisibleLimit(30);
+  }, [activeTab, ownerFilter, priorityFilter, query, sortMode, typeFilter]);
 
   const scheduledCount = followUps.filter((item) => item.status === "Scheduled").length;
   const completedToday = followUps.filter((item) => item.status === "Completed" && isToday(item.completedAt || item.updatedAt)).length;
-  const rescheduleFieldErrors = rescheduling ? actionStatus.fieldErrors || {} : {};
+  const rescheduleFieldErrors = rescheduling ? { ...(actionStatus.fieldErrors || {}), ...rescheduleErrors } : {};
+  const activeFilters = [
+    priorityFilter !== "all" && { key: "priority", label: priorityFilter, clear: () => setPriorityFilter("all") },
+    typeFilter !== "all" && { key: "type", label: typeFilter, clear: () => setTypeFilter("all") },
+    ownerFilter !== "all" && { key: "owner", label: ownerFilter, clear: () => setOwnerFilter("all") },
+  ].filter(Boolean);
 
   const startReschedule = (item) => {
+    onClearStatus();
+    setRescheduleErrors({});
     setRescheduling({
       id: item.id,
       leadId: item.leadId,
@@ -3744,12 +3811,19 @@ function FollowUpsPage({
   const submitReschedule = async (event) => {
     event.preventDefault();
     if (!rescheduling?.dueAt) {
+      setRescheduleErrors({ dueAt: ["Due date and time are required."] });
       return;
     }
     const dueDate = new Date(rescheduling.dueAt);
     if (Number.isNaN(dueDate.getTime())) {
+      setRescheduleErrors({ dueAt: ["Enter a valid due date and time."] });
       return;
     }
+    if (dueDate.getTime() <= Date.now()) {
+      setRescheduleErrors({ dueAt: ["Follow-up time must be in the future."] });
+      return;
+    }
+    setRescheduleErrors({});
 
     const updated = await onReschedule(rescheduling, {
       type: rescheduling.type,
@@ -3766,53 +3840,105 @@ function FollowUpsPage({
   const clearFilters = () => {
     setQuery("");
     setPriorityFilter("all");
+    setTypeFilter("all");
+    setOwnerFilter("all");
+    setSortMode("due");
   };
+
+  const openCreate = () => {
+    onClearStatus();
+    leadSearchRequestId.current += 1;
+    setLeadSearch("");
+    setLeadSearchStatus({ loading: false, error: "", items: [] });
+    setCreateForm({ lead: null, type: "Call", priority: "Medium", dueAt: defaultFutureDateTimeLocal() });
+    setCreateErrors({});
+    setCreateOpen(true);
+  };
+
+  const closeCreate = () => {
+    if (actionStatus.savingId !== "create") {
+      leadSearchRequestId.current += 1;
+      setCreateOpen(false);
+      setCreateErrors({});
+    }
+  };
+
+  const submitCreate = async (event) => {
+    event.preventDefault();
+    const errors = {};
+    if (!createForm.lead?.id) errors.lead = "Select a lead.";
+    const dueDate = new Date(createForm.dueAt);
+    if (!createForm.dueAt || Number.isNaN(dueDate.getTime())) errors.dueAt = "Enter a valid due date and time.";
+    else if (dueDate.getTime() <= Date.now()) errors.dueAt = "Follow-up time must be in the future.";
+    setCreateErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    const created = await onCreate(createForm.lead.id, {
+      type: createForm.type,
+      priority: createForm.priority,
+      assignedUserId: null,
+      dueAt: dueDate.toISOString(),
+    });
+    if (created) setCreateOpen(false);
+  };
+
+  const applyQuickDue = (mode, update = setCreateForm) => {
+    const dueAt = getQuickFollowUpDate(mode);
+    update((current) => ({ ...current, dueAt: toDateTimeLocalValue(dueAt) }));
+    if (update === setRescheduling) setRescheduleErrors({});
+    else setCreateErrors((current) => ({ ...current, dueAt: "" }));
+  };
+
+  useEffect(() => {
+    if (!createOpen && !rescheduling && !cancelling) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape" || actionStatus.savingId) return;
+      if (createOpen) closeCreate();
+      else if (rescheduling) setRescheduling(null);
+      else if (cancelling) setCancelling(null);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [actionStatus.savingId, cancelling, createOpen, rescheduling]);
 
   return (
     <section className="followup-page">
       <div className="followup-hero">
         <div>
-          <span className="eyebrow">Counsellor queue</span>
+          <span className="eyebrow">Daily work queue</span>
           <h1>Follow-ups</h1>
-          <p>Run today’s admission calls, recover overdue tasks, and keep every student conversation moving.</p>
+          <p>Handle overdue work first, complete today’s conversations, and keep every student moving.</p>
         </div>
         <div className="followup-hero-actions">
-          <div className="followup-hero-stat">
-            <span>Open queue</span>
-            <strong>{loading ? "..." : formatNumber(scheduledCount)}</strong>
-          </div>
-          <div className="followup-hero-stat danger">
-            <span>Overdue</span>
-            <strong>{loading ? "..." : formatNumber(counts.overdue)}</strong>
-          </div>
           <button className="soft-button" type="button" onClick={onRetry} disabled={loading}>Refresh</button>
+          {canManageLeads && <button className="primary-button" type="button" onClick={openCreate}><Plus size={17} /> Add Follow-up</button>}
         </div>
       </div>
 
-      <div className="followup-workspace">
+      <div className="followup-workspace followup-workspace-single">
         <section>
-          <div className="followup-summary">
-            <div>
-              <span>Scheduled</span>
-              <strong>{formatNumber(scheduledCount)}</strong>
-            </div>
-            <div>
+          <div className="followup-summary" aria-label="Follow-up queue summary">
+            <button type="button" className={activeTab === "overdue" ? "is-active is-danger" : "is-danger"} onClick={() => setActiveTab("overdue")}>
               <span>Overdue</span>
               <strong>{formatNumber(counts.overdue)}</strong>
-            </div>
-            <div>
+            </button>
+            <button type="button" className={activeTab === "today" ? "is-active" : ""} onClick={() => setActiveTab("today")}>
               <span>Due Today</span>
               <strong>{formatNumber(counts.today)}</strong>
-            </div>
-            <div>
+            </button>
+            <button type="button" className={activeTab === "upcoming" ? "is-active" : ""} onClick={() => setActiveTab("upcoming")}>
+              <span>Upcoming</span>
+              <strong>{formatNumber(counts.upcoming)}</strong>
+            </button>
+            <button type="button" className={activeTab === "completed" ? "is-active is-success" : "is-success"} onClick={() => setActiveTab("completed")}>
               <span>Completed Today</span>
               <strong>{formatNumber(completedToday)}</strong>
-            </div>
+            </button>
           </div>
 
           {actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}
 
-          <div className="followup-toolbar">
+          <div className={`followup-toolbar ${canFilterOwner ? "has-owner-filter" : ""}`}>
             <label className="lead-search-field">
               <span>Search</span>
               <div className="lead-search-input">
@@ -3827,11 +3953,42 @@ function FollowUpsPage({
                 {["Urgent", "High", "Medium", "Low"].map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </label>
-            <button className="soft-button" type="button" onClick={clearFilters} disabled={!query && priorityFilter === "all"}>Clear</button>
+            <label>
+              <span>Type</span>
+              <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+                <option value="all">All types</option>
+                {typeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            {canFilterOwner && (
+              <label>
+                <span>Owner</span>
+                <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} disabled={ownerOptions.length === 0}>
+                  <option value="all">All owners</option>
+                  {ownerOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+            )}
+            <label>
+              <span>Sort</span>
+              <select value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
+                <option value="due">Due time</option>
+                <option value="priority">Priority</option>
+                <option value="student">Student name</option>
+              </select>
+            </label>
+            <button className="soft-button" type="button" onClick={clearFilters} disabled={!query && activeFilters.length === 0 && sortMode === "due"}>Clear</button>
           </div>
 
-          <div className="tabs followup-tabs">
+          {activeFilters.length > 0 && (
+            <div className="followup-filter-chips" aria-label="Active filters">
+              {activeFilters.map((filter) => <button key={filter.key} type="button" onClick={filter.clear}>{filter.label}<X size={13} /></button>)}
+            </div>
+          )}
+
+          <div className="tabs followup-tabs" role="tablist" aria-label="Follow-up queues">
             {[
+              ["my-day", "My Day", counts.overdue + counts.today],
               ["overdue", "Overdue", counts.overdue],
               ["today", "Today", counts.today],
               ["upcoming", "Upcoming", counts.upcoming],
@@ -3839,7 +3996,7 @@ function FollowUpsPage({
               ["cancelled", "Cancelled", counts.cancelled],
               ["all", "All", followUps.length],
             ].map(([id, label, count]) => (
-              <button key={id} type="button" className={activeTab === id ? "active" : ""} onClick={() => setActiveTab(id)}>
+              <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? "active" : ""} onClick={() => setActiveTab(id)}>
                 {label} <span>{formatNumber(count)}</span>
               </button>
             ))}
@@ -3852,7 +4009,7 @@ function FollowUpsPage({
             {!loading && !error && followUps.length > 0 && filteredFollowUps.length === 0 && (
               <StatePanel title="No matching follow-ups" message="Change the queue tab or clear the current filters." action={clearFilters} actionLabel="Clear filters" />
             )}
-            {!loading && !error && filteredFollowUps.map((item) => (
+            {!loading && !error && filteredFollowUps.slice(0, visibleLimit).map((item) => (
               <FollowUpRow
                 key={item.id}
                 item={item}
@@ -3860,29 +4017,21 @@ function FollowUpsPage({
                 canManageLeads={canManageLeads}
                 onOpenLead={onOpenLead}
                 onComplete={onComplete}
-                onCancel={onCancel}
                 onReschedule={startReschedule}
+                onRequestCancel={(item) => { onClearStatus(); setCancelling(item); }}
+                nowMs={nowMs}
               />
             ))}
+            {!loading && !error && filteredFollowUps.length > visibleLimit && (
+              <button className="followup-load-more" type="button" onClick={() => setVisibleLimit((current) => current + 30)}>
+                Show 30 more <span>{formatNumber(filteredFollowUps.length - visibleLimit)} remaining</span>
+              </button>
+            )}
           </div>
 
           <p className="drawer-permission-note followup-note">Create new follow-ups from a lead detail drawer so every task stays attached to a lead.</p>
+          <div className="followup-results-summary" aria-live="polite">Showing {formatNumber(Math.min(filteredFollowUps.length, visibleLimit))} of {formatNumber(filteredFollowUps.length)} matching tasks · {formatNumber(scheduledCount)} open overall</div>
         </section>
-
-        <aside className="right-rail">
-          <Card title="Queue Rules">
-            <div className="followup-rules">
-              <p><strong>Overdue:</strong> scheduled follow-ups before now.</p>
-              <p><strong>Today:</strong> scheduled follow-ups due before midnight.</p>
-              <p><strong>Upcoming:</strong> scheduled follow-ups after today.</p>
-              <p><strong>Completed/cancelled:</strong> read-only history.</p>
-            </div>
-          </Card>
-          <div className="mini-metrics">
-            <Metric title="Queue" value={formatNumber(filteredFollowUps.length)} />
-            <Metric title="All Tasks" value={formatNumber(followUps.length)} />
-          </div>
-        </aside>
       </div>
 
       {rescheduling && (
@@ -3898,6 +4047,7 @@ function FollowUpsPage({
               </button>
             </header>
             <div className="team-modal-body">
+              {actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}
               <div className="form-grid compact">
                 <Field label="Type" error={firstError(rescheduleFieldErrors.type)}>
                   <select value={rescheduling.type} onChange={(event) => setRescheduling((current) => ({ ...current, type: event.target.value }))}>
@@ -3910,8 +4060,13 @@ function FollowUpsPage({
                   </select>
                 </Field>
                 <Field label="Due At" error={firstError(rescheduleFieldErrors.dueAt)} className="span-2" required>
-                  <input type="datetime-local" value={rescheduling.dueAt} onChange={(event) => setRescheduling((current) => ({ ...current, dueAt: event.target.value }))} required />
+                  <input type="datetime-local" value={rescheduling.dueAt} onChange={(event) => { setRescheduling((current) => ({ ...current, dueAt: event.target.value })); setRescheduleErrors((current) => ({ ...current, dueAt: undefined })); }} required />
                 </Field>
+                <div className="followup-quick-times span-2" aria-label="Quick reschedule times">
+                  <button type="button" onClick={() => applyQuickDue("later", setRescheduling)}>In 2 hours</button>
+                  <button type="button" onClick={() => applyQuickDue("tomorrow", setRescheduling)}>Tomorrow 9 AM</button>
+                  <button type="button" onClick={() => applyQuickDue("two-days", setRescheduling)}>In 2 days</button>
+                </div>
               </div>
             </div>
             <footer className="team-modal-actions">
@@ -3920,6 +4075,48 @@ function FollowUpsPage({
                 {actionStatus.savingId ? "Saving..." : "Reschedule Follow-up"}
               </button>
             </footer>
+          </form>
+        </div>
+      )}
+
+      {cancelling && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !actionStatus.savingId && setCancelling(null)}>
+          <section className="team-modal followup-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="followup-cancel-title" aria-describedby="followup-cancel-description">
+            <header className="modal-header"><div><h2 id="followup-cancel-title">Cancel follow-up?</h2><p>{cancelling.studentName}</p></div></header>
+            <div className="team-modal-body">{actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}<p id="followup-cancel-description">This removes the task from the active queue. The cancellation remains in the lead history.</p></div>
+            <footer className="team-modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setCancelling(null)} disabled={Boolean(actionStatus.savingId)} autoFocus>Keep task</button>
+              <button type="button" className="danger-button" disabled={Boolean(actionStatus.savingId)} onClick={async () => { const updated = await onCancel(cancelling); if (updated) setCancelling(null); }}>{actionStatus.savingId ? "Cancelling..." : "Cancel follow-up"}</button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {createOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeCreate()}>
+          <form className="team-modal followup-create-modal" onSubmit={submitCreate} role="dialog" aria-modal="true" aria-labelledby="followup-create-title" noValidate>
+            <header className="modal-header"><div><h2 id="followup-create-title">Add Follow-up</h2><p>Attach the task to an accessible lead.</p></div><button type="button" className="icon-button modal-close" onClick={closeCreate} disabled={actionStatus.savingId === "create"} aria-label="Close"><X size={20} /></button></header>
+            <div className="team-modal-body">
+              {actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}
+              <Field label="Lead" error={createErrors.lead} required>
+                <div className="followup-lead-picker">
+                  <div className="lead-search-input"><Search size={16} /><input type="search" value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Search student, phone, email, or lead ID" autoFocus /></div>
+                  <div className="followup-lead-results">
+                    {leadSearchStatus.loading && <p>Searching leads...</p>}
+                    {leadSearchStatus.error && <p className="field-error">{leadSearchStatus.error}</p>}
+                    {!leadSearchStatus.loading && !leadSearchStatus.error && leadSearchStatus.items.length === 0 && <p>No accessible leads found.</p>}
+                    {leadSearchStatus.items.map((lead) => <button key={lead.id} type="button" className={createForm.lead?.id === lead.id ? "is-selected" : ""} onClick={() => { setCreateForm((current) => ({ ...current, lead })); setCreateErrors((current) => ({ ...current, lead: "" })); }}><strong>{lead.studentName}</strong><span>{lead.id} · {lead.phone}</span></button>)}
+                  </div>
+                </div>
+              </Field>
+              <div className="form-grid compact">
+                <Field label="Type"><select value={createForm.type} onChange={(event) => setCreateForm((current) => ({ ...current, type: event.target.value }))}>{["Call", "WhatsApp", "Email", "Walk-in"].map((item) => <option key={item}>{item}</option>)}</select></Field>
+                <Field label="Priority"><select value={createForm.priority} onChange={(event) => setCreateForm((current) => ({ ...current, priority: event.target.value }))}>{["Low", "Medium", "High", "Urgent"].map((item) => <option key={item}>{item}</option>)}</select></Field>
+                <Field label="Due At" error={createErrors.dueAt} className="span-2" required><input type="datetime-local" value={createForm.dueAt} onChange={(event) => setCreateForm((current) => ({ ...current, dueAt: event.target.value }))} required /></Field>
+                <div className="followup-quick-times span-2"><button type="button" onClick={() => applyQuickDue("later")}>In 2 hours</button><button type="button" onClick={() => applyQuickDue("tomorrow")}>Tomorrow 9 AM</button><button type="button" onClick={() => applyQuickDue("two-days")}>In 2 days</button></div>
+              </div>
+            </div>
+            <footer className="team-modal-actions"><button type="button" className="ghost-button" onClick={closeCreate} disabled={actionStatus.savingId === "create"}>Cancel</button><button type="submit" className="primary-button" disabled={actionStatus.savingId === "create"}>{actionStatus.savingId === "create" ? "Creating..." : "Create Follow-up"}</button></footer>
           </form>
         </div>
       )}
@@ -7372,54 +7569,77 @@ function LeadsTable({ leads, page, pageSize, total, loading, error, onRetry, onO
   );
 }
 
-function FollowUpRow({ item, compact = false, saving = false, canManageLeads = false, onOpenLead, onComplete, onCancel, onReschedule }) {
+function FollowUpRow({ item, compact = false, saving = false, canManageLeads = false, onOpenLead, onComplete, onReschedule, onRequestCancel, nowMs = Date.now() }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
   const scheduled = item.status === "Scheduled";
-  const overdue = scheduled && new Date(item.dueAt).getTime() < Date.now();
+  const dueAtMs = new Date(item.dueAt).getTime();
+  const overdue = scheduled && !Number.isNaN(dueAtMs) && dueAtMs < nowMs;
   const dueLabel = item.status === "Completed"
     ? `Completed ${formatFollowUpLabel(item.completedAt)}`
     : item.status === "Cancelled"
       ? `Cancelled ${formatFollowUpLabel(item.cancelledAt)}`
       : formatFollowUpLabel(item.dueAt);
+  const displayAt = item.status === "Completed"
+    ? item.completedAt || item.updatedAt || item.dueAt
+    : item.status === "Cancelled"
+      ? item.cancelledAt || item.updatedAt || item.dueAt
+      : item.dueAt;
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (!menuRef.current?.contains(event.target)) setMenuOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
 
   return (
-    <article className={`followup-row ${compact ? "compact" : ""}`}>
-      <div className="channel-icon">{item.type[0]}</div>
+    <article className={`followup-row ${compact ? "compact" : ""} ${overdue ? "is-overdue" : ""} priority-${String(item.priority || "medium").toLowerCase()}`}>
+      <div className="channel-icon" aria-hidden="true">{String(item.type || "Follow-up").slice(0, 1).toUpperCase()}</div>
       <div className="followup-main">
-        <h3>{item.studentName}</h3>
+        <div className="followup-title-line"><h3>{item.studentName || "Unknown student"}</h3><span className="followup-type">{item.type || "Follow-up"}</span></div>
         <div className="followup-badges">
           <Badge label={`${item.priority} Priority`} danger={["High", "Urgent"].includes(item.priority)} warning={item.priority === "Medium"} />
           <Badge label={item.status} muted={item.status !== "Scheduled"} />
           {overdue && <Badge label="Overdue" danger />}
         </div>
-        <p>{item.leadId} - {item.assignedTo}</p>
+        <p><button type="button" className="followup-lead-link" onClick={() => onOpenLead(item.leadId)} disabled={saving}>{item.leadId}</button><span aria-hidden="true"> · </span>{item.assignedTo || "Unassigned"}</p>
       </div>
       <div className="followup-time" aria-label={dueLabel}>
-        <small>{dueLabel}</small>
-        <strong>{formatTime(item.dueAt)}</strong>
-        <p>{formatDate(item.dueAt)}</p>
+        <small className={overdue ? "danger-text" : ""}>{formatFollowUpRelativeTime(item, nowMs)}</small>
+        <strong>{formatTime(displayAt)}</strong>
+        <p>{formatDate(displayAt)}</p>
       </div>
       {!compact && (
         <div className="followup-actions">
-          <button type="button" className="ghost-button" onClick={() => onOpenLead(item.leadId)} disabled={saving}>
-            <Eye size={16} />
-            Lead
-          </button>
           {scheduled && canManageLeads && (
-            <>
-              <button type="button" className="ghost-button" onClick={() => onReschedule(item)} disabled={saving}>
-                <CalendarDays size={16} />
-                Reschedule
-              </button>
-              <button type="button" className="ghost-button danger-text" onClick={() => onCancel(item)} disabled={saving}>
-                <X size={16} />
-                Cancel
-              </button>
+            <div className="followup-primary-actions">
               <button type="button" className="primary-button" onClick={() => onComplete(item)} disabled={saving}>
                 <CheckCircle2 size={18} />
                 {saving ? "Saving..." : "Complete"}
               </button>
-            </>
+              <div className="followup-menu" ref={menuRef}>
+                <button type="button" className="icon-button" aria-label={`More actions for ${item.studentName}`} aria-expanded={menuOpen} aria-haspopup="menu" onClick={() => setMenuOpen((open) => !open)} disabled={saving}><MoreVertical size={18} /></button>
+                {menuOpen && (
+                  <div className="followup-menu-popover" role="menu">
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onOpenLead(item.leadId); }}><Eye size={16} /> Open lead</button>
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onReschedule(item); }}><CalendarDays size={16} /> Reschedule</button>
+                    <button type="button" role="menuitem" className="danger-text" onClick={() => { setMenuOpen(false); onRequestCancel(item); }}><X size={16} /> Cancel task</button>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
+          {(!scheduled || !canManageLeads) && <button type="button" className="ghost-button" onClick={() => onOpenLead(item.leadId)} disabled={saving}><Eye size={16} /> Open lead</button>}
         </div>
       )}
     </article>
@@ -7596,24 +7816,24 @@ function downloadFileResponse(response, fallbackFilename) {
   URL.revokeObjectURL(url);
 }
 
-function getFollowUpQueueCounts(followUps) {
+function getFollowUpQueueCounts(followUps, nowMs = Date.now()) {
   return followUps.reduce((counts, item) => {
     if (item.status === "Completed") {
       counts.completed += 1;
     } else if (item.status === "Cancelled") {
       counts.cancelled += 1;
-    } else if (followUpMatchesQueue(item, "overdue")) {
+    } else if (followUpMatchesQueue(item, "overdue", nowMs)) {
       counts.overdue += 1;
-    } else if (followUpMatchesQueue(item, "today")) {
+    } else if (followUpMatchesQueue(item, "today", nowMs)) {
       counts.today += 1;
-    } else if (followUpMatchesQueue(item, "upcoming")) {
+    } else if (followUpMatchesQueue(item, "upcoming", nowMs)) {
       counts.upcoming += 1;
     }
     return counts;
   }, { overdue: 0, today: 0, upcoming: 0, completed: 0, cancelled: 0 });
 }
 
-function followUpMatchesQueue(item, queue) {
+function followUpMatchesQueue(item, queue, nowMs = Date.now()) {
   if (queue === "all") {
     return true;
   }
@@ -7632,10 +7852,13 @@ function followUpMatchesQueue(item, queue) {
     return false;
   }
 
-  const now = new Date();
+  const now = new Date(nowMs);
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
 
+  if (queue === "my-day") {
+    return dueAt <= endOfToday;
+  }
   if (queue === "overdue") {
     return dueAt < now;
   }
@@ -7649,12 +7872,65 @@ function followUpMatchesQueue(item, queue) {
   return false;
 }
 
-function compareFollowUpsForQueue(left, right) {
+function compareFollowUpsForQueue(left, right, sortMode = "due", nowMs = Date.now()) {
+  const statusOrder = { Scheduled: 0, Completed: 1, Cancelled: 2 };
+  const statusDifference = (statusOrder[left.status] ?? 3) - (statusOrder[right.status] ?? 3);
+  if (statusDifference !== 0) return statusDifference;
+
+  if (left.status !== "Scheduled" && right.status !== "Scheduled") {
+    const leftActivity = new Date(left.completedAt || left.cancelledAt || left.updatedAt || left.dueAt).getTime();
+    const rightActivity = new Date(right.completedAt || right.cancelledAt || right.updatedAt || right.dueAt).getTime();
+    const safeLeftActivity = Number.isNaN(leftActivity) ? 0 : leftActivity;
+    const safeRightActivity = Number.isNaN(rightActivity) ? 0 : rightActivity;
+    return safeRightActivity - safeLeftActivity;
+  }
+
+  if (sortMode === "student") {
+    return String(left.studentName || "").localeCompare(String(right.studentName || ""), undefined, { sensitivity: "base" });
+  }
+
+  if (sortMode === "priority") {
+    const priorityOrder = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
+    const priorityDifference = (priorityOrder[left.priority] ?? 4) - (priorityOrder[right.priority] ?? 4);
+    if (priorityDifference !== 0) return priorityDifference;
+  }
+
   const leftTime = new Date(left.dueAt).getTime();
   const rightTime = new Date(right.dueAt).getTime();
   const safeLeft = Number.isNaN(leftTime) ? Number.MAX_SAFE_INTEGER : leftTime;
   const safeRight = Number.isNaN(rightTime) ? Number.MAX_SAFE_INTEGER : rightTime;
+  const leftOverdue = left.status === "Scheduled" && safeLeft < nowMs;
+  const rightOverdue = right.status === "Scheduled" && safeRight < nowMs;
+  if (leftOverdue !== rightOverdue) return leftOverdue ? -1 : 1;
   return safeLeft - safeRight;
+}
+
+function formatFollowUpRelativeTime(item, nowMs = Date.now()) {
+  if (item.status === "Completed") return "Completed";
+  if (item.status === "Cancelled") return "Cancelled";
+  const dueAtMs = new Date(item.dueAt).getTime();
+  if (Number.isNaN(dueAtMs)) return "Invalid due time";
+  const differenceMinutes = Math.round((dueAtMs - nowMs) / 60000);
+  const absoluteMinutes = Math.abs(differenceMinutes);
+  const value = absoluteMinutes < 60
+    ? `${Math.max(1, absoluteMinutes)} min`
+    : absoluteMinutes < 1440
+      ? `${Math.round(absoluteMinutes / 60)} hr`
+      : `${Math.round(absoluteMinutes / 1440)} day`;
+  const plural = !value.startsWith("1 ") && value.includes("day") ? "s" : "";
+  return differenceMinutes < 0 ? `${value}${plural} overdue` : `Due in ${value}${plural}`;
+}
+
+function getQuickFollowUpDate(mode) {
+  const date = new Date();
+  date.setSeconds(0, 0);
+  if (mode === "later") {
+    date.setHours(date.getHours() + 2);
+    return date;
+  }
+  date.setDate(date.getDate() + (mode === "two-days" ? 2 : 1));
+  date.setHours(9, 0, 0, 0);
+  return date;
 }
 
 function isToday(value) {

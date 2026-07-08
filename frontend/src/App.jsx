@@ -109,6 +109,7 @@ import {
   updateStoredUser,
   updateUser,
   updateLead,
+  undoLeadFollowUpCompletion,
   updateLeadPayment,
   uploadLeadDocument,
   verifyLeadDocument,
@@ -1297,9 +1298,13 @@ function App() {
                 { id: "create" },
                 () => createLeadFollowUp(leadId, payload),
               )}
-              onComplete={(followUp) => runFollowUpQueueAction(
+              onComplete={(followUp, payload) => runFollowUpQueueAction(
                 followUp,
-                () => completeLeadFollowUp(followUp.leadId, followUp.id, { version: followUp.version }),
+                () => completeLeadFollowUp(followUp.leadId, followUp.id, { version: followUp.version, ...payload }),
+              )}
+              onUndoCompletion={(followUp) => runFollowUpQueueAction(
+                followUp,
+                () => undoLeadFollowUpCompletion(followUp.leadId, followUp.id, { version: followUp.version }),
               )}
               onCancel={(followUp) => runFollowUpQueueAction(
                 followUp,
@@ -3710,6 +3715,7 @@ function FollowUpsPage({
   onClearStatus,
   onCreate,
   onComplete,
+  onUndoCompletion,
   onCancel,
   onReschedule,
   canManageLeads,
@@ -3724,6 +3730,10 @@ function FollowUpsPage({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [rescheduling, setRescheduling] = useState(null);
   const [rescheduleErrors, setRescheduleErrors] = useState({});
+  const [completing, setCompleting] = useState(null);
+  const [completionForm, setCompletionForm] = useState({ outcome: "", notes: "", scheduleNext: false, nextType: "Call", nextPriority: "Medium", nextDueAt: defaultFutureDateTimeLocal() });
+  const [completionErrors, setCompletionErrors] = useState({});
+  const [completionToast, setCompletionToast] = useState(null);
   const [cancelling, setCancelling] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [leadSearch, setLeadSearch] = useState("");
@@ -3736,6 +3746,12 @@ function FollowUpsPage({
     const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!completionToast || completionToast.saving) return undefined;
+    const timer = window.setTimeout(() => setCompletionToast(null), 7000);
+    return () => window.clearTimeout(timer);
+  }, [completionToast]);
 
   useEffect(() => {
     if (!createOpen) {
@@ -3788,6 +3804,7 @@ function FollowUpsPage({
   const scheduledCount = followUps.filter((item) => item.status === "Scheduled").length;
   const completedToday = followUps.filter((item) => item.status === "Completed" && isToday(item.completedAt || item.updatedAt)).length;
   const rescheduleFieldErrors = rescheduling ? { ...(actionStatus.fieldErrors || {}), ...rescheduleErrors } : {};
+  const completionFieldErrors = completing ? { ...(actionStatus.fieldErrors || {}), ...completionErrors } : {};
   const activeFilters = [
     priorityFilter !== "all" && { key: "priority", label: priorityFilter, clear: () => setPriorityFilter("all") },
     typeFilter !== "all" && { key: "type", label: typeFilter, clear: () => setTypeFilter("all") },
@@ -3806,6 +3823,53 @@ function FollowUpsPage({
       dueAt: toDateTimeLocalValue(item.dueAt) || defaultFutureDateTimeLocal(),
       version: item.version,
     });
+  };
+
+  const startComplete = (item) => {
+    onClearStatus();
+    setCompletionErrors({});
+    setCompletionForm({ outcome: "", notes: "", scheduleNext: false, nextType: item.type || "Call", nextPriority: item.priority || "Medium", nextDueAt: defaultFutureDateTimeLocal() });
+    setCompleting(item);
+  };
+
+  const submitCompletion = async (event) => {
+    event.preventDefault();
+    if (!completing) return;
+    const errors = {};
+    if (!completionForm.outcome) errors.outcome = "Select an outcome.";
+    if (completionForm.notes.trim().length > 1000) errors.notes = "Notes must be 1000 characters or fewer.";
+    let nextDueDate = null;
+    if (completionForm.scheduleNext) {
+      nextDueDate = new Date(completionForm.nextDueAt);
+      if (!completionForm.nextDueAt || Number.isNaN(nextDueDate.getTime())) errors.nextDueAt = "Enter a valid next follow-up date and time.";
+      else if (nextDueDate.getTime() <= Date.now()) errors.nextDueAt = "Next follow-up must be in the future.";
+    }
+    setCompletionErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    const updated = await onComplete(completing, {
+      outcome: completionForm.outcome,
+      notes: optionalValue(completionForm.notes.trim()),
+      nextFollowUp: completionForm.scheduleNext ? {
+        type: completionForm.nextType,
+        priority: completionForm.nextPriority,
+        dueAt: nextDueDate.toISOString(),
+      } : null,
+    });
+    if (!updated) return;
+
+    const completedRecord = updated.followUps?.find((item) => item.id === completing.id);
+    const undoItem = completionForm.scheduleNext ? null : { ...completing, version: completedRecord?.version ?? completing.version + 1 };
+    setCompleting(null);
+    setCompletionToast({ message: `${completing.studentName}'s follow-up was completed.`, undoItem, saving: false });
+  };
+
+  const undoCompletion = async () => {
+    if (!completionToast?.undoItem || completionToast.saving) return;
+    setCompletionToast((current) => ({ ...current, saving: true }));
+    const updated = await onUndoCompletion(completionToast.undoItem);
+    if (updated) setCompletionToast({ message: "Follow-up restored to the active queue.", undoItem: null, saving: false });
+    else setCompletionToast((current) => ({ ...current, saving: false }));
   };
 
   const submitReschedule = async (event) => {
@@ -3890,16 +3954,17 @@ function FollowUpsPage({
   };
 
   useEffect(() => {
-    if (!createOpen && !rescheduling && !cancelling) return undefined;
+    if (!createOpen && !rescheduling && !cancelling && !completing) return undefined;
     const handleKeyDown = (event) => {
       if (event.key !== "Escape" || actionStatus.savingId) return;
       if (createOpen) closeCreate();
       else if (rescheduling) setRescheduling(null);
       else if (cancelling) setCancelling(null);
+      else if (completing) setCompleting(null);
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [actionStatus.savingId, cancelling, createOpen, rescheduling]);
+  }, [actionStatus.savingId, cancelling, completing, createOpen, rescheduling]);
 
   return (
     <section className="followup-page">
@@ -4016,7 +4081,7 @@ function FollowUpsPage({
                 saving={actionStatus.savingId === item.id}
                 canManageLeads={canManageLeads}
                 onOpenLead={onOpenLead}
-                onComplete={onComplete}
+                onComplete={startComplete}
                 onReschedule={startReschedule}
                 onRequestCancel={(item) => { onClearStatus(); setCancelling(item); }}
                 nowMs={nowMs}
@@ -4079,6 +4144,22 @@ function FollowUpsPage({
         </div>
       )}
 
+      {completing && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !actionStatus.savingId && setCompleting(null)}>
+          <form className="team-modal followup-completion-modal" onSubmit={submitCompletion} role="dialog" aria-modal="true" aria-labelledby="followup-completion-title" noValidate>
+            <header className="modal-header"><div><h2 id="followup-completion-title">Complete Follow-up</h2><p>{completing.studentName} · {completing.leadId}</p></div><button type="button" className="icon-button modal-close" onClick={() => setCompleting(null)} disabled={Boolean(actionStatus.savingId)} aria-label="Close"><X size={20} /></button></header>
+            <div className="team-modal-body">
+              {actionStatus.error && <div className="form-alert">{actionStatus.error}</div>}
+              <fieldset className="completion-outcome-fieldset"><legend>Outcome <span aria-hidden="true">*</span></legend><div className="completion-outcome-grid">{["Connected", "No Answer", "Interested", "Not Interested"].map((outcome) => <button key={outcome} type="button" className={completionForm.outcome === outcome ? "is-selected" : ""} aria-pressed={completionForm.outcome === outcome} onClick={() => { setCompletionForm((current) => ({ ...current, outcome })); setCompletionErrors((current) => ({ ...current, outcome: "" })); }}>{outcome}</button>)}</div>{firstError(completionFieldErrors.outcome) && <span className="field-error">{firstError(completionFieldErrors.outcome)}</span>}</fieldset>
+              <Field label="Conversation notes" error={firstError(completionFieldErrors.notes)}><textarea value={completionForm.notes} maxLength={1000} rows={4} placeholder="Key discussion, objections, documents required, or agreed next step" onChange={(event) => setCompletionForm((current) => ({ ...current, notes: event.target.value }))} /><small className="field-hint">{completionForm.notes.length}/1000 characters</small></Field>
+              <label className="completion-next-toggle"><input type="checkbox" checked={completionForm.scheduleNext} onChange={(event) => setCompletionForm((current) => ({ ...current, scheduleNext: event.target.checked }))} /><span><strong>Schedule the next follow-up</strong><small>Create the next task in the same operation.</small></span></label>
+              {completionForm.scheduleNext && <div className="form-grid compact completion-next-fields"><Field label="Type" error={firstError(completionFieldErrors["nextFollowUp.type"])}><select value={completionForm.nextType} onChange={(event) => setCompletionForm((current) => ({ ...current, nextType: event.target.value }))}>{["Call", "WhatsApp", "Email", "Walk-in"].map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Priority" error={firstError(completionFieldErrors["nextFollowUp.priority"])}><select value={completionForm.nextPriority} onChange={(event) => setCompletionForm((current) => ({ ...current, nextPriority: event.target.value }))}>{["Low", "Medium", "High", "Urgent"].map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Due At" error={firstError(completionFieldErrors["nextFollowUp.dueAt"]) || completionFieldErrors.nextDueAt} className="span-2" required><input type="datetime-local" value={completionForm.nextDueAt} onChange={(event) => { setCompletionForm((current) => ({ ...current, nextDueAt: event.target.value })); setCompletionErrors((current) => ({ ...current, nextDueAt: "" })); }} /></Field><div className="followup-quick-times span-2"><button type="button" onClick={() => { const dueAt = getQuickFollowUpDate("later"); setCompletionForm((current) => ({ ...current, nextDueAt: toDateTimeLocalValue(dueAt) })); }}>In 2 hours</button><button type="button" onClick={() => { const dueAt = getQuickFollowUpDate("tomorrow"); setCompletionForm((current) => ({ ...current, nextDueAt: toDateTimeLocalValue(dueAt) })); }}>Tomorrow 9 AM</button><button type="button" onClick={() => { const dueAt = getQuickFollowUpDate("two-days"); setCompletionForm((current) => ({ ...current, nextDueAt: toDateTimeLocalValue(dueAt) })); }}>In 2 days</button></div></div>}
+            </div>
+            <footer className="team-modal-actions"><button type="button" className="ghost-button" onClick={() => setCompleting(null)} disabled={Boolean(actionStatus.savingId)}>Cancel</button><button type="submit" className="primary-button" disabled={Boolean(actionStatus.savingId)}>{actionStatus.savingId ? "Completing..." : "Complete Follow-up"}</button></footer>
+          </form>
+        </div>
+      )}
+
       {cancelling && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !actionStatus.savingId && setCancelling(null)}>
           <section className="team-modal followup-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="followup-cancel-title" aria-describedby="followup-cancel-description">
@@ -4120,6 +4201,8 @@ function FollowUpsPage({
           </form>
         </div>
       )}
+
+      {completionToast && <div className="followup-toast" role="status" aria-live="polite"><CheckCircle2 size={19} /><span>{completionToast.message}</span>{completionToast.undoItem && <button type="button" onClick={undoCompletion} disabled={completionToast.saving}>{completionToast.saving ? "Restoring..." : "Undo"}</button>}<button type="button" className="icon-button" onClick={() => setCompletionToast(null)} aria-label="Dismiss notification"><X size={16} /></button></div>}
     </section>
   );
 }
@@ -7611,8 +7694,10 @@ function FollowUpRow({ item, compact = false, saving = false, canManageLeads = f
           <Badge label={`${item.priority} Priority`} danger={["High", "Urgent"].includes(item.priority)} warning={item.priority === "Medium"} />
           <Badge label={item.status} muted={item.status !== "Scheduled"} />
           {overdue && <Badge label="Overdue" danger />}
+          {item.completionOutcome && <Badge label={item.completionOutcome} />}
         </div>
         <p><button type="button" className="followup-lead-link" onClick={() => onOpenLead(item.leadId)} disabled={saving}>{item.leadId}</button><span aria-hidden="true"> · </span>{item.assignedTo || "Unassigned"}</p>
+        {item.completionNotes && <p className="followup-completion-notes" title={item.completionNotes}>{item.completionNotes}</p>}
       </div>
       <div className="followup-time" aria-label={dueLabel}>
         <small className={overdue ? "danger-text" : ""}>{formatFollowUpRelativeTime(item, nowMs)}</small>

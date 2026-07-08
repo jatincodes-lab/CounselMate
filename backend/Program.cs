@@ -3237,6 +3237,8 @@ api.MapGet("/leads/{id}", async (
                     followUp.UpdatedAt,
                     followUp.CompletedAt,
                     followUp.CancelledAt,
+                    followUp.CompletionOutcome,
+                    followUp.CompletionNotes,
                     followUp.AssignedUser == null ? "Unassigned" : followUp.AssignedUser.FullName
                 ))
                 .ToArray(),
@@ -4808,7 +4810,7 @@ api.MapPatch("/leads/{leadId}/follow-ups/{followUpId}/cancel", async (
 api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
     string leadId,
     Guid followUpId,
-    FollowUpVersionRequest request,
+    CompleteFollowUpRequest request,
     HttpContext httpContext,
     AppDbContext db,
     IConfiguration configuration,
@@ -4864,31 +4866,138 @@ api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/complete", async (
         return Results.Conflict(new { message = "This follow-up is already completed." });
     }
 
-    var now = IndianClock.Now();
-    if (followUp.Status == "Scheduled")
+    var validationErrors = ValidateCompleteFollowUpRequest(request);
+    if (validationErrors.Count > 0)
     {
-        followUp.Status = "Completed";
-        followUp.CompletedAt = now;
-        followUp.UpdatedAt = now;
-        followUp.Version += 1;
+        return Results.ValidationProblem(validationErrors);
+    }
+
+    var nextAssignedUserId = followUp.AssignedUserId ?? lead.AssignedUserId;
+    if (request.NextFollowUp is not null && nextAssignedUserId is not null)
+    {
+        var assignmentError = await ValidateLeadAssignmentAsync(db, tenant.TenantId, currentUser, accessScope, lead.BranchId, nextAssignedUserId.Value, cancellationToken);
+        if (assignmentError is not null)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["nextFollowUp.assignedUserId"] = [assignmentError] });
+        }
+    }
+
+    var now = IndianClock.Now();
+    followUp.Status = "Completed";
+    followUp.CompletedAt = now;
+    followUp.CompletionOutcome = NormalizeCompletionOutcome(request.Outcome);
+    followUp.CompletionNotes = NormalizeOptionalText(request.Notes);
+    followUp.UpdatedAt = now;
+    followUp.Version += 1;
+    db.Activities.Add(new EducationCrm.Api.Models.Activity
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = lead.Id,
+        CreatedByUserId = currentUser?.UserId,
+        Type = "FollowUpCompleted",
+        Description = $"{followUp.Type} follow-up completed with outcome '{followUp.CompletionOutcome}' for lead {lead.LeadNumber}.",
+        CreatedAt = now
+    });
+
+    var nextScheduledAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, "Completed", null, cancellationToken);
+    if (request.NextFollowUp is not null)
+    {
+        var nextDueAt = IndianClock.ToIndianTime(request.NextFollowUp.DueAt);
+        var nextFollowUp = new FollowUp
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.TenantId,
+            LeadId = lead.Id,
+            AssignedUserId = nextAssignedUserId,
+            Type = NormalizeFollowUpType(request.NextFollowUp.Type),
+            Priority = NormalizePriority(request.NextFollowUp.Priority),
+            Status = "Scheduled",
+            Version = 1,
+            DueAt = nextDueAt,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        followUp.CompletionNextFollowUpId = nextFollowUp.Id;
+        db.FollowUps.Add(nextFollowUp);
         db.Activities.Add(new EducationCrm.Api.Models.Activity
         {
             Id = Guid.NewGuid(),
             TenantId = tenant.TenantId,
             LeadId = lead.Id,
             CreatedByUserId = currentUser?.UserId,
-            Type = "FollowUpCompleted",
-            Description = $"{followUp.Type} follow-up completed for lead {lead.LeadNumber}.",
+            Type = "FollowUpScheduled",
+            Description = $"{nextFollowUp.Type} follow-up scheduled after completion for lead {lead.LeadNumber}.",
             CreatedAt = now
         });
+        nextScheduledAt = nextScheduledAt is null || nextDueAt < nextScheduledAt ? nextDueAt : nextScheduledAt;
     }
 
-    lead.NextFollowUpAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, followUp.Status, followUp.DueAt, cancellationToken);
+    lead.NextFollowUpAt = nextScheduledAt;
     lead.UpdatedAt = now;
     lead.UpdatedByUserId = currentUser?.UserId;
     lead.Version += 1;
     var intelligenceSettings = await GetOrCreateLeadIntelligenceSettingsAsync(db, tenant.TenantId, now, cancellationToken);
     await ApplyLeadScoringAsync(db, lead, intelligenceSettings, "Follow-up completed", now, cancellationToken);
+
+    try { await db.SaveChangesAsync(cancellationToken); }
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
+    return Results.Ok(await GetLeadDetailAsync(db, tenant.TenantId, lead.LeadNumber, cancellationToken));
+});
+
+api.MapPost("/leads/{leadId}/follow-ups/{followUpId}/undo-completion", async (
+    string leadId,
+    Guid followUpId,
+    FollowUpVersionRequest request,
+    HttpContext httpContext,
+    AppDbContext db,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    var tenant = await TenantResolver.ResolveAsync(httpContext, db, configuration, cancellationToken);
+    if (tenant is null) return Results.NotFound(new { message = "Tenant not found." });
+
+    var currentUser = TenantResolver.GetCurrentUser(httpContext);
+    var accessScope = await GetLeadAccessScopeAsync(db, currentUser, cancellationToken);
+    if (!CanManageLeads(currentUser)) return Results.Json(new { message = "You do not have permission to undo follow-up completion." }, statusCode: StatusCodes.Status403Forbidden);
+
+    var lead = await db.Leads.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadNumber == leadId, cancellationToken);
+    if (lead is null || !CanAccessLead(currentUser, accessScope, lead)) return Results.NotFound(new { message = "Lead not found." });
+    if (lead.ArchivedAt is not null) return Results.Conflict(new { message = "Restore this lead before undoing follow-up completion." });
+
+    var followUp = await db.FollowUps.FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId && item.LeadId == lead.Id && item.Id == followUpId, cancellationToken);
+    if (followUp is null) return Results.NotFound(new { message = "Follow-up not found." });
+    if (request.Version != followUp.Version) return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." });
+    if (followUp.Status != "Completed" || followUp.CompletedAt is null) return Results.Conflict(new { message = "Only completed follow-ups can be restored." });
+    if (followUp.CompletionNextFollowUpId is not null) return Results.Conflict(new { message = "Completion cannot be undone because a next follow-up was created with it." });
+
+    var now = IndianClock.Now();
+    if (now - followUp.CompletedAt.Value > TimeSpan.FromMinutes(2))
+    {
+        return Results.Conflict(new { message = "The two-minute undo window has expired." });
+    }
+
+    followUp.Status = "Scheduled";
+    followUp.CompletedAt = null;
+    followUp.CompletionOutcome = null;
+    followUp.CompletionNotes = null;
+    followUp.CompletionNextFollowUpId = null;
+    followUp.UpdatedAt = now;
+    followUp.Version += 1;
+    lead.NextFollowUpAt = await CalculateNextScheduledFollowUpAsync(db, tenant.TenantId, lead.Id, followUp.Id, "Scheduled", followUp.DueAt, cancellationToken);
+    lead.UpdatedAt = now;
+    lead.UpdatedByUserId = currentUser?.UserId;
+    lead.Version += 1;
+    db.Activities.Add(new EducationCrm.Api.Models.Activity
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenant.TenantId,
+        LeadId = lead.Id,
+        CreatedByUserId = currentUser?.UserId,
+        Type = "FollowUpCompletionUndone",
+        Description = $"Completion of {followUp.Type} follow-up was undone for lead {lead.LeadNumber}.",
+        CreatedAt = now
+    });
 
     try { await db.SaveChangesAsync(cancellationToken); }
     catch (DbUpdateConcurrencyException) { return Results.Conflict(new { message = "This follow-up was changed by another user. Refresh and try again." }); }
@@ -5003,6 +5112,8 @@ api.MapGet("/follow-ups", async (
             item.UpdatedAt,
             item.CompletedAt,
             item.CancelledAt,
+            item.CompletionOutcome,
+            item.CompletionNotes,
             item.AssignedUser == null ? "Unassigned" : item.AssignedUser.FullName
         ))
         .ToListAsync(cancellationToken);
@@ -7123,6 +7234,8 @@ static async Task<LeadDetailResponse> GetLeadDetailAsync(AppDbContext db, Guid t
                     followUp.UpdatedAt,
                     followUp.CompletedAt,
                     followUp.CancelledAt,
+                    followUp.CompletionOutcome,
+                    followUp.CompletionNotes,
                     followUp.AssignedUser == null ? "Unassigned" : followUp.AssignedUser.FullName
                 ))
                 .ToArray(),
@@ -7956,6 +8069,51 @@ static Dictionary<string, string[]> ValidateRescheduleFollowUpRequest(Reschedule
     }
 
     return errors;
+}
+
+static Dictionary<string, string[]> ValidateCompleteFollowUpRequest(CompleteFollowUpRequest request)
+{
+    var errors = new Dictionary<string, string[]>();
+    if (request.Version < 1)
+    {
+        errors["version"] = ["Refresh the follow-up before completing it."];
+    }
+
+    var outcome = NormalizeOptionalText(request.Outcome);
+    var allowedOutcomes = new[] { "Connected", "No Answer", "Interested", "Not Interested" };
+    if (outcome is not null && !allowedOutcomes.Contains(outcome, StringComparer.OrdinalIgnoreCase))
+    {
+        errors["outcome"] = ["Select a valid completion outcome."];
+    }
+
+    AddOptionalLengthError(errors, "notes", request.Notes, 1000);
+    if (request.NextFollowUp is not null)
+    {
+        AddOptionalLengthError(errors, "nextFollowUp.type", request.NextFollowUp.Type, 40);
+        AddOptionalLengthError(errors, "nextFollowUp.priority", request.NextFollowUp.Priority, 40);
+        if (request.NextFollowUp.DueAt == default)
+        {
+            errors["nextFollowUp.dueAt"] = ["Next follow-up date is required."];
+        }
+        else if (IndianClock.ToIndianTime(request.NextFollowUp.DueAt) <= IndianClock.Now())
+        {
+            errors["nextFollowUp.dueAt"] = ["Next follow-up must be scheduled in the future."];
+        }
+    }
+
+    return errors;
+}
+
+static string NormalizeCompletionOutcome(string? value)
+{
+    return NormalizeOptionalText(value)?.ToLowerInvariant() switch
+    {
+        "connected" => "Connected",
+        "no answer" => "No Answer",
+        "interested" => "Interested",
+        "not interested" => "Not Interested",
+        _ => "Connected"
+    };
 }
 
 static void AddRequiredError(Dictionary<string, string[]> errors, string key, string? value, int maxLength)
@@ -9153,6 +9311,8 @@ record FollowUpResponse(
     DateTimeOffset UpdatedAt,
     DateTimeOffset? CompletedAt,
     DateTimeOffset? CancelledAt,
+    string? CompletionOutcome,
+    string? CompletionNotes,
     string AssignedTo);
 
 record ActivityResponse(
@@ -9241,6 +9401,15 @@ record RescheduleFollowUpRequest(
     int Version);
 
 record FollowUpVersionRequest(int Version);
+record CompleteFollowUpRequest(
+    int Version,
+    string? Outcome,
+    string? Notes,
+    NextFollowUpRequest? NextFollowUp);
+record NextFollowUpRequest(
+    string? Type,
+    string? Priority,
+    DateTimeOffset DueAt);
 record LeadDocumentVersionRequest(int Version);
 record ReviewLeadDocumentRequest(int Version, string? Notes);
 record SaveLeadPaymentRequest(

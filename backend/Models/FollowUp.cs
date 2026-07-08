@@ -15,6 +15,9 @@ public sealed class FollowUp
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
+    public string? CompletionOutcome { get; set; }
+    public string? CompletionNotes { get; set; }
+    public Guid? CompletionNextFollowUpId { get; set; }
 
     public Tenant Tenant { get; set; } = null!;
     public Lead Lead { get; set; } = null!;

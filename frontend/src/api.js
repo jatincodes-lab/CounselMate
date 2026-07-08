@@ -641,6 +641,13 @@ export async function completeLeadFollowUp(leadId, followUpId, payload) {
   });
 }
 
+export async function undoLeadFollowUpCompletion(leadId, followUpId, payload) {
+  return request(`/leads/${encodeURIComponent(leadId)}/follow-ups/${encodeURIComponent(followUpId)}/undo-completion`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 function normalizeLeadList(response) {
   if (Array.isArray(response)) {
     return {

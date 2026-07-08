@@ -384,6 +384,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(item => item.Type).HasMaxLength(80).IsRequired();
             entity.Property(item => item.Priority).HasMaxLength(40).IsRequired();
             entity.Property(item => item.Status).HasMaxLength(60).IsRequired();
+            entity.Property(item => item.CompletionOutcome).HasMaxLength(80);
+            entity.Property(item => item.CompletionNotes).HasMaxLength(1000);
             entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasOne(item => item.Tenant)
                 .WithMany()
